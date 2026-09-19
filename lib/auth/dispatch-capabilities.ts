@@ -1,0 +1,59 @@
+export type DispatchCapabilities = {
+  canViewPlanning: boolean
+  canCreateMission: boolean
+  canEditMission: boolean
+  canDeleteMission: boolean
+  canAssign: boolean
+  canDragDrop: boolean
+  canManageCustomers: boolean
+  canManageDrivers: boolean
+  canManageDriverCredentials: boolean
+  canManageTrucks: boolean
+  canManageTrailers: boolean
+  canDeleteResources: boolean
+  canViewImports: boolean
+  canManageImports: boolean
+  canViewMap: boolean
+  canViewProfitability: boolean
+  canManageProfitability: boolean
+  canViewInvoices: boolean
+  canManageInvoices: boolean
+  canViewMaintenance: boolean
+  canRequestMaintenance: boolean
+  canManageMaintenance: boolean
+  canViewPark: boolean
+  canMovePark: boolean
+  canViewParkHistory: boolean
+  canViewParkInspections: boolean
+  canManageParkInspections: boolean
+}
+
+export const fullDispatchCapabilities: DispatchCapabilities = {
+  canViewPlanning: true,
+  canCreateMission: true,
+  canEditMission: true,
+  canDeleteMission: true,
+  canAssign: true,
+  canDragDrop: true,
+  canManageCustomers: true,
+  canManageDrivers: true,
+  canManageDriverCredentials: true,
+  canManageTrucks: true,
+  canManageTrailers: true,
+  canDeleteResources: true,
+  canViewImports: true,
+  canManageImports: true,
+  canViewMap: true,
+  canViewProfitability: true,
+  canManageProfitability: true,
+  canViewInvoices: true,
+  canManageInvoices: true,
+  canViewMaintenance: true,
+  canRequestMaintenance: true,
+  canManageMaintenance: true,
+  canViewPark: true,
+  canMovePark: true,
+  canViewParkHistory: true,
+  canViewParkInspections: true,
+  canManageParkInspections: true,
+}

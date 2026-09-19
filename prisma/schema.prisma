@@ -1,0 +1,1176 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  DISPATCHER
+  SECRETARY
+  PARK_MANAGER
+  DRIVER
+}
+
+enum PlanningAssignmentOrigin {
+  MANUAL
+  AUTOMATIC
+  ADJUSTED
+}
+
+enum DriverStatus {
+  ACTIVE
+  UNAVAILABLE
+  ON_LEAVE
+  INACTIVE
+}
+
+enum TruckStatus {
+  AVAILABLE
+  ASSIGNED
+  EN_ROUTE_TO_PICKUP
+  AT_PICKUP
+  ON_MISSION
+  RETURNING_TO_BASE
+  AT_BASE
+  IN_MAINTENANCE
+  MAINTENANCE_EXT
+  OUT_OF_SERVICE
+}
+
+enum TrailerType {
+  CURTAINSIDER
+  FLATBED
+  REFRIGERATED
+  CONTAINER
+  BOX
+  OTHER
+}
+
+enum TrailerStatus {
+  AVAILABLE
+  ASSIGNED
+  AT_BASE
+  IN_MAINTENANCE
+  MAINTENANCE_EXT
+  OUT_OF_SERVICE
+}
+
+enum TrailerLoadStatus {
+  EMPTY
+  LOADED
+}
+
+enum TrailerCustodyState {
+  EMPTY
+  LOADED
+  IN_MISSION
+  AT_BASE
+  RELAY_AVAILABLE
+  DELIVERED
+  IMMOBILIZED
+}
+
+enum TrailerCustodyTransitionStatus {
+  PLANNED
+  COMPLETED
+  CANCELLED
+}
+
+enum TrailerCargoType {
+  WOOD
+  ALUMINIUM
+  STEEL
+  PALLETS
+  CONSTRUCTION_MATERIALS
+  FOOD
+  MACHINERY
+  TEXTILE
+  CHEMICALS
+  OTHER
+}
+
+enum MaintenanceVehicleType {
+  TRUCK
+  TRAILER
+}
+
+enum MaintenanceInterventionType {
+  DIAGNOSTIC
+  TIRES
+  BRAKES
+  OIL_SERVICE
+  ELECTRICAL
+  BODYWORK
+  TRAILER_REPAIR
+  SAFETY_CHECK
+  OTHER
+}
+
+enum MaintenanceUrgency {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+enum MaintenanceRequestStatus {
+  DRAFT
+  SUBMITTED
+  RECEIVED
+  UNDER_REVIEW
+  QUOTE_RECEIVED
+  QUOTE_APPROVED
+  QUOTE_REJECTED
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  INVOICED
+  PAID
+  CLOSED
+  CANCELLED
+}
+
+enum MissionStatus {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  DONE
+  ISSUE
+  CANCELLED
+}
+
+enum MissionPreparationStatus {
+  PENDING
+  PROCESSING
+  READY
+  REVIEW_REQUIRED
+  FAILED
+}
+
+enum AddressResolutionStatus {
+  PENDING
+  AUTO_CONFIRMED
+  REVIEW_REQUIRED
+  CONFIRMED
+  FAILED
+}
+
+enum AddressResolutionMethod {
+  PROVIDED_COORDINATES
+  GOOGLE_PLACES
+  MANUAL
+}
+
+enum RegulatoryStateSource {
+  TACHOGRAPH
+  DISPATCHER_DECLARATION
+  QA
+  UNKNOWN
+}
+
+enum DriverActivityType {
+  DRIVE_START
+  DRIVE_END
+  OTHER_WORK
+  BREAK
+  SPLIT_BREAK
+  DAILY_REST
+  WEEKLY_REST
+  UNAVAILABLE
+  AVAILABLE
+}
+
+enum DriverActivitySource {
+  DRIVER
+  DISPATCHER_CORRECTION
+  MISSION
+  SYSTEM
+  QA
+}
+
+enum PlanningDay {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum MissionEventType {
+  CREATED
+  ASSIGNED
+  UNASSIGNED
+  RESCHEDULED
+  STATUS_CHANGED
+  DRIVER_CHANGED
+  TRUCK_CHANGED
+  NOTE_ADDED
+  COMPLETED
+  CANCELLED
+  ISSUE_REPORTED
+}
+
+enum ParkSpotType {
+  PARKING
+  WORKSHOP
+  HALL
+  STORAGE
+}
+
+enum ParkVehicleType {
+  TRUCK
+  TRAILER
+}
+
+enum ParkMovementAction {
+  PLACE
+  MOVE
+  REMOVE
+}
+
+enum ParkInspectionStatus {
+  DRAFT
+  FINALIZED
+}
+
+enum ParkInspectionOverallResult {
+  COMPLIANT
+  WATCH
+  INTERVENTION_REQUIRED
+}
+
+enum ParkInspectionItemStatus {
+  OK
+  WATCH
+  CRITICAL
+  NOT_APPLICABLE
+}
+
+enum InvoiceDirection {
+  ISSUED
+  RECEIVED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  RECEIVED
+  TO_REVIEW
+  APPROVED
+  PAID
+  OVERDUE
+  CANCELLED
+  REJECTED
+}
+
+model User {
+  id                        String    @id @default(cuid())
+  name                      String
+  firstName                 String    @default("")
+  lastName                  String    @default("")
+  email                     String?   @unique
+  username                  String    @unique
+  passwordHash              String?
+  role                      UserRole  @default(DISPATCHER)
+  isActive                  Boolean   @default(true)
+  mustChangePassword        Boolean   @default(true)
+  lastLoginAt               DateTime?
+  passwordChangedAt         DateTime?
+  temporaryPasswordIssuedAt DateTime?
+  sessionVersion            Int       @default(0)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  events                           MissionEvent[]
+  truckEvents                      TruckEvent[]
+  parkPlacements                   ParkSpot[]                        @relation("ParkSpotPlacedBy")
+  parkMovements                    ParkMovement[]                    @relation("ParkMovementActor")
+  parkInspections                  ParkInspection[]                  @relation("ParkInspectionInspector")
+  dispatchOptimizationApplications DispatchOptimizationApplication[]
+  regulatoryDeclarations           DriverRegulatoryDeclaration[]
+  driverActivityEvents             DriverActivityEvent[]             @relation("DriverActivityAuthor")
+  trailerCustodyEvents             TrailerCustodyEvent[]
+  driverId                         String?                           @unique
+  driver                           Driver?                           @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@index([role])
+  @@index([isActive])
+  @@index([username])
+  @@index([driverId])
+}
+
+model Driver {
+  id                 String       @id @default(cuid())
+  name               String
+  phone              String?
+  email              String?
+  status             DriverStatus @default(ACTIVE)
+  hourlyCostAmount   Float?
+  hourlyCostCurrency String       @default("EUR")
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  usualTruck             Truck?                        @relation("DriverUsualTruck")
+  user                   User?
+  assignments            MissionAssignment[]
+  events                 MissionEvent[]
+  planningRows           PlanningRow[]
+  positions              DriverPosition[]
+  regulatoryDeclarations DriverRegulatoryDeclaration[]
+  activityEvents         DriverActivityEvent[]
+  custodyEventsFrom      TrailerCustodyEvent[]         @relation("TrailerCustodyFromDriver")
+  custodyEventsTo        TrailerCustodyEvent[]         @relation("TrailerCustodyToDriver")
+
+  @@index([status])
+}
+
+model Truck {
+  id                           String      @id @default(cuid())
+  plateNumber                  String      @unique
+  model                        String?
+  brand                        String?
+  status                       TruckStatus @default(AVAILABLE)
+  statusUpdatedAt              DateTime?
+  technicalInspectionDate      DateTime?
+  technicalInspectionExpiresAt DateTime?
+  returnToBaseDistanceMeters   Int?
+  returnToBaseDurationSeconds  Int?
+  returnToBasePolyline         String?
+  returnToBaseCalculatedAt     DateTime?
+  returnToBaseProvider         String?
+  category                     String?
+  capacityKg                   Int?
+  couplingType                 String?
+
+  driverId String? @unique
+  driver   Driver? @relation("DriverUsualTruck", fields: [driverId], references: [id], onDelete: SetNull)
+
+  gpsDeviceId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments         MissionAssignment[]
+  planningRows        PlanningRow[]
+  positions           TruckPosition[]
+  driverPositions     DriverPosition[]
+  missionEvents       MissionEvent[]
+  events              TruckEvent[]
+  trailers            Trailer[]
+  maintenanceRequests MaintenanceRequest[]
+  parkSpot            ParkSpot?
+  parkMovements       ParkMovement[]
+  parkInspections     ParkInspection[]
+
+  @@index([driverId])
+  @@index([status])
+  @@index([gpsDeviceId])
+}
+
+model Trailer {
+  id                           String              @id @default(cuid())
+  plateNumber                  String              @unique
+  type                         TrailerType
+  status                       TrailerStatus       @default(AVAILABLE)
+  technicalInspectionDate      DateTime?
+  technicalInspectionExpiresAt DateTime?
+  loadStatus                   TrailerLoadStatus   @default(EMPTY)
+  cargoType                    TrailerCargoType?
+  compatibleCargoTypes         Json?
+  cargoDescription             String?
+  truckId                      String?
+  notes                        String?
+  capacityKg                   Int?
+  couplingType                 String?
+  custodyState                 TrailerCustodyState @default(EMPTY)
+  custodyVersion               Int                 @default(0)
+  createdAt                    DateTime            @default(now())
+  updatedAt                    DateTime            @updatedAt
+
+  truck Truck? @relation(fields: [truckId], references: [id], onDelete: SetNull)
+
+  planningRows        PlanningRow[]
+  assignments         MissionAssignment[]
+  missionEvents       MissionEvent[]
+  maintenanceRequests MaintenanceRequest[]
+  parkSpot            ParkSpot?
+  parkMovements       ParkMovement[]
+  parkInspections     ParkInspection[]
+  custodyEvents       TrailerCustodyEvent[]
+
+  @@index([truckId])
+  @@index([status])
+  @@index([type])
+  @@index([loadStatus])
+  @@index([cargoType])
+}
+
+model ClientProfile {
+  id                             String   @id @default(cuid())
+  name                           String   @unique
+  legalName                      String?
+  displayName                    String?
+  emailDomains                   Json?
+  contactEmails                  Json?
+  contactPhones                  Json?
+  billingInfo                    Json?
+  defaultPaymentTerms            String?
+  defaultTruckType               String?
+  defaultTrailerType             String?
+  defaultPreAnnouncementRequired Boolean  @default(false)
+  defaultRequirements            Json?
+  defaultContacts                Json?
+  operationalNotes               String?
+  parserHints                    Json?
+  isActive                       Boolean  @default(true)
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+
+  @@index([name])
+  @@index([isActive])
+}
+
+model Mission {
+  id                           String                   @id @default(cuid())
+  reference                    String                   @unique
+  title                        String?
+  clientName                   String?
+  pickupCity                   String?
+  deliveryCity                 String?
+  pickupAddress                String?
+  deliveryAddress              String?
+  pickupPlaceId                String?
+  deliveryPlaceId              String?
+  pickupLat                    Float?
+  pickupLng                    Float?
+  deliveryLat                  Float?
+  deliveryLng                  Float?
+  estimatedKm                  Int?
+  clientReference              String?
+  cmrNumber                    String?
+  deliveryNoteNumber           String?
+  pickupDate                   DateTime?
+  deliveryDate                 DateTime?
+  requiredTruckType            String?
+  priceAmount                  Float?
+  priceCurrency                String?
+  paymentTerms                 String?
+  preAnnouncementRequired      Boolean                  @default(false)
+  preAnnouncementSent          Boolean                  @default(false)
+  preAnnouncementSentAt        DateTime?
+  requirements                 Json?
+  contacts                     Json?
+  billingInfo                  Json?
+  routeDistanceMeters          Int?
+  routeDurationSeconds         Int?
+  routePolyline                String?
+  routeCalculatedAt            DateTime?
+  routeProvider                String?
+  pickupSourceAddress          String?
+  deliverySourceAddress        String?
+  pickupNormalizedAddress      String?
+  deliveryNormalizedAddress    String?
+  pickupResolvedAddress        String?
+  deliveryResolvedAddress      String?
+  pickupResolutionStatus       AddressResolutionStatus  @default(PENDING)
+  deliveryResolutionStatus     AddressResolutionStatus  @default(PENDING)
+  pickupResolutionMethod       AddressResolutionMethod?
+  deliveryResolutionMethod     AddressResolutionMethod?
+  pickupResolutionConfidence   Float?
+  deliveryResolutionConfidence Float?
+  pickupResolvedAt             DateTime?
+  deliveryResolvedAt           DateTime?
+  pickupResolutionReason       String?
+  deliveryResolutionReason     String?
+  pickupResolutionCandidates   Json?
+  deliveryResolutionCandidates Json?
+  preparationStatus            MissionPreparationStatus @default(PENDING)
+  preparationMissingData       Json?
+  preparationLastAttemptAt     DateTime?
+  preparationError             String?
+  status                       MissionStatus            @default(PENDING)
+  notes                        String?
+
+  sourceEmailId      String?
+  sourceEmailFrom    String?
+  sourceEmailSubject String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignment           MissionAssignment?
+  events               MissionEvent[]
+  driverActivityEvents DriverActivityEvent[]
+  invoices             Invoice[]
+  invoiceMissions      InvoiceMission[]
+  sourceEmail          MissionSourceEmail?
+  trailerCustodyEvents TrailerCustodyEvent[]
+
+  @@index([status])
+  @@index([clientName])
+  @@index([sourceEmailId])
+  @@index([createdAt])
+}
+
+model Invoice {
+  id                    String           @id @default(cuid())
+  direction             InvoiceDirection
+  invoiceNumber         String?          @unique
+  externalInvoiceNumber String?
+  status                InvoiceStatus    @default(DRAFT)
+  missionId             String?
+  maintenanceRequestId  String?
+  issueDate             DateTime?
+  dueDate               DateTime?
+  paidDate              DateTime?
+  sellerName            String
+  sellerAddress         String?
+  sellerVatNumber       String?
+  sellerIban            String?
+  sellerBic             String?
+  sellerBankName        String?
+  sellerBeneficiary     String?
+  buyerName             String
+  buyerAddress          String?
+  buyerVatNumber        String?
+  buyerEmail            String?
+  missionReference      String?
+  clientReference       String?
+  cmrNumber             String?
+  deliveryNoteNumber    String?
+  missionDescription    String?
+  subtotalAmount        Decimal          @default(0)
+  vatAmount             Decimal          @default(0)
+  totalAmount           Decimal          @default(0)
+  paidAmount            Decimal          @default(0)
+  currency              String           @default("EUR")
+  paymentTerms          String?
+  notes                 String?
+  sourcePdfUrl          String?
+  sourcePdfFileName     String?
+  sourcePdfMimeType     String?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  mission         Mission?         @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  lines           InvoiceLine[]
+  invoiceMissions InvoiceMission[]
+
+  @@index([direction])
+  @@index([status])
+  @@index([missionId])
+  @@index([issueDate])
+  @@index([dueDate])
+  @@index([createdAt])
+  @@index([sourcePdfUrl])
+}
+
+model InvoiceLine {
+  id             String   @id @default(cuid())
+  invoiceId      String
+  label          String
+  description    String?
+  quantity       Decimal  @default(1)
+  unitPrice      Decimal  @default(0)
+  vatRate        Decimal  @default(17)
+  subtotalAmount Decimal  @default(0)
+  vatAmount      Decimal  @default(0)
+  totalAmount    Decimal  @default(0)
+  position       Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([position])
+}
+
+/// Snapshots of the missions billed by an invoice. The legacy Invoice.missionId
+/// remains available for historical single-mission invoices.
+model InvoiceMission {
+  id                         String   @id @default(cuid())
+  invoiceId                  String
+  missionId                  String
+  missionReferenceSnapshot   String
+  clientReferenceSnapshot    String?
+  cmrNumberSnapshot          String?
+  deliveryNoteNumberSnapshot String?
+  amountSnapshot             Decimal  @default(0)
+  currencySnapshot           String   @default("EUR")
+  sortOrder                  Int      @default(0)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  mission Mission @relation(fields: [missionId], references: [id], onDelete: Restrict)
+
+  @@unique([invoiceId, missionId])
+  @@index([missionId])
+  @@index([invoiceId, sortOrder])
+}
+
+model PlanningRow {
+  id            String   @id @default(cuid())
+  weekStartDate DateTime
+  sortOrder     Int      @default(0)
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  truckId String?
+  truck   Truck?  @relation(fields: [truckId], references: [id], onDelete: SetNull)
+
+  trailerId String?
+  trailer   Trailer? @relation(fields: [trailerId], references: [id], onDelete: SetNull)
+
+  pairLocked               Boolean                  @default(false)
+  assignmentOrigin         PlanningAssignmentOrigin @default(MANUAL)
+  isExceptionalReplacement Boolean                  @default(false)
+  usualTruckIdSnapshot     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments          MissionAssignment[]
+  trailerCustodyEvents TrailerCustodyEvent[]
+
+  @@unique([weekStartDate, driverId])
+  @@unique([weekStartDate, truckId])
+  @@index([weekStartDate, sortOrder])
+  @@index([driverId])
+  @@index([truckId])
+  @@index([trailerId])
+}
+
+model MissionAssignment {
+  id String @id @default(cuid())
+
+  missionId String  @unique
+  mission   Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  planningRowId String?
+  planningRow   PlanningRow? @relation(fields: [planningRowId], references: [id], onDelete: SetNull)
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  truckId String?
+  truck   Truck?  @relation(fields: [truckId], references: [id], onDelete: SetNull)
+
+  /// Remorque planifiée pour cette mission. Distincte de Trailer.truckId,
+  /// qui décrit uniquement l'attelage physique courant.
+  trailerId            String?
+  trailer              Trailer? @relation(fields: [trailerId], references: [id], onDelete: SetNull)
+  trailerChangePlanned Boolean  @default(false)
+  trailerTransitions   Json?
+
+  day           PlanningDay
+  scheduledDate DateTime
+  plannedEndAt  DateTime?
+
+  sortOrder Int @default(0)
+
+  approachDistanceMeters  Int?
+  approachDurationSeconds Int?
+  approachPolyline        String?
+  approachCalculatedAt    DateTime?
+  approachProvider        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([planningRowId, scheduledDate])
+  @@index([driverId, scheduledDate])
+  @@index([truckId, scheduledDate])
+  @@index([trailerId, scheduledDate])
+  @@index([trailerId, plannedEndAt])
+  @@index([day])
+  @@index([scheduledDate])
+}
+
+/// Journal append-only de la garde et du chargement d'une remorque.
+/// Une reprise de relais modifie l'affectation courante, mais ne réécrit
+/// jamais les transitions précédentes.
+model TrailerCustodyEvent {
+  id String @id @default(cuid())
+
+  trailerId String
+  trailer   Trailer @relation(fields: [trailerId], references: [id], onDelete: Restrict)
+
+  missionId String?
+  mission   Mission? @relation(fields: [missionId], references: [id], onDelete: SetNull)
+
+  fromDriverId String?
+  fromDriver   Driver?                        @relation("TrailerCustodyFromDriver", fields: [fromDriverId], references: [id], onDelete: SetNull)
+  toDriverId   String?
+  toDriver     Driver?                        @relation("TrailerCustodyToDriver", fields: [toDriverId], references: [id], onDelete: SetNull)
+  fromState    TrailerCustodyState
+  toState      TrailerCustodyState
+  status       TrailerCustodyTransitionStatus @default(COMPLETED)
+  location     String?
+  note         String?
+  occurredAt   DateTime                       @default(now())
+
+  actorId String?
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  createdAt     DateTime     @default(now())
+  planningRow   PlanningRow? @relation(fields: [planningRowId], references: [id], onDelete: SetNull)
+  planningRowId String?
+
+  @@index([trailerId, occurredAt])
+  @@index([missionId, occurredAt])
+  @@index([fromDriverId, occurredAt])
+  @@index([toDriverId, occurredAt])
+  @@index([planningRowId, occurredAt])
+}
+
+model MissionEvent {
+  id       String           @id @default(cuid())
+  type     MissionEventType
+  message  String?
+  metadata Json?
+
+  missionId String
+  mission   Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  actorId String?
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  driverId String?
+  driver   Driver? @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  truckId String?
+  truck   Truck?  @relation(fields: [truckId], references: [id], onDelete: SetNull)
+
+  trailerId String?
+  trailer   Trailer? @relation(fields: [trailerId], references: [id], onDelete: SetNull)
+
+  fromStatus MissionStatus?
+  toStatus   MissionStatus?
+
+  createdAt DateTime @default(now())
+
+  @@index([missionId, createdAt])
+  @@index([actorId])
+  @@index([driverId])
+  @@index([truckId])
+  @@index([trailerId])
+  @@index([type])
+}
+
+/// Minimal immutable audit and idempotency record for confirmed automatic
+/// planning applications. Simulation payloads are never stored here.
+model DispatchOptimizationApplication {
+  id                  String   @id @default(cuid())
+  idempotencyKey      String   @unique
+  simulationId        String
+  snapshotFingerprint String
+  strategy            String
+  periodStart         DateTime
+  periodEnd           DateTime
+  missionIds          Json
+  pairRowIds          Json
+  resultSummary       Json
+  warnings            Json?
+  actorId             String
+  createdAt           DateTime @default(now())
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([actorId, createdAt])
+  @@index([simulationId])
+  @@index([periodStart, periodEnd])
+}
+
+model DriverRegulatoryDeclaration {
+  id                                   String                @id @default(cuid())
+  driverId                             String
+  source                               RegulatoryStateSource
+  referenceAt                          DateTime
+  validUntil                           DateTime?
+  timeZone                             String                @default("Europe/Luxembourg")
+  drivingSinceValidBreakSeconds        Int
+  dailyDrivingSeconds                  Int
+  weeklyDrivingSeconds                 Int
+  previousWeekDrivingSeconds           Int
+  dailyExtensionsUsedThisWeek          Int
+  reducedDailyRestsUsedSinceWeeklyRest Int
+  splitBreakFirstPartSeconds           Int                   @default(0)
+  splitDailyRestFirstPartSeconds       Int                   @default(0)
+  lastValidRestEndedAt                 DateTime
+  dutyPeriodStartedAt                  DateTime
+  currentIsoWeek                       String
+  weeklyRestDueAt                      DateTime?
+  weeklyRestCompensationDueSeconds     Int                   @default(0)
+  createdByUserId                      String?
+  notes                                String?
+  knownFields                          Json?
+  createdAt                            DateTime              @default(now())
+  updatedAt                            DateTime              @updatedAt
+
+  driver        Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  createdByUser User?  @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([driverId, referenceAt])
+  @@index([driverId, validUntil])
+  @@index([source])
+}
+
+/// Immutable activity journal. A correction appends a new event and references
+/// the corrected event; it never overwrites the driver's original declaration.
+model DriverActivityEvent {
+  id            String               @id @default(cuid())
+  driverId      String
+  type          DriverActivityType
+  effectiveAt   DateTime
+  recordedAt    DateTime             @default(now())
+  source        DriverActivitySource
+  note          String?
+  authorUserId  String
+  missionId     String?
+  latitude      Float?
+  longitude     Float?
+  retrospective Boolean              @default(false)
+  isVoided      Boolean              @default(false)
+
+  correctedEventId    String?
+  previousType        DriverActivityType?
+  previousEffectiveAt DateTime?
+  previousNote        String?
+  correctionReason    String?
+
+  createdAt DateTime @default(now())
+
+  driver         Driver                @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  authorUser     User                  @relation("DriverActivityAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  mission        Mission?              @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  correctedEvent DriverActivityEvent?  @relation("DriverActivityCorrection", fields: [correctedEventId], references: [id], onDelete: SetNull)
+  corrections    DriverActivityEvent[] @relation("DriverActivityCorrection")
+
+  @@index([driverId, effectiveAt])
+  @@index([driverId, recordedAt])
+  @@index([authorUserId])
+  @@index([missionId])
+  @@index([correctedEventId])
+  @@index([source])
+}
+
+model TruckEvent {
+  id         String       @id @default(cuid())
+  truckId    String
+  actorId    String?
+  fromStatus TruckStatus?
+  toStatus   TruckStatus
+  message    String?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+
+  truck Truck @relation(fields: [truckId], references: [id], onDelete: Cascade)
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([truckId, createdAt])
+}
+
+/// Deprecated: live dispatcher map positions now come from DriverPosition.
+model TruckPosition {
+  id String @id @default(cuid())
+
+  truckId String
+  truck   Truck  @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  latitude  Float
+  longitude Float
+  speedKmh  Float?
+  heading   Float?
+
+  provider   String?
+  recordedAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([truckId, recordedAt])
+}
+
+model DriverPosition {
+  id String @id @default(cuid())
+
+  driverId String
+  driver   Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  truckId String?
+  truck   Truck?  @relation(fields: [truckId], references: [id], onDelete: SetNull)
+
+  latitude  Float
+  longitude Float
+  accuracy  Float?
+  speedKmh  Float?
+  heading   Float?
+
+  provider   String   @default("DRIVER_PHONE")
+  recordedAt DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([driverId])
+  @@index([truckId])
+  @@index([recordedAt])
+  @@index([driverId, recordedAt])
+  @@index([truckId, recordedAt])
+}
+
+model IgnoredMailImport {
+  id              String   @id @default(cuid())
+  source          String
+  provider        String
+  sourceEmailId   String
+  messageId       String?
+  previewKey      String   @unique
+  clientReference String?
+  subject         String?
+  fromAddress     String?
+  ignoredAt       DateTime @default(now())
+  ignoredBy       String?
+}
+
+model MaintenanceRequest {
+  id                     String                      @id @default(cuid())
+  truckId                String?
+  trailerId              String?
+  vehicleType            MaintenanceVehicleType
+  plateNumber            String
+  interventionType       MaintenanceInterventionType
+  urgency                MaintenanceUrgency          @default(NORMAL)
+  status                 MaintenanceRequestStatus    @default(DRAFT)
+  mileage                Int?
+  immobilizationRequired Boolean                     @default(false)
+  preferredDate          DateTime?
+  issueDescription       String
+  internalNotes          String?
+  externalProvider       String?
+  externalRequestId      String?
+  providerRequestId      String?
+  slInvoiceReference     String?
+  quoteAmount            Float?
+  invoiceAmount          Float?
+  quotePdfUrl            String?
+  invoicePdfUrl          String?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+
+  truck   Truck?   @relation(fields: [truckId], references: [id], onDelete: Restrict)
+  trailer Trailer? @relation(fields: [trailerId], references: [id], onDelete: Restrict)
+
+  statusHistory     MaintenanceStatusHistory[]
+  interventionLines MaintenanceInterventionLine[]
+  inspectionResult  ParkInspectionResult?
+
+  @@index([status])
+  @@index([truckId])
+  @@index([trailerId])
+  @@index([plateNumber])
+  @@index([externalProvider])
+  @@index([externalRequestId])
+  @@index([providerRequestId])
+  @@index([slInvoiceReference])
+}
+
+model MaintenanceStatusHistory {
+  id                   String                    @id @default(cuid())
+  maintenanceRequestId String
+  oldStatus            MaintenanceRequestStatus?
+  newStatus            MaintenanceRequestStatus
+  comment              String?
+  createdAt            DateTime                  @default(now())
+
+  maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+
+  @@index([maintenanceRequestId, createdAt])
+}
+
+model MaintenanceInterventionLine {
+  id                   String   @id @default(cuid())
+  maintenanceRequestId String
+  providerLineId       String?
+  code                 String?
+  label                String
+  description          String?
+  qty                  Float
+  unitPrice            Float
+  total                Float
+  isCustom             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  maintenanceRequest MaintenanceRequest @relation(fields: [maintenanceRequestId], references: [id], onDelete: Cascade)
+
+  @@index([maintenanceRequestId])
+  @@index([providerLineId])
+}
+
+model WeeklyProfitabilityAdjustment {
+  id             String   @id @default(cuid())
+  weekStartDate  DateTime @unique
+  tollCostAmount Float    @default(0)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([weekStartDate])
+}
+
+model MissionSourceEmail {
+  id              String    @id @default(cuid())
+  missionId       String?   @unique
+  source          String
+  provider        String?
+  sourceEmailId   String
+  messageId       String?
+  previewKey      String?
+  subject         String?
+  fromName        String?
+  fromAddress     String?
+  toAddresses     Json?
+  ccAddresses     Json?
+  receivedAt      DateTime?
+  bodyPreview     String?
+  cleanedBodyText String?
+  rawBodyText     String?
+  rawBodyHtml     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  mission Mission? @relation(fields: [missionId], references: [id], onDelete: SetNull)
+
+  @@index([missionId])
+  @@index([sourceEmailId])
+  @@index([messageId])
+}
+
+/// A stable, locatable position on the Sedan site plan.
+/// Occupation is stored inline: a spot holds at most one truck and at most one
+/// trailer. The @unique on truckId/trailerId guarantees a vehicle can never be
+/// present on two spots at once (enforced at the database level).
+model ParkSpot {
+  id    String       @id @default(cuid())
+  code  String       @unique
+  zone  String
+  label String
+  type  ParkSpotType @default(PARKING)
+
+  posX      Float
+  posY      Float
+  width     Float
+  height    Float
+  rotation  Float   @default(0)
+  sortOrder Int     @default(0)
+  capacity  Int     @default(1)
+  isActive  Boolean @default(true)
+
+  truckId    String?   @unique
+  trailerId  String?   @unique
+  occupiedAt DateTime?
+  placedById String?
+  note       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  truck    Truck?   @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  trailer  Trailer? @relation(fields: [trailerId], references: [id], onDelete: SetNull)
+  placedBy User?    @relation("ParkSpotPlacedBy", fields: [placedById], references: [id], onDelete: SetNull)
+
+  @@index([zone])
+  @@index([type])
+  @@index([isActive])
+  @@index([sortOrder])
+}
+
+/// Immutable audit log of every vehicle movement on the park. Never edited or
+/// deleted from the UI. Location codes are snapshotted so history stays
+/// readable even if a spot is later renamed.
+model ParkMovement {
+  id           String             @id @default(cuid())
+  vehicleType  ParkVehicleType
+  truckId      String?
+  trailerId    String?
+  plateNumber  String
+  action       ParkMovementAction
+  fromSpotId   String?
+  fromSpotCode String?
+  toSpotId     String?
+  toSpotCode   String?
+  actorId      String?
+  actorName    String?
+  note         String?
+  createdAt    DateTime           @default(now())
+
+  truck   Truck?   @relation(fields: [truckId], references: [id], onDelete: SetNull)
+  trailer Trailer? @relation(fields: [trailerId], references: [id], onDelete: SetNull)
+  actor   User?    @relation("ParkMovementActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([truckId, createdAt])
+  @@index([trailerId, createdAt])
+  @@index([createdAt])
+  @@index([actorId])
+}
+
+/// Traceable vehicle checklist. Finalized inspections are immutable at the API
+/// layer; a correction is recorded as a new inspection.
+model ParkInspection {
+  id             String                       @id @default(cuid())
+  vehicleType    ParkVehicleType
+  truckId        String?
+  trailerId      String?
+  inspectedAt    DateTime
+  inspectorId    String?
+  inspectorName  String
+  status         ParkInspectionStatus         @default(DRAFT)
+  overallResult  ParkInspectionOverallResult?
+  mileage        Int?
+  generalComment String?
+  finalizedAt    DateTime?
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+
+  truck     Truck?                 @relation(fields: [truckId], references: [id], onDelete: Restrict)
+  trailer   Trailer?               @relation(fields: [trailerId], references: [id], onDelete: Restrict)
+  inspector User?                  @relation("ParkInspectionInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
+  results   ParkInspectionResult[]
+
+  @@index([truckId, inspectedAt])
+  @@index([trailerId, inspectedAt])
+  @@index([status])
+  @@index([overallResult])
+  @@index([inspectorId])
+}
+
+/// One normalized answer or numeric measurement in an inspection. Tire
+/// pressures remain queryable values rather than an opaque JSON/text payload.
+model ParkInspectionResult {
+  id                   String                   @id @default(cuid())
+  inspectionId         String
+  category             String
+  itemKey              String
+  label                String
+  status               ParkInspectionItemStatus
+  numericValue         Float?
+  unit                 String?
+  comment              String?
+  sortOrder            Int                      @default(0)
+  maintenanceRequestId String?                  @unique
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  inspection         ParkInspection      @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  maintenanceRequest MaintenanceRequest? @relation(fields: [maintenanceRequestId], references: [id], onDelete: SetNull)
+
+  @@unique([inspectionId, itemKey])
+  @@index([inspectionId, category, sortOrder])
+  @@index([status])
+}

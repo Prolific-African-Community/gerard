@@ -1,0 +1,1249 @@
+/* Gerard — workflow section. Same tokens as GerardHome.module.css. */
+
+.track {
+  --paper: #f3f3ee;
+  --ink: #0b0b0a;
+  --ink-2: #3b3b37;
+  --mute: #8d8d85;
+  --line: rgba(11, 11, 10, 0.1);
+  --lime: #c6ff3d;
+  --lime-deep: #9bd600;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --gutter: clamp(16px, 4vw, 56px);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  position: relative;
+  height: 560vh;
+  margin-top: clamp(72px, 12vh, 140px);
+}
+
+.pin {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(80px, 11vh, 110px) var(--gutter) clamp(24px, 5vh, 56px);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.head {
+  margin-bottom: clamp(20px, 4vh, 44px);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.limeDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+}
+
+.title {
+  margin: 0;
+  white-space: nowrap;
+  font-weight: 800;
+  font-size: clamp(32px, 3.75vw, 60px);
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.title em {
+  font-style: normal;
+  color: var(--mute);
+}
+
+.titleDot {
+  display: inline-block;
+  width: 0.17em;
+  height: 0.17em;
+  margin-left: 0.05em;
+  border-radius: 50%;
+  background: var(--lime);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+/* ------------------ Layout ------------------ */
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(250px, 360px) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
+  column-gap: clamp(28px, 5vw, 80px);
+}
+
+/* ------------------ Rail ------------------ */
+
+.rail {
+  --fill: 0;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+
+.rail::before,
+.rail::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.rail::after {
+  background: var(--lime-deep);
+  transform-origin: top;
+  transform: scaleY(var(--fill));
+}
+
+.railItem {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  width: 100%;
+  padding: 7px 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  color: var(--mute);
+  cursor: pointer;
+  transition: color 300ms ease;
+}
+
+.railItem::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 2px #cfcfc7;
+  transition:
+    background-color 300ms ease,
+    box-shadow 300ms ease,
+    transform 300ms var(--ease);
+  z-index: 1;
+}
+
+.railDone {
+  color: var(--ink-2);
+}
+
+.railDone::before {
+  background: var(--lime-deep);
+  box-shadow: none;
+}
+
+.railOn {
+  color: var(--ink);
+}
+
+.railOn::before {
+  background: var(--lime);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--lime) 35%, transparent), inset 0 0 0 2px var(--ink);
+  transform: scale(1.15);
+}
+
+.railNum {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.railLabel {
+  font-size: clamp(18px, 1.6vw, 24px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+/* ------------------ Copy ------------------ */
+
+.copy {
+  grid-column: 1;
+  grid-row: 2;
+  align-self: end;
+  padding-top: 24px;
+}
+
+.copyInner {
+  animation: copyIn 600ms var(--ease) both;
+}
+
+@keyframes copyIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.copyTime {
+  margin: 0 0 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.copyTitle {
+  margin: 0;
+  font-size: clamp(24px, 2.2vw, 34px);
+  font-weight: 800;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.copyText {
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+/* ------------------ Stage ------------------ */
+
+.stage {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: clamp(18px, 2vw, 28px);
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 40px 80px -50px rgba(11, 11, 10, 0.35);
+  overflow: hidden;
+}
+
+.stageBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.stageRoute {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.status {
+  margin-left: auto;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 11px;
+  animation: pop 420ms var(--ease) both;
+}
+
+.statusDone {
+  background: var(--lime);
+  color: var(--ink);
+}
+
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+.stageTrack {
+  height: 2px;
+  background: var(--line);
+}
+
+.stageTrack span {
+  display: block;
+  height: 100%;
+  background: var(--lime-deep);
+  transition: width 700ms var(--ease);
+}
+
+.scenes {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(11, 11, 10, 0.08) 1px, transparent 0) 0 0 / 22px 22px,
+    #fafaf7;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: clamp(16px, 3vw, 40px);
+  opacity: 0;
+  transform: translateY(28px) scale(0.98);
+  transition:
+    opacity 500ms ease,
+    transform 700ms var(--ease);
+  pointer-events: none;
+}
+
+.scenePast {
+  transform: translateY(-28px) scale(0.98);
+}
+
+.sceneOn {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* Everything inside a scene waits for it to become active. */
+.scene:not(.sceneOn) * {
+  animation-play-state: paused !important;
+}
+
+.pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef9d6;
+  color: #3f6a00;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* 1 — Demande */
+
+.mail {
+  width: min(100%, 600px);
+  padding: clamp(16px, 2.2vw, 30px);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 24px 50px -30px rgba(11, 11, 10, 0.3);
+}
+
+.mailHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.mailHead div {
+  display: flex;
+  flex-direction: column;
+}
+
+.mailHead span:last-child {
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mailSubject {
+  margin: 16px 0 6px;
+  font-weight: 700;
+}
+
+.mailBody {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.mailBody mark {
+  background: linear-gradient(var(--lime), var(--lime)) 0 100% / 0% 45% no-repeat;
+  padding: 0 1px;
+  color: inherit;
+  animation: highlight 700ms 500ms var(--ease) forwards;
+}
+
+@keyframes highlight {
+  to {
+    background-size: 100% 45%;
+  }
+}
+
+.extract {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+
+.chip {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 11px;
+  animation: chipIn 500ms calc(900ms + var(--i) * 110ms) var(--ease) both;
+}
+
+@keyframes chipIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* 2 — Mission */
+
+.missionWrap {
+  width: min(100%, 460px);
+}
+
+.missionCard {
+  padding: clamp(18px, 2.2vw, 28px);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow:
+    0 0 0 2px var(--lime),
+    0 30px 60px -30px rgba(11, 11, 10, 0.35);
+  animation: condense 800ms var(--ease) both;
+}
+
+@keyframes condense {
+  from {
+    opacity: 0;
+    transform: scale(1.12);
+    filter: blur(4px);
+  }
+}
+
+.missionTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.missionRoute {
+  margin: 14px 0 4px;
+  font-size: clamp(30px, 3.2vw, 44px);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+
+.missionRoute span {
+  color: var(--lime-deep);
+}
+
+.missionClient {
+  margin: 0;
+  color: var(--mute);
+  font-size: 14px;
+}
+
+.missionMeta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.missionMeta dt {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+
+.missionMeta dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+/* 3 — Planning */
+
+.board {
+  width: 100%;
+  max-width: 720px;
+  font-size: 12px;
+}
+
+.boardHead,
+.boardRow {
+  display: grid;
+  grid-template-columns: 1.25fr 0.55fr 1.15fr repeat(2, 1fr);
+  gap: 6px;
+}
+
+.boardHead {
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+}
+
+.boardDayOn {
+  color: var(--ink);
+}
+
+.boardRow {
+  margin-bottom: 6px;
+}
+
+.boardDriver {
+  align-self: center;
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.boardHead > span:nth-child(-n + 3) {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+.asset {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Once the mission lands, the matching truck + trailer light up. */
+.assetMatch {
+  animation: match 500ms 1350ms var(--ease) both;
+}
+
+@keyframes match {
+  to {
+    background: #eef9d6;
+    box-shadow: inset 0 0 0 1.5px var(--lime-deep);
+    color: var(--ink);
+  }
+}
+
+.boardMatch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  animation: chipIn 500ms 1600ms var(--ease) both;
+}
+
+.boardMatch .check {
+  position: static;
+  flex: none;
+  margin: 0;
+  animation: none;
+}
+
+.missionNeed {
+  grid-column: 1 / -1;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f6fbe9;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lime-deep) 45%, transparent);
+}
+
+.missionNeed dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cell {
+  position: relative;
+  min-height: 52px;
+  border-radius: 10px;
+  background: #f1f1ec;
+}
+
+.booked {
+  position: absolute;
+  inset: 4px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line);
+  color: var(--ink-2);
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.cellTarget {
+  box-shadow: inset 0 0 0 1.5px var(--lime-deep);
+  animation: targetPulse 1.4s ease-in-out 2;
+}
+
+@keyframes targetPulse {
+  50% {
+    background: #eef9d6;
+  }
+}
+
+.dropped {
+  position: absolute;
+  inset: 4px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow: hidden;
+  box-shadow: 0 16px 30px -12px rgba(11, 11, 10, 0.5);
+  animation: drop 1100ms 350ms cubic-bezier(0.3, 1.3, 0.4, 1) both;
+}
+
+.dropped b {
+  display: block;
+  font-family: var(--mono);
+  font-weight: 500;
+  font-size: 10px;
+  color: var(--lime);
+}
+
+@keyframes drop {
+  0% {
+    opacity: 0;
+    transform: translate(-140%, -120%) rotate(-6deg) scale(1.15);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* 4 — Chauffeur */
+
+.assign {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(20px, 4vw, 56px);
+  width: 100%;
+}
+
+.resources {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.resource {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 44px 12px 16px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line);
+  animation: chipIn 500ms calc(200ms + var(--i) * 140ms) var(--ease) both;
+}
+
+.resource span {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--mute);
+}
+
+.resource strong {
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.check {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 50%;
+  background: var(--lime);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+  animation: pop 400ms calc(700ms + var(--i) * 140ms) var(--ease) both;
+}
+
+.phone {
+  position: relative;
+  flex: none;
+  width: 210px;
+  padding: 34px 16px 16px;
+  border-radius: 34px;
+  background: #fff;
+  box-shadow:
+    0 0 0 7px var(--ink),
+    0 40px 60px -30px rgba(11, 11, 10, 0.5);
+  animation: phoneIn 900ms 500ms var(--ease) both;
+}
+
+@keyframes phoneIn {
+  from {
+    opacity: 0;
+    transform: translateY(40px) rotate(4deg);
+  }
+}
+
+.phoneNotch {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 64px;
+  height: 16px;
+  margin-left: -32px;
+  border-radius: 10px;
+  background: var(--ink);
+}
+
+.phoneBrand {
+  margin: 0 0 12px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+}
+
+.phoneBrand .limeDot {
+  width: 5px;
+  height: 5px;
+  margin-left: 1px;
+}
+
+.phoneKicker {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--mute);
+}
+
+.phoneRef {
+  margin: 2px 0 0;
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.03em;
+}
+
+.phoneClient {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.phoneStops {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: #f4f4ef;
+}
+
+.phoneStops p {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-size: 10px;
+  color: var(--mute);
+}
+
+.phoneStops p + p {
+  margin-top: 8px;
+}
+
+.phoneStops b {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.phoneBtn {
+  display: block;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* 5 — Suivi */
+
+.map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-height: 460px;
+  color: var(--ink);
+}
+
+.mapSvg {
+  width: 100%;
+  height: 100%;
+}
+
+.routeBase,
+.routeDone {
+  fill: none;
+  stroke-linecap: round;
+}
+
+.routeBase {
+  stroke: #d8d8d0;
+  stroke-width: 4;
+  stroke-dasharray: 0.012 0.012;
+}
+
+.routeDone {
+  stroke: var(--lime-deep);
+  stroke-width: 5;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: routeDraw 2600ms 300ms var(--ease) forwards;
+}
+
+@keyframes routeDraw {
+  to {
+    stroke-dashoffset: 0.38;
+  }
+}
+
+.nodeA {
+  fill: var(--ink);
+}
+
+.nodeB {
+  fill: #fff;
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+
+.truck {
+  offset-path: path("M470 70 C420 110 400 150 330 170 S220 230 170 260 S110 290 90 300");
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  animation: truckMove 2600ms 300ms var(--ease) forwards;
+}
+
+@keyframes truckMove {
+  to {
+    offset-distance: 62%;
+  }
+}
+
+.truckHalo {
+  fill: color-mix(in srgb, var(--lime) 45%, transparent);
+  animation: halo 1.6s ease-in-out infinite;
+}
+
+@keyframes halo {
+  50% {
+    r: 22;
+    opacity: 0.4;
+  }
+}
+
+.truckDot {
+  fill: var(--ink);
+  stroke: var(--lime);
+  stroke-width: 3;
+}
+
+.mapLabel {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--line);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.eta {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--ink);
+  color: var(--paper);
+  animation: chipIn 600ms 900ms var(--ease) both;
+}
+
+.eta div {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.eta span:last-child {
+  color: rgba(243, 243, 238, 0.6);
+}
+
+.eta strong {
+  font-size: 14px;
+}
+
+.live {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lime);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--lime) 30%, transparent);
+}
+
+/* 6 — Terminé */
+
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(100%, 520px);
+}
+
+.log ol {
+  position: relative;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.log li {
+  display: grid;
+  grid-template-columns: 52px 18px auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+  animation: chipIn 450ms calc(var(--i) * 120ms) var(--ease) both;
+}
+
+.logTime {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--mute);
+}
+
+.logDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lime-deep);
+}
+
+.logDetail {
+  justify-self: end;
+  color: var(--mute);
+  font-size: 13px;
+  text-align: right;
+}
+
+.invoice {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: var(--lime);
+  animation: pop 500ms 750ms var(--ease) both;
+}
+
+.invoice span {
+  font-weight: 700;
+}
+
+.invoice strong {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+/* ------------------ Tablet / mobile ------------------ */
+
+@media (max-width: 900px) {
+  .track {
+    height: 620vh;
+  }
+
+  .pin {
+    padding-top: 72px;
+    padding-bottom: 16px;
+  }
+
+  .head {
+    margin-bottom: 14px;
+  }
+
+  .eyebrow {
+    display: none;
+  }
+
+  .title {
+    font-size: clamp(26px, 7.4vw, 40px);
+  }
+
+  .title {
+    white-space: normal;
+  }
+
+  .body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* Rail becomes a horizontal progress: six ticks, current label only. */
+  .rail {
+    display: flex;
+    gap: 4px;
+    padding: 0;
+  }
+
+  .rail::before,
+  .rail::after {
+    display: none;
+  }
+
+  .rail li {
+    flex: 1;
+  }
+
+  .railItem {
+    flex-direction: column;
+    gap: 6px;
+    padding: 0;
+  }
+
+  .railItem::before {
+    position: static;
+    width: 100%;
+    height: 3px;
+    margin: 0;
+    border-radius: 3px;
+    transform: none !important;
+    box-shadow: none !important;
+    background: var(--line);
+  }
+
+  .railDone::before,
+  .railOn::before {
+    background: var(--lime-deep);
+  }
+
+  .railNum {
+    display: none;
+  }
+
+  .railLabel {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  .railItem:not(.railOn) .railLabel {
+    visibility: hidden;
+  }
+
+  .copy {
+    padding-top: 0;
+    min-height: 118px;
+  }
+
+  .copyTime {
+    margin-bottom: 6px;
+  }
+
+  .copyTitle {
+    font-size: 22px;
+  }
+
+  .copyText {
+    margin-top: 6px;
+    font-size: 14px;
+  }
+
+  .stage {
+    flex: 1;
+    min-height: 280px;
+  }
+
+  .stageRoute {
+    display: none;
+  }
+
+  .scene {
+    padding: 14px;
+  }
+
+  .mailBody {
+    font-size: 13px;
+  }
+
+  .boardHead,
+  .boardRow {
+    grid-template-columns: 1fr 0.55fr 1fr 1.05fr;
+    gap: 4px;
+  }
+
+  /* Keep chauffeur / camion / remorque; show only the target day. */
+  .boardHead > span:nth-child(4),
+  .boardRow > span:nth-child(4) {
+    display: none;
+  }
+
+  .asset {
+    font-size: 10px;
+    padding: 0 5px;
+  }
+
+  .boardMatch {
+    font-size: 11px;
+  }
+
+  .trailerType {
+    display: none;
+  }
+
+  .boardHead,
+  .boardRow {
+    grid-template-columns: 1.2fr 0.5fr 0.5fr 1.1fr;
+  }
+
+  .missionNeed dd {
+    font-size: 13px;
+  }
+
+  .boardDriver {
+    font-size: 11px;
+  }
+
+  .booked,
+  .dropped {
+    font-size: 10px;
+  }
+
+  .assign {
+    gap: 14px;
+  }
+
+  .resources {
+    display: none;
+  }
+
+  .phone {
+    width: 190px;
+    padding-top: 30px;
+  }
+
+  .log li {
+    grid-template-columns: 44px 12px 1fr;
+    font-size: 13px;
+    padding: 7px 0;
+  }
+
+  .logDetail {
+    display: none;
+  }
+}
+
+/* ------------------ Reduced motion ------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .track *,
+  .track *::before,
+  .track *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition: none !important;
+  }
+
+  .truckHalo {
+    animation: none !important;
+  }
+}
+
+.boardDay {
+  min-width: 0;
+}
+
+.boardRowTarget .boardDriver {
+  color: var(--ink);
+}
+
+.trailerType {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

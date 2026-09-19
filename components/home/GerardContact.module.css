@@ -1,0 +1,406 @@
+/* Gerard — contact section. Same tokens as GerardHome.module.css. */
+
+.contact {
+  --paper: #f3f3ee;
+  --ink: #0b0b0a;
+  --ink-2: #3b3b37;
+  --mute: #8d8d85;
+  --line: rgba(11, 11, 10, 0.12);
+  --lime: #c6ff3d;
+  --lime-deep: #9bd600;
+  --danger: #c2410c;
+  --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --gutter: clamp(16px, 4vw, 56px);
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 24px;
+}
+
+.inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: clamp(80px, 13vh, 150px) var(--gutter);
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.15fr);
+  gap: clamp(40px, 6vw, 110px);
+  align-items: start;
+}
+
+/* ------------------ Head ------------------ */
+
+.head {
+  position: sticky;
+  top: 110px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.eyebrowDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lime);
+}
+
+.title {
+  margin: 0;
+  max-width: 11ch;
+  font-weight: 800;
+  font-size: clamp(40px, 5vw, 80px);
+  line-height: 0.93;
+  letter-spacing: -0.055em;
+}
+
+.titleDot {
+  display: inline-block;
+  width: 0.17em;
+  height: 0.17em;
+  margin-left: 0.05em;
+  border-radius: 50%;
+  background: var(--lime);
+}
+
+.lede {
+  margin: 24px 0 0;
+  max-width: 40ch;
+  font-size: clamp(17px, 1.3vw, 19px);
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.whatsapp {
+  margin-top: clamp(32px, 6vh, 56px);
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.whatsappLabel {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.whatsappBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 22px 0 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper) !important;
+  font-size: 16px;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform 220ms var(--ease),
+    box-shadow 220ms ease;
+}
+
+.whatsappBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 34px -16px rgba(11, 11, 10, 0.6);
+}
+
+.whatsappBtn:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.waIcon {
+  width: 22px;
+  height: 22px;
+  color: var(--lime);
+}
+
+.whatsappArrow {
+  margin-left: 4px;
+  color: var(--lime);
+  transition: transform 220ms var(--ease);
+}
+
+.whatsappBtn:hover .whatsappArrow {
+  transform: translate(2px, -2px);
+}
+
+.whatsappOff {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.whatsappOff:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* ------------------ Form ------------------ */
+
+.form {
+  padding: clamp(24px, 3.4vw, 48px);
+  border-radius: clamp(20px, 2vw, 30px);
+  background: #fff;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 40px 80px -60px rgba(11, 11, 10, 0.4);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px clamp(20px, 2.4vw, 36px);
+}
+
+.field {
+  position: relative;
+  padding-top: 26px;
+}
+
+.fieldWide {
+  grid-column: 1 / -1;
+}
+
+.index {
+  position: absolute;
+  top: 0;
+  left: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--mute);
+  transition: color 200ms ease;
+}
+
+.input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: clamp(17px, 1.35vw, 20px);
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+/* Floating label: sits in the field, lifts on focus / when filled. */
+.label {
+  position: absolute;
+  left: 0;
+  top: 40px;
+  font-size: clamp(17px, 1.35vw, 20px);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--mute);
+  pointer-events: none;
+  transform-origin: left top;
+  transition:
+    transform 260ms var(--ease),
+    color 200ms ease;
+}
+
+.optional {
+  font-weight: 400;
+}
+
+.input:focus ~ .label,
+.input:not(:placeholder-shown) ~ .label {
+  transform: translate(28px, -40px) scale(0.62);
+  color: var(--ink);
+}
+
+/* Lime rule grows from the left on focus. */
+.rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1.5px;
+  background: var(--lime-deep);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 380ms var(--ease);
+}
+
+.input:focus ~ .rule {
+  transform: scaleX(1);
+}
+
+.field:focus-within .index {
+  color: var(--ink);
+}
+
+.error {
+  display: block;
+  min-height: 20px;
+  padding-top: 6px;
+  font-size: 13px;
+  color: var(--danger);
+}
+
+.fieldError .input {
+  border-bottom-color: var(--danger);
+}
+
+.fieldError .rule {
+  background: var(--danger);
+}
+
+.fieldError .label,
+.fieldError .index {
+  color: var(--danger) !important;
+}
+
+/* ------------------ Submit ------------------ */
+
+.submitRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px 32px;
+  margin-top: 20px;
+}
+
+.note {
+  margin: 0;
+  max-width: 36ch;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--mute);
+}
+
+.submit {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  height: 60px;
+  padding: 0 8px 0 30px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--lime);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    transform 220ms var(--ease),
+    box-shadow 220ms ease;
+}
+
+.submitArrow {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--lime);
+  font-size: 17px;
+  transition: transform 260ms var(--ease);
+}
+
+.submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 34px -12px color-mix(in srgb, var(--lime) 80%, transparent);
+}
+
+.submit:hover .submitArrow {
+  transform: translateX(3px);
+}
+
+.submit:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+
+.sendError {
+  margin: 16px 0 0;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: #fff4ed;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+/* ------------------ Responsive ------------------ */
+
+@media (max-width: 900px) {
+  .inner {
+    grid-template-columns: 1fr;
+  }
+
+  .head {
+    position: static;
+  }
+
+  .whatsapp {
+    margin-top: 28px;
+  }
+
+  .whatsappBtn {
+    display: flex;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .form {
+    padding: 22px 18px 24px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .submitRow {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
+  .submit {
+    justify-content: space-between;
+  }
+
+  .note {
+    max-width: none;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact *,
+  .contact *::before,
+  .contact *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

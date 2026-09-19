@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Mission" ADD COLUMN     "deliveryLat" DOUBLE PRECISION,
+ADD COLUMN     "deliveryLng" DOUBLE PRECISION,
+ADD COLUMN     "pickupLat" DOUBLE PRECISION,
+ADD COLUMN     "pickupLng" DOUBLE PRECISION;

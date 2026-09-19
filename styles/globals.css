@@ -1,0 +1,86 @@
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  background: #f7f8f5;
+}
+
+button {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.field {
+  width: 100%;
+  height: 2.75rem;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: #f4f5f1;
+  padding: 0 0.75rem;
+  color: #11130f;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  outline: none;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    opacity 160ms ease;
+}
+
+.field:focus {
+  border-color: #bef264;
+  background: #ffffff;
+}
+
+.field:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.dispatch-pool-scrollbar {
+  overflow-x: scroll;
+  scrollbar-color: rgba(17, 19, 15, 0.35) rgba(17, 19, 15, 0.08);
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+}
+
+.dispatch-pool-scrollbar::-webkit-scrollbar {
+  height: 12px;
+}
+
+.dispatch-pool-scrollbar::-webkit-scrollbar-track {
+  background: rgba(17, 19, 15, 0.08);
+  border-radius: 999px;
+}
+
+.dispatch-pool-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(17, 19, 15, 0.35);
+  border: 3px solid rgba(244, 245, 241, 0.95);
+  border-radius: 999px;
+}
+
+.dispatch-pool-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(17, 19, 15, 0.55);
+}
+
+/*
+ * Mise en évidence temporaire d'une carte retrouvée via la recherche
+ * locator. Purement visuelle : aucune donnée n'est modifiée, et la classe
+ * est retirée automatiquement au bout de quelques secondes.
+ */
+.dispatch-locator-highlight {
+  position: relative;
+  z-index: 5;
+  outline: 2px solid #b9ff4a;
+  outline-offset: 2px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 6px rgba(185, 255, 74, 0.28);
+  transition: box-shadow 200ms ease-out, outline-color 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dispatch-locator-highlight {
+    transition: none;
+  }
+}
