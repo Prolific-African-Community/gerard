@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { ParkMovementAction } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
@@ -10,7 +11,7 @@ function firstValue(value: string | string[] | undefined): string | undefined {
   return value
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -42,3 +43,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Chargement de l’historique impossible.' })
   }
 }
+
+export default withTenantApiRoute(handler)

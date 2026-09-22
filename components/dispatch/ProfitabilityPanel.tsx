@@ -1,5 +1,12 @@
 'use client'
 
+import {
+  segmentedItemActiveClass,
+  segmentedItemClass,
+  segmentedItemIdleClass,
+  segmentedShellClass,
+} from '../ui/ControlKit'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/router'
 
@@ -205,7 +212,7 @@ export function ProfitabilityPanel({
       const downloadUrl = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = downloadUrl
-      link.download = `novotralux-rentabilite-${formatDateParam(
+      link.download = `gerard-rentabilite-${formatDateParam(
         weekStart
       )}.${format}`
       document.body.appendChild(link)
@@ -535,7 +542,7 @@ function ViewSelector({
     <div
       role="tablist"
       aria-label="Analyse rentabilité"
-      className="dispatch-pool-scrollbar flex items-center gap-1 overflow-x-auto rounded-[20px] bg-black/[0.035] p-1.5"
+      className={`dispatch-pool-scrollbar flex overflow-x-auto ${segmentedShellClass}`}
     >
       {profitabilityViews.map((view) => {
         const isActive = view === activeView
@@ -550,10 +557,8 @@ function ViewSelector({
             onClick={() => onChange(view)}
             style={{ border: 0 }}
             className={[
-              'h-9 shrink-0 rounded-[15px] px-3.5 text-xs font-semibold tracking-[-0.01em] transition-all duration-200',
-              isActive
-                ? 'bg-[#11130f] text-white shadow-[0_8px_22px_rgba(17,18,15,0.14)]'
-                : 'text-[#5f665b] hover:bg-white/75 hover:text-[#11130f]',
+              segmentedItemClass,
+              isActive ? segmentedItemActiveClass : segmentedItemIdleClass,
             ].join(' ')}
           >
             <span className="hidden sm:inline">

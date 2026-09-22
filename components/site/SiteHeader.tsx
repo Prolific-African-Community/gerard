@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { LogoutButton } from './LogoutButton'
+import { OrganizationLogo } from '../branding/OrganizationLogo'
 
 type ClassValue = string | false | null | undefined
 
@@ -64,9 +65,7 @@ export function SiteHeader({
         )}
       >
         <a href="/" className="flex shrink-0 items-center no-underline">
-          <img
-            src="/logo_gerard_texte.png"
-            alt="Gerard"
+          <OrganizationLogo
             className={cn(
               'w-auto object-contain transition-all duration-300',
               scrolled ? 'h-8 md:h-9' : 'h-9 md:h-10'
@@ -90,7 +89,7 @@ export function SiteHeader({
                       'inline-flex items-center rounded-full px-3 py-2 text-xs font-black uppercase tracking-wide no-underline transition',
                       activeHref === href
                         ? 'bg-[#11130f] text-white'
-                        : 'bg-black/[.05] text-[#171914] hover:bg-[#C8FF00] hover:text-black'
+                        : 'bg-black/[.05] text-[#171914] hover:bg-[var(--brand-accent)] hover:text-black'
                     )}
                   >
                     {label}
@@ -108,7 +107,7 @@ export function SiteHeader({
         ) : (
           <a
             href={ctaHref}
-            className="group shrink-0 items-center gap-4 rounded-full bg-[#070807] px-5 py-3 text-[9px] text-sm font-black text-white no-underline transition hover:bg-[#C8FF00] hover:text-black lg:inline-flex xl:px-6"
+            className="group shrink-0 items-center gap-4 rounded-full bg-[#070807] px-5 py-3 text-[9px] text-sm font-black text-white no-underline transition hover:bg-[var(--brand-accent)] hover:text-black lg:inline-flex xl:px-6"
           >
             {ctaLabel}
           </a>
@@ -164,7 +163,7 @@ export function SiteHeader({
               <a
                 href={ctaHref}
                 onClick={() => setMenuOpen(false)}
-                className="mt-4 inline-flex justify-center bg-[#070807] px-6 py-4 text-white no-underline transition hover:bg-[#C8FF00] hover:text-black"
+                className="mt-4 inline-flex justify-center bg-[#070807] px-6 py-4 text-white no-underline transition hover:bg-[var(--brand-accent)] hover:text-black"
               >
                 {ctaLabel} ↗
               </a>

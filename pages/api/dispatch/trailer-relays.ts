@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import {
   MissionEventType,
   MissionStatus,
@@ -49,7 +50,7 @@ function scheduledDateFor(weekStartDate: Date, day: PlanningDay) {
   return result;
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -319,3 +320,5 @@ class RelayError extends Error {
     super(message);
   }
 }
+
+export default withTenantApiRoute(handler)

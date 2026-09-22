@@ -4,6 +4,14 @@ import type {
   OptimizationStrategy,
 } from './types'
 
+export const GERARD_DISPATCH_OPTIMIZATION_ID = 'GERARD_DISPATCH_OPTIMIZATION'
+export const LEGACY_DISPATCH_OPTIMIZATION_IDS = ['NOVOTRALUX_DISPATCH_OPTIMIZATION'] as const
+export function canonicalizeDispatchOptimizationId(value: string) {
+  return value === GERARD_DISPATCH_OPTIMIZATION_ID || (LEGACY_DISPATCH_OPTIMIZATION_IDS as readonly string[]).includes(value)
+    ? GERARD_DISPATCH_OPTIMIZATION_ID
+    : null
+}
+
 export const defaultOptimizationCostParameters: OptimizationCostParameters =
   Object.freeze({
     currency: 'EUR',
@@ -15,7 +23,7 @@ export const defaultOptimizationCostParameters: OptimizationCostParameters =
 
 export const dispatchOptimizationConfigurationV1: OptimizationConfiguration =
   Object.freeze({
-    id: 'NOVOTRALUX_DISPATCH_OPTIMIZATION',
+    id: GERARD_DISPATCH_OPTIMIZATION_ID,
     version: '2026-09-19.v2',
     limits: {
       maximumCandidates: 5000,

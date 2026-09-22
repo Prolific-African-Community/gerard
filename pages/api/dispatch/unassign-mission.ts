@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MissionEventType, MissionStatus } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requirePermission } from "../../../lib/auth/authorization";
@@ -9,7 +10,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -111,3 +112,5 @@ export default async function handler(
     return res.status(500).json({ error: "Failed to unassign mission" });
   }
 }
+
+export default withTenantApiRoute(handler)

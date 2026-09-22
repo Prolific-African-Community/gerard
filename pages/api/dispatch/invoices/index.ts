@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   InvoiceDirection,
   InvoiceStatus,
@@ -9,8 +10,6 @@ import { requirePermission } from '../../../../lib/auth/authorization'
 import { permissions } from '../../../../lib/auth/permissions'
 import {
   calculateInvoiceTotals,
-  defaultIssuedInvoiceSeller,
-  defaultReceivedInvoiceBuyer,
   parseDecimal,
   normalizeInvoiceLines,
   normalizeNullableText,
@@ -19,6 +18,7 @@ import {
   slAutomotiveSupplier,
 } from '../../../../lib/dispatch/invoices'
 import { prisma } from '../../../../lib/prisma'
+import { BillingConfigurationError, getActiveBillingConfig, paymentTermsLabel, requireIssuedInvoiceBillingConfig } from '../../../../lib/tenant/billing-config'
 
 type ErrorResponse = {
   error: string
@@ -161,6 +161,7 @@ function getSlExternalInvoiceNumber(request: {
 }
 
 async function syncSlAutomotiveInvoices() {
+  const billingConfig = await getActiveBillingConfig()
   const requests = await prisma.maintenanceRequest.findMany({
     where: {
       OR: [
@@ -255,9 +256,9 @@ async function syncSlAutomotiveInvoices() {
         sellerBic: slAutomotiveSupplier.sellerBic,
         sellerBankName: slAutomotiveSupplier.sellerBankName,
         sellerBeneficiary: slAutomotiveSupplier.sellerBeneficiary,
-        buyerName: defaultReceivedInvoiceBuyer.buyerName,
-        buyerAddress: defaultReceivedInvoiceBuyer.buyerAddress,
-        buyerVatNumber: defaultReceivedInvoiceBuyer.buyerVatNumber,
+        buyerName: billingConfig?.legalName ?? 'Organisation destinataire',
+        buyerAddress: billingConfig?.legalAddress ?? null,
+        buyerVatNumber: billingConfig?.vatNumber ?? null,
         missionDescription: `${request.plateNumber} - ${request.issueDescription}`,
         subtotalAmount: totalAmount,
         vatAmount: new Prisma.Decimal(0),
@@ -280,9 +281,9 @@ async function syncSlAutomotiveInvoices() {
   return created
 }
 
-async function generateInvoiceNumber(tx: Prisma.TransactionClient, date: Date) {
+async function generateInvoiceNumber(tx: Prisma.TransactionClient, date: Date, configuredPrefix: string | null) {
   const year = date.getFullYear()
-  const prefix = `NTX-${year}-`
+  const prefix = configuredPrefix ? `${configuredPrefix}-${year}-` : `${year}-`
   const lastInvoice = await tx.invoice.findFirst({
     where: {
       invoiceNumber: {
@@ -407,6 +408,10 @@ async function handleGet(req: NextApiRequest, res: NextApiResponse) {
 async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   const body = req.body && typeof req.body === 'object' ? req.body : {}
   const direction = parseDirection(body.direction)
+  const billingConfig = await getActiveBillingConfig()
+  const issuedBilling = direction === InvoiceDirection.ISSUED
+    ? requireIssuedInvoiceBillingConfig(billingConfig)
+    : billingConfig
   const issueDate = parseDate(body.issueDate) ?? new Date()
   const dueDate = parseDate(body.dueDate)
   const paidDate = parseDate(body.paidDate)
@@ -487,7 +492,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
     const invoiceNumber =
       normalizeText(body.invoiceNumber) ??
       (direction === InvoiceDirection.ISSUED
-        ? await generateInvoiceNumber(tx, issueDate)
+        ? await generateInvoiceNumber(tx, issueDate, issuedBilling?.invoicePrefix ?? null)
         : null)
     const requestedStatus = parseStatus(
       body.status,
@@ -514,51 +519,51 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
           normalizeText(body.sellerName) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerName
-            : defaultIssuedInvoiceSeller.sellerName),
+            : issuedBilling!.legalName),
         sellerAddress:
           normalizeNullableText(body.sellerAddress) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerAddress
-            : defaultIssuedInvoiceSeller.sellerAddress),
+            : issuedBilling?.legalAddress ?? null),
         sellerVatNumber:
           normalizeNullableText(body.sellerVatNumber) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerVatNumber
-            : defaultIssuedInvoiceSeller.sellerVatNumber),
+            : issuedBilling?.vatNumber ?? null),
         sellerIban:
           normalizeNullableText(body.sellerIban) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerIban
-            : defaultIssuedInvoiceSeller.sellerIban),
+            : issuedBilling?.iban ?? null),
         sellerBic:
           normalizeNullableText(body.sellerBic) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerBic
-            : defaultIssuedInvoiceSeller.sellerBic),
+            : issuedBilling?.bic ?? null),
         sellerBankName:
           normalizeNullableText(body.sellerBankName) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerBankName
-            : defaultIssuedInvoiceSeller.sellerBankName),
+            : issuedBilling?.bankName ?? null),
         sellerBeneficiary:
           normalizeNullableText(body.sellerBeneficiary) ??
           (direction === InvoiceDirection.RECEIVED
             ? slAutomotiveSupplier.sellerBeneficiary
-            : defaultIssuedInvoiceSeller.sellerBeneficiary),
+            : issuedBilling?.beneficiary ?? null),
         buyerName:
           normalizeText(body.buyerName) ??
           (direction === InvoiceDirection.RECEIVED
-            ? defaultReceivedInvoiceBuyer.buyerName
+            ? billingConfig?.legalName ?? 'Organisation destinataire'
             : mission?.clientName ?? 'Client'),
         buyerAddress:
           normalizeNullableText(body.buyerAddress) ??
           (direction === InvoiceDirection.RECEIVED
-            ? defaultReceivedInvoiceBuyer.buyerAddress
+            ? billingConfig?.legalAddress ?? null
             : null),
         buyerVatNumber:
           normalizeNullableText(body.buyerVatNumber) ??
           (direction === InvoiceDirection.RECEIVED
-            ? defaultReceivedInvoiceBuyer.buyerVatNumber
+            ? billingConfig?.vatNumber ?? null
             : null),
         buyerEmail: normalizeNullableText(body.buyerEmail),
         missionReference:
@@ -596,7 +601,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
         paymentTerms:
           normalizeNullableText(body.paymentTerms) ??
           (direction === InvoiceDirection.ISSUED
-            ? mission?.paymentTerms ?? defaultIssuedInvoiceSeller.paymentTerms
+            ? mission?.paymentTerms ?? paymentTermsLabel(issuedBilling?.paymentTermsDays ?? null)
             : null),
         notes: normalizeNullableText(body.notes),
         sourcePdfUrl: normalizeSourcePdfUrl(body.sourcePdfUrl),
@@ -645,7 +650,7 @@ async function handlePost(req: NextApiRequest, res: NextApiResponse) {
   })
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse<unknown | ErrorResponse>
 ) {
@@ -666,6 +671,7 @@ export default async function handler(
     res.setHeader('Allow', 'GET, POST')
     return res.status(405).json({ error: 'Method not allowed' })
   } catch (error) {
+    if (error instanceof BillingConfigurationError) return res.status(error.statusCode).json({ error: error.message })
     if (error instanceof Error && error.message === 'SOURCE_PDF_DATA_URL') {
       return res.status(400).json({
         error: 'Le PDF fournisseur doit etre charge via la route upload.',
@@ -678,3 +684,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

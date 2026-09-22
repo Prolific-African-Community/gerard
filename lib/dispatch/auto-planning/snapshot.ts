@@ -7,6 +7,7 @@ import {
 } from '@prisma/client'
 
 import { buildPreparedDriverTruckPairs } from '../driver-truck-pairs'
+import { positionProvidersForAnalysis } from '../suggestions/planning-analysis'
 import {
   adaptDispatchMissionForOptimization,
   adaptPreparedPairForOptimization,
@@ -31,6 +32,7 @@ import { prisma } from '../../prisma'
 import type { AutoPlanningSnapshot } from './types'
 import { classifyPlanningMissions } from './mission-scope'
 import { prepareCandidateApproachRoutes } from './approach-routes'
+import { withRouteOperation } from '../maps/route-control'
 import { COUPLING_TYPE_VALUES } from '../technical-attributes'
 import {
   configuredOperatingBase,
@@ -159,10 +161,11 @@ function missionTrailerRequirements(
   }
 }
 
-export async function buildAutoPlanningSnapshot(input: {
+async function buildAutoPlanningSnapshotInternal(input: {
   weekStartDate: Date
   includeExistingForced: boolean
   now?: Date
+  prepareCandidateRoutes?: boolean
 }): Promise<AutoPlanningSnapshot> {
   const snapshotNow = input.now ?? new Date()
   const isolationPrefix = process.env.QA_AUTO_ISOLATION_PREFIX?.trim()
@@ -246,7 +249,10 @@ export async function buildAutoPlanningSnapshot(input: {
     prisma.driverPosition.findMany({
       where: {
         driverId: { in: preparedDriverIds },
-        provider: 'DRIVER_PHONE',
+        // Provenance des positions retenues pour la planification. La source
+        // reste enregistree telle quelle : DEMO_SIMULATED garde une confiance
+        // inferieure a un point GPS telephone lors de l'evaluation.
+        provider: { in: [...positionProvidersForAnalysis()] },
       },
       orderBy: { recordedAt: 'desc' },
     }),
@@ -575,12 +581,14 @@ export async function buildAutoPlanningSnapshot(input: {
     })
   })
 
-  transitions = await prepareCandidateApproachRoutes({
-    pairs,
-    missions: adaptedMissions,
-    trailers: adaptedTrailers,
-    existing: transitions,
-  })
+  if (input.prepareCandidateRoutes !== false) {
+    transitions = await prepareCandidateApproachRoutes({
+      pairs,
+      missions: adaptedMissions,
+      trailers: adaptedTrailers,
+      existing: transitions,
+    })
+  }
 
   const resourceOccupations = assignments
     .filter((assignment) => !includedMissionIds.has(assignment.missionId))
@@ -682,4 +690,8 @@ export async function buildAutoPlanningSnapshot(input: {
     ),
     missionScope,
   }
+}
+
+export async function buildAutoPlanningSnapshot(input: Parameters<typeof buildAutoPlanningSnapshotInternal>[0]) {
+  return withRouteOperation('Auto-planning snapshot', () => buildAutoPlanningSnapshotInternal(input))
 }

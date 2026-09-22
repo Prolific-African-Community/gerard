@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../lib/auth/authorization'
@@ -28,7 +29,7 @@ function parseBody(value: unknown) {
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -77,3 +78,5 @@ export default async function handler(
   }
   return res.status(200).json({ results })
 }
+
+export default withTenantApiRoute(handler)

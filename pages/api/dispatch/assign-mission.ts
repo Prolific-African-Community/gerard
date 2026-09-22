@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import {
   AddressResolutionStatus,
   DriverStatus,
@@ -83,7 +84,7 @@ function parseBody(body: unknown): AssignMissionBody | null {
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -487,3 +488,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to assign mission' })
   }
 }
+
+export default withTenantApiRoute(handler)

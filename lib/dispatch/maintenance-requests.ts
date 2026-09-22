@@ -3,14 +3,18 @@ import {
   MaintenanceRequestStatus,
   MaintenanceUrgency,
   MaintenanceVehicleType,
+  OrganizationIntegrationType,
 } from "@prisma/client";
 
 import { prisma } from "../prisma";
+import { getActiveIntegration, parseSlAutomotiveConfig } from '../integrations/config'
+import { getIntegrationSecret } from '../integrations/secrets'
 
 type RecordValue = Record<string, unknown>;
 const SL_AUTOMOTIVE_PROVIDER = "SL_AUTOMOTIVE";
-const SL_AUTOMOTIVE_SOURCE_COMPANY = "NOVOTRALUX";
-const SL_AUTOMOTIVE_SOURCE_SYSTEM = "NOVOTRALUX_MAINTENANCE";
+// Valeurs de contrat avec l'API SL Automotive : elles identifient l'emetteur
+// cote partenaire et servent a retrouver les demandes deja transmises.
+// Les renommer casserait l'integration et les lignes existantes.
 
 type SlAutomotivePayload = {
   sourceCompany: string;
@@ -152,21 +156,14 @@ export function getOptionalString(value: unknown): string | undefined {
   return trimmedValue.length > 0 ? trimmedValue : undefined;
 }
 
-function getSlAutomotiveConfig() {
-  const baseUrl = getOptionalString(process.env.SL_AUTOMOTIVE_API_BASE_URL);
-  const apiKey = getOptionalString(process.env.SL_AUTOMOTIVE_API_KEY);
-
-  if (!baseUrl || !apiKey) {
-    throw new MaintenanceRequestTransmissionError(
-      "Configuration SL Automotive incomplète.",
-      500
-    );
+async function getSlAutomotiveConfig() {
+  try {
+    const integration = await getActiveIntegration(OrganizationIntegrationType.SL_AUTOMOTIVE)
+    const config = parseSlAutomotiveConfig(integration.configJson)
+    return { integration, ...config, apiKey: await getIntegrationSecret(integration, 'outboundApiKey') }
+  } catch {
+    throw new MaintenanceRequestTransmissionError('Intégration SL Automotive indisponible pour cette organisation.', 409)
   }
-
-  return {
-    baseUrl: baseUrl.replace(/\/+$/, ""),
-    apiKey,
-  };
 }
 
 export async function sendQuoteDecisionToSlAutomotive(input: {
@@ -175,7 +172,7 @@ export async function sendQuoteDecisionToSlAutomotive(input: {
   decision: QuoteDecision;
   comment?: string | null;
 }) {
-  const { baseUrl, apiKey } = getSlAutomotiveConfig();
+  const { apiBaseUrl: baseUrl, apiKey, sourceCompany } = await getSlAutomotiveConfig();
 
   let response: Response;
   try {
@@ -188,7 +185,7 @@ export async function sendQuoteDecisionToSlAutomotive(input: {
           "x-api-key": apiKey,
         },
         body: JSON.stringify({
-          sourceCompany: SL_AUTOMOTIVE_SOURCE_COMPANY,
+          sourceCompany,
           ...input,
         }),
       }
@@ -279,12 +276,12 @@ function buildSlAutomotivePayload(request: {
   preferredDate: Date | null;
   issueDescription: string;
   internalNotes: string | null;
-}): SlAutomotivePayload {
+}, config: { sourceCompany: string; sourceSystem: string }): SlAutomotivePayload {
   assertMaintenanceVehicleConsistency(request);
 
   return {
-    sourceCompany: SL_AUTOMOTIVE_SOURCE_COMPANY,
-    sourceSystem: SL_AUTOMOTIVE_SOURCE_SYSTEM,
+    sourceCompany: config.sourceCompany,
+    sourceSystem: config.sourceSystem,
     externalRequestId: request.id,
     externalVehicleId: request.truckId ?? request.trailerId ?? "",
     vehicleType: request.vehicleType,
@@ -365,7 +362,8 @@ export async function sendMaintenanceRequestToSlAutomotive(
 
   assertMaintenanceVehicleConsistency(maintenanceRequest);
 
-  const payload = buildSlAutomotivePayload(maintenanceRequest);
+  const config = await getSlAutomotiveConfig();
+  const payload = buildSlAutomotivePayload(maintenanceRequest, config);
 
   if (
     maintenanceRequest.externalProvider === SL_AUTOMOTIVE_PROVIDER &&
@@ -402,7 +400,7 @@ export async function sendMaintenanceRequestToSlAutomotive(
     };
   }
 
-  const { baseUrl, apiKey } = getSlAutomotiveConfig();
+  const { apiBaseUrl: baseUrl, apiKey } = config;
 
   let response: Response;
   try {

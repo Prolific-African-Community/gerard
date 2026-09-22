@@ -1,0 +1,2 @@
+ALTER TABLE "RouteCache"
+ALTER COLUMN "polyline" DROP NOT NULL;

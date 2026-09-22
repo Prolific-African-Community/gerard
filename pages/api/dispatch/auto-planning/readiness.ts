@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   DriverStatus,
   MissionPreparationStatus,
@@ -23,7 +24,7 @@ const unavailableTrucks = new Set<TruckStatus>([
   TruckStatus.OUT_OF_SERVICE,
 ])
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -191,3 +192,5 @@ export default async function handler(
     },
   })
 }
+
+export default withTenantApiRoute(handler)

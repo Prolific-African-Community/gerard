@@ -13,7 +13,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!admin) return
   const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id
   if (!id) return res.status(400).json({ error: 'Utilisateur invalide.' })
-  const target = await prisma.user.findUnique({ where: { id }, select: safeUserSelect })
+  const target = await prisma.user.findFirst({ where: { id, organizationMemberships: { some: { organizationId: admin.organizationId } } }, select: safeUserSelect })
   if (!target) return res.status(404).json({ error: 'Utilisateur introuvable.' })
   if (req.method === 'GET') return res.status(200).json({ user: target })
   if (req.method !== 'PATCH') { res.setHeader('Allow', 'GET, PATCH'); return res.status(405).json({ error: 'Méthode non autorisée' }) }
@@ -32,7 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const user = await prisma.$transaction(async tx => {
       if (target.role === UserRole.ADMIN && target.isActive && (!isActive || role !== UserRole.ADMIN)) {
-        const activeAdmins = await tx.user.count({ where: { role: UserRole.ADMIN, isActive: true } })
+        const activeAdmins = await tx.user.count({ where: { role: UserRole.ADMIN, isActive: true, organizationMemberships: { some: { organizationId: admin.organizationId } } } })
         if (activeAdmins <= 1) throw new Error('LAST_ACTIVE_ADMIN')
       }
       if (driverId) {
@@ -40,11 +40,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         if (!driver) throw new Error('DRIVER_NOT_FOUND')
         if (driver.user && driver.user.id !== id) throw new Error('DRIVER_ALREADY_LINKED')
       }
-      return tx.user.update({ where: { id }, data: {
+      const updated = await tx.user.update({ where: { id }, data: {
         firstName, lastName, name: `${firstName} ${lastName}`, username, role, isActive,
         driverId: role === UserRole.DRIVER ? driverId : null,
         ...(!isActive && target.isActive ? { sessionVersion: { increment: 1 } } : {}),
       }, select: safeUserSelect })
+      await tx.organizationUser.update({
+        where: { organizationId_userId: { organizationId: admin.organizationId, userId: id } },
+        data: { role: role === UserRole.ADMIN ? 'ORG_ADMIN' : role === UserRole.DISPATCHER ? 'DISPATCHER' : role === UserRole.SECRETARY ? 'SECRETARY' : role === UserRole.PARK_MANAGER ? 'MANAGER' : 'DRIVER' },
+      })
+      return updated
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable })
     return res.status(200).json({ user })
   } catch (error) {

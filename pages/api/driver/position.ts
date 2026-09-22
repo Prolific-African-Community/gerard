@@ -1,6 +1,7 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-import { requireActiveUser } from '../../../lib/auth/authorization'
+import { requireActiveUser, requireOrganizationModule } from '../../../lib/auth/authorization'
 import { prisma } from '../../../lib/prisma'
 
 type PositionPayload = {
@@ -105,7 +106,7 @@ async function getAssignedTruckId(driverId: string) {
   return planningRow?.truckId ?? null
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -119,6 +120,7 @@ export default async function handler(
   if (!sessionUser) {
     return
   }
+  if (!(await requireOrganizationModule(req, res, 'PLANNING'))) return
 
   if (sessionUser.role !== 'DRIVER' || !sessionUser.driverId) {
     return res.status(403).json({ error: 'Forbidden' })
@@ -163,3 +165,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to save driver position' })
   }
 }
+
+export default withTenantApiRoute(handler)

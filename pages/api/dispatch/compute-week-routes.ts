@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MissionEventType } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requirePermission } from "../../../lib/auth/authorization";
@@ -8,6 +9,7 @@ import {
   parseWeekStartParam,
 } from "../../../lib/dispatch/date-utils";
 import { prisma } from "../../../lib/prisma";
+import { computeGoogleRoute } from "../../../lib/dispatch/maps/google";
 
 const maxRoutesPerBatch = 10;
 
@@ -134,61 +136,12 @@ function buildComputedRoute({
   };
 }
 
-async function computeGoogleRoute(mission: RouteMission, apiKey: string) {
-  const googleResponse = await fetch(
-    "https://routes.googleapis.com/directions/v2:computeRoutes",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask":
-          "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline",
-      },
-      body: JSON.stringify({
-        origin: {
-          location: {
-            latLng: {
-              latitude: mission.pickupLat,
-              longitude: mission.pickupLng,
-            },
-          },
-        },
-        destination: {
-          location: {
-            latLng: {
-              latitude: mission.deliveryLat,
-              longitude: mission.deliveryLng,
-            },
-          },
-        },
-        travelMode: "DRIVE",
-        routingPreference: "TRAFFIC_AWARE",
-        computeAlternativeRoutes: false,
-        languageCode: "fr-FR",
-        units: "METRIC",
-      }),
-    },
-  );
-
-  if (!googleResponse.ok) {
-    throw new Error(`Google Routes returned ${googleResponse.status}`);
-  }
-
-  const routeData = (await googleResponse.json()) as GoogleRoutesResponse;
-  const route = routeData.routes?.[0];
-  const distanceMeters = route?.distanceMeters;
-  const durationSeconds = parseGoogleDuration(route?.duration);
-  const polyline = route?.polyline?.encodedPolyline;
-
-  if (
-    typeof distanceMeters !== "number" ||
-    typeof durationSeconds !== "number" ||
-    typeof polyline !== "string" ||
-    polyline.length === 0
-  ) {
-    throw new Error("Invalid Google Routes response");
-  }
+async function computeAndPersistMissionRoute(mission: RouteMission) {
+  const route = await computeGoogleRoute({
+    origin: { latitude: mission.pickupLat!, longitude: mission.pickupLng! },
+    destination: { latitude: mission.deliveryLat!, longitude: mission.deliveryLng! },
+  });
+  const { distanceMeters, durationSeconds, polyline } = route;
 
   await prisma.mission.update({
     where: {
@@ -220,7 +173,7 @@ async function computeGoogleRoute(mission: RouteMission, apiKey: string) {
   });
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -318,7 +271,7 @@ export default async function handler(
 
     for (const mission of missionsToCompute) {
       try {
-        computed.push(await computeGoogleRoute(mission, apiKey));
+        computed.push(await computeAndPersistMissionRoute(mission));
       } catch (error) {
         console.error("Failed to compute route for mission", mission.id, error);
         failed.push({
@@ -345,3 +298,5 @@ export default async function handler(
     });
   }
 }
+
+export default withTenantApiRoute(handler)

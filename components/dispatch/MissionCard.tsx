@@ -3,6 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 
+import { useGerardApplication } from "@prolific/gerard-core/react";
 import type { Mission, MissionStatus } from "../../lib/dispatch/mock-data";
 
 const statusLabels: Record<MissionStatus, string> = {
@@ -56,8 +57,6 @@ type MissionCardProps = {
    * badge distingue le bucket, sans créer une seconde famille visuelle.
    */
   bucketBadge?: { label: string; className: string } | null;
-  /** Note courte contextuelle (« En retard de 3 j », raison de vérification). */
-  note?: string | null;
 };
 
 type MissionCardVisualProps = Omit<MissionCardProps, "dragDisabled"> & {
@@ -74,9 +73,20 @@ export function MissionCardVisual({
   isDragging = false,
   draggable = false,
   bucketBadge = null,
-  note = null,
 }: MissionCardVisualProps) {
-  const primaryReference = mission.clientReference || mission.reference;
+  const application = useGerardApplication();
+  const references = application.policies.missionReference(mission);
+  const primaryReference = references.primary;
+  const secondaryReference = references.secondary;
+  const ReferenceSlot = application.ui.components.MissionCardReference;
+  const HeaderSlot = application.ui.components.MissionCardHeader;
+  const FooterSlot = application.ui.components.MissionCardFooter;
+  const slotProps = { mission, compact, primaryReference, secondaryReference };
+  const visibleFields = new Set(application.ui.missionCard.visibleFields);
+  const detailFields = {
+    client: <span key="client" className="min-w-0 break-words leading-tight">{application.terminology.client} : {mission.clientName}</span>,
+    distance: <span key="distance" className="shrink-0 font-semibold text-[#1f211c]">{getDistanceLabel(mission)}</span>,
+  };
 
   return (
     <article
@@ -99,117 +109,72 @@ export function MissionCardVisual({
         // méta pour laisser la référence et le trajet occuper toute la
         // largeur de la colonne, sans troncature ni scroll interne.
         <>
-          <p className="break-words text-[10px] font-bold uppercase leading-[1.15] tracking-[0.04em] text-[#20211d]">
-            {primaryReference}
-          </p>
-          <p className="mt-[2px] break-words text-[10px] font-semibold leading-[1.15] text-[#11120f]">
+          {ReferenceSlot ? <ReferenceSlot {...slotProps} /> : (
+            <p className="truncate text-[10px] font-bold uppercase leading-[1.15] tracking-[0.04em] text-[#20211d]">
+              {primaryReference}
+            </p>
+          )}
+          {visibleFields.has("route") ? <p className="mt-[2px] break-words text-[10px] font-semibold leading-[1.15] text-[#11120f]">
             {mission.pickupCity} <span className="text-[#8d9386]">-&gt;</span>{" "}
             {mission.deliveryCity}
-          </p>
-          <div className="mt-[2px] flex flex-wrap items-center gap-x-1.5 gap-y-[1px] text-[9px] leading-[1.15] text-[#62665c]">
-            <span className="break-words">{mission.clientName}</span>
-            <span className="font-semibold text-[#1f211c]">
+          </p> : null}
+          <div className="mt-[3px] flex min-w-0 items-center gap-1.5 text-[9px] leading-[1.15] text-[#62665c]">
+            {visibleFields.has("client") ? <span className="min-w-0 flex-1 truncate">{mission.clientName}</span> : null}
+            {visibleFields.has("distance") ? <span className="shrink-0 font-semibold text-[#1f211c]">
               {getDistanceLabel(mission)}
-            </span>
-            <span
+            </span> : null}
+            {visibleFields.has("status") ? <span
               className={[
-                "rounded-full border px-1 text-[8px] font-semibold leading-[1.3]",
+                "shrink-0 rounded-full border px-1 text-[8px] font-semibold leading-[1.3]",
                 badgeStatusStyles[status],
               ].join(" ")}
             >
               {statusLabels[status]}
-            </span>
+            </span> : null}
           </div>
-          {mission.trailerPlateNumber ? (
-            <p className="mt-[2px] break-words text-[8px] font-semibold leading-[1.15] text-[#4f5549]">
-              Remorque : {mission.trailerPlateNumber} ·{' '}
-              {mission.trailerCustodyLabel ?? 'État à confirmer'}
-              {mission.trailerRelayAvailable ? (
-                <span className="ml-1 rounded-full bg-amber-100 px-1 text-amber-800">
-                  Relais
-                </span>
-              ) : null}
-            </p>
-          ) : null}
-          {mission.cmrNumber ? (
-            <p className="mt-[2px] text-[8px] font-semibold leading-none text-[#62665c]">
-              CMR {mission.cmrNumber}
-            </p>
-          ) : null}
-          {mission.deliveryNoteNumber ? (
-            <p className="mt-[2px] text-[8px] font-semibold leading-none text-[#62665c]">
-              BL {mission.deliveryNoteNumber}
-            </p>
-          ) : null}
         </>
       ) : (
         <>
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <p className="break-words text-[11px] font-bold uppercase leading-tight tracking-[0.08em] text-[#20211d]">
-                {primaryReference}
-              </p>
-              {mission.clientReference ? (
-                <p className="mt-0.5 break-words text-[9px] font-semibold leading-tight text-[#747a6f]">
-                  Interne : {mission.reference}
-                </p>
-              ) : null}
-              <p className="mt-1.5 text-sm font-semibold leading-snug text-[#11120f]">
-                {mission.pickupCity} <span className="text-[#8d9386]">-&gt;</span>{" "}
-                {mission.deliveryCity}
-              </p>
-            </div>
+            {HeaderSlot ? <HeaderSlot {...slotProps} /> : (
+              <div className="min-w-0">
+                {ReferenceSlot ? <ReferenceSlot {...slotProps} /> : (
+                  <>
+                    <p className="break-words text-[11px] font-bold uppercase leading-tight tracking-[0.08em] text-[#20211d]">
+                      {primaryReference}
+                    </p>
+                    {secondaryReference ? (
+                      <p className="mt-0.5 break-words text-[9px] font-semibold leading-tight text-[#747a6f]">
+                        {application.terminology.internalReference} : {secondaryReference}
+                      </p>
+                    ) : null}
+                  </>
+                )}
+                {visibleFields.has("route") ? <p className="mt-1.5 text-sm font-semibold leading-snug text-[#11120f]">
+                  {mission.pickupCity} <span className="text-[#8d9386]">-&gt;</span>{" "}
+                  {mission.deliveryCity}
+                </p> : null}
+              </div>
+            )}
             {/*
               Un seul badge de statut par carte. Lorsque le bandeau fournit une
               catégorie (À planifier, En retard, À vérifier, Anomalie, À venir),
               elle occupe ce slot : c'est l'information la plus précise, et le
               badge de statut générique ferait doublon.
             */}
-            <span
+            {visibleFields.has("status") ? <span
               className={[
                 "shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-tight",
                 bucketBadge ? bucketBadge.className : badgeStatusStyles[status],
               ].join(" ")}
             >
               {bucketBadge ? bucketBadge.label : statusLabels[status]}
-            </span>
+            </span> : null}
           </div>
 
-          {note ? (
-            <p className="mt-1.5 break-words text-[10px] font-semibold leading-tight text-[#7a8074]">
-              {note}
-            </p>
-          ) : null}
-
-          <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[10px] text-[#62665c]">
-            <span className="min-w-0 break-words leading-tight">
-              Client : {mission.clientName}
-            </span>
-            <span className="shrink-0 font-semibold text-[#1f211c]">
-              {getDistanceLabel(mission)}
-            </span>
-          </div>
-          {mission.trailerPlateNumber ? (
-            <p className="mt-1.5 text-[10px] font-semibold text-[#4f5549]">
-              Remorque : {mission.trailerPlateNumber} ·{' '}
-              {mission.trailerCustodyLabel ?? 'État à confirmer'}
-              {mission.trailerRelayAvailable ? (
-                <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-amber-800">
-                  Relais possible
-                </span>
-              ) : null}
-            </p>
-          ) : null}
-          {mission.cmrNumber ? (
-            <p className="mt-1 text-[9px] font-semibold text-[#62665c]">
-              CMR {mission.cmrNumber}
-            </p>
-          ) : null}
-          {mission.deliveryNoteNumber ? (
-            <p className="mt-1 text-[9px] font-semibold text-[#62665c]">
-              BL {mission.deliveryNoteNumber}
-            </p>
-          ) : null}
+          {FooterSlot ? <FooterSlot {...slotProps} /> : <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 text-[10px] text-[#62665c]">
+            {application.ui.missionCard.detailFieldOrder.filter((field) => visibleFields.has(field)).map((field) => detailFields[field])}
+          </div>}
         </>
       )}
     </article>
@@ -224,7 +189,6 @@ export function MissionCard({
   className = "",
   onClick,
   bucketBadge = null,
-  note = null,
 }: MissionCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({
@@ -252,7 +216,6 @@ export function MissionCard({
         isDragging={isDragging}
         draggable={!dragDisabled}
         bucketBadge={bucketBadge}
-        note={note}
       />
     </div>
   );

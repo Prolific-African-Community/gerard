@@ -1,5 +1,6 @@
 node_modules
 .next
+.next-novotralux
 .env
 .env.local
 .env.production.local
@@ -7,6 +8,7 @@ node_modules
 .vercel
 .DS_Store
 .codex/
+artifacts/legacy-migration/*.json
 
 /lib/generated/prisma
 .env

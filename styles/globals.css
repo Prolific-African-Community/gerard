@@ -1,6 +1,17 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand-accent: #c8ff00;
+  --brand-accent-hover: #9bd600;
+  --brand-accent-soft: #efffd0;
+}
+
+.brand-accent { background-color: var(--brand-accent); }
+.brand-accent-text { color: var(--brand-accent-hover); }
+.brand-accent-border { border-color: var(--brand-accent); }
+.brand-accent-soft { background-color: var(--brand-accent-soft); }
+
 body {
   margin: 0;
   background: #f7f8f5;

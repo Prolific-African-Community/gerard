@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../lib/auth/authorization'
@@ -5,7 +6,7 @@ import { permissions } from '../../../lib/auth/permissions'
 import { actorName } from '../../../lib/park/actor'
 import { updateSpotNote } from '../../../lib/park/service'
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const user = await requirePermission(req, res, permissions.parkMove)
   if (!user) return
   if (req.method !== 'POST') {
@@ -28,3 +29,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!result.ok) return res.status(result.code).json({ error: result.error })
   return res.status(200).json({ ok: true })
 }
+
+export default withTenantApiRoute(handler)

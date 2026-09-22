@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   MissionEventType,
   MissionStatus,
@@ -52,7 +53,7 @@ function isPairChanged(
   return before.driverId !== after.driverId || before.truckId !== after.truckId
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -95,7 +96,7 @@ export default async function handler(
 
           await tx.$executeRaw`
             SELECT pg_advisory_xact_lock(
-              hashtext(${`dispatch-planning-week:${existingRow.weekStartDate.toISOString()}`})
+              hashtext(${`dispatch-planning-week:${existingRow.organizationId}:${existingRow.weekStartDate.toISOString()}`})
             )
           `
 
@@ -398,3 +399,5 @@ export default async function handler(
   res.setHeader('Allow', 'PATCH, DELETE')
   return res.status(405).json({ error: 'Method not allowed' })
 }
+
+export default withTenantApiRoute(handler)

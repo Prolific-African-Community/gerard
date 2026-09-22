@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../lib/auth/authorization'
@@ -17,7 +18,7 @@ function getFormat(value: string | string[] | undefined) {
   return value === 'pdf' || value === 'xlsx' ? value : null
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -65,7 +66,7 @@ export default async function handler(
       res.setHeader('Content-Type', 'application/pdf')
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="novotralux-rentabilite-${weekStart}.pdf"`
+        `attachment; filename="gerard-rentabilite-${weekStart}.pdf"`
       )
       return res.status(200).send(buffer)
     }
@@ -78,7 +79,7 @@ export default async function handler(
     )
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="novotralux-rentabilite-${weekStart}.xlsx"`
+      `attachment; filename="gerard-rentabilite-${weekStart}.xlsx"`
     )
     return res.status(200).send(buffer)
   } catch (error) {
@@ -86,3 +87,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to export profitability' })
   }
 }
+
+export default withTenantApiRoute(handler)

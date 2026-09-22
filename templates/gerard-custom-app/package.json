@@ -1,0 +1,13 @@
+{
+  "name": "gerard-custom-example",
+  "private": true,
+  "version": "0.1.0",
+  "dependencies": {
+    "@prolific/gerard-core": "^1.0.0",
+    "react": ">=19"
+  },
+  "scripts": {
+    "check:core": "tsx config/check-core.ts",
+    "test": "tsx application.test.ts"
+  }
+}

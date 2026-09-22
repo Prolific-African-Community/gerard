@@ -1,5 +1,7 @@
 'use client'
 
+import { controlPanelClass } from '../ui/ControlKit'
+
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   DndContext,
@@ -554,7 +556,7 @@ function ParkMapToolbar({
   onToggleResources: () => void
 }) {
   return (
-    <div className="absolute right-3 top-3 z-30 flex items-center gap-1 rounded-[18px] border border-black/[.07] bg-white/90 p-1.5 shadow-[0_12px_35px_rgba(17,18,15,.12)] backdrop-blur-xl sm:right-4 sm:top-4">
+    <div className={`absolute right-3 top-3 z-30 flex items-center gap-1 p-1.5 sm:right-4 sm:top-4 ${controlPanelClass}`}>
       <MapAction label={`Dézoomer · ${Math.round(scale * 100)} %`} onClick={onZoomOut}>
         <MinusIcon />
       </MapAction>
@@ -611,7 +613,7 @@ function MapAction({
 
 function ParkSummary({ kpis }: { kpis: ReturnType<typeof deriveKpis> }) {
   return (
-    <div className="absolute left-4 top-4 z-20 hidden rounded-[18px] border border-black/[.06] bg-white/88 px-3 py-2.5 shadow-[0_10px_30px_rgba(17,18,15,.08)] backdrop-blur-xl sm:block">
+    <div className={`absolute left-4 top-4 z-20 hidden px-3 py-2.5 sm:block ${controlPanelClass}`}>
       <h1 className="text-sm font-black tracking-tight text-[#171914] sm:text-base">
         Parc automobile
       </h1>

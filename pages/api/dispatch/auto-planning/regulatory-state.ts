@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   DriverStatus,
   RegulatoryStateSource,
@@ -141,7 +142,7 @@ function parseBody(value: unknown) {
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -245,3 +246,5 @@ export default async function handler(
     status: classifyRegulatoryDeclaration(declaration, new Date()),
   })
 }
+
+export default withTenantApiRoute(handler)

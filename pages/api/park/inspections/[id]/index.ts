@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../../lib/auth/authorization'
@@ -13,7 +14,7 @@ function getId(value: string | string[] | undefined) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const permission =
     req.method === 'GET'
       ? permissions.parkInspectionView
@@ -41,3 +42,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Gestion du contrôle impossible.' })
   }
 }
+
+export default withTenantApiRoute(handler)

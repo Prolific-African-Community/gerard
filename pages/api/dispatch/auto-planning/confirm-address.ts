@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   AddressResolutionMethod,
   AddressResolutionStatus,
@@ -31,7 +32,7 @@ function parseBody(value: unknown) {
   } as const
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -99,3 +100,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

@@ -1,6 +1,13 @@
 'use client'
 
 import {
+  ControlButton,
+  Icons,
+  controlFieldClass,
+  controlPanelClass,
+} from '../ui/ControlKit'
+
+import {
   GoogleMap,
   InfoWindow,
   MarkerF,
@@ -17,7 +24,7 @@ import type {
   Truck,
   TruckStatus,
 } from '../../lib/dispatch/mock-data'
-import { NOVOTRALUX_BASE } from '../../lib/dispatch/base-location'
+import { GERARD_BASE } from '../../lib/dispatch/base-location'
 import { dayLabels, dispatchDays } from '../../lib/dispatch/mock-data'
 import { decodePolyline } from '../../lib/dispatch/polyline'
 import { MissionCard } from './MissionCard'
@@ -235,8 +242,8 @@ const luxembourgCenter = {
 }
 
 const basePosition = {
-  lat: NOVOTRALUX_BASE.lat,
-  lng: NOVOTRALUX_BASE.lng,
+  lat: GERARD_BASE.lat,
+  lng: GERARD_BASE.lng,
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -571,7 +578,7 @@ function GoogleDispatchMap({
   const [searchQuery, setSearchQuery] = useState('')
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: apiKey,
-    id: 'novotralux-dispatch-map',
+    id: 'gerard-dispatch-map',
   })
 
   const driversById = useMemo(() => {
@@ -1633,7 +1640,7 @@ function MapFilters({
   trucks: Truck[]
 }) {
   return (
-    <div className="absolute left-[84px] right-[365px] top-5 z-10 rounded-[30px] border border-black/5 bg-white p-3 shadow-[0_18px_55px_rgba(17,18,15,0.1)]">
+    <div className={`absolute left-[84px] right-[365px] top-5 z-10 p-2.5 ${controlPanelClass}`}>
       <div className="grid grid-cols-[1.2fr_0.9fr_0.9fr_0.9fr_0.9fr_auto] items-end gap-2">
         <FilterField label="Recherche">
           <input
@@ -1641,7 +1648,7 @@ function MapFilters({
             value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Référence, client, ville..."
-            className="h-9 w-full rounded-2xl border border-black/5 bg-[#F3F4F0] px-3 text-xs font-semibold text-[#151611] outline-none transition placeholder:text-[#8b9085] focus:border-lime-300 focus:bg-white"
+            className={controlFieldClass}
           />
         </FilterField>
 
@@ -1651,7 +1658,7 @@ function MapFilters({
             onChange={(event) =>
               onStatusChange(event.target.value as StatusFilter)
             }
-            className="h-9 w-full rounded-2xl border border-black/5 bg-[#F3F4F0] px-3 text-xs font-semibold text-[#151611] outline-none transition focus:border-lime-300 focus:bg-white"
+            className={controlFieldClass}
           >
             {statusFilterOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -1665,7 +1672,7 @@ function MapFilters({
           <select
             value={driverFilter}
             onChange={(event) => onDriverChange(event.target.value)}
-            className="h-9 w-full rounded-2xl border border-black/5 bg-[#F3F4F0] px-3 text-xs font-semibold text-[#151611] outline-none transition focus:border-lime-300 focus:bg-white"
+            className={controlFieldClass}
           >
             <option value="all">Tous</option>
             {drivers.map((driver) => (
@@ -1680,7 +1687,7 @@ function MapFilters({
           <select
             value={truckFilter}
             onChange={(event) => onTruckChange(event.target.value)}
-            className="h-9 w-full rounded-2xl border border-black/5 bg-[#F3F4F0] px-3 text-xs font-semibold text-[#151611] outline-none transition focus:border-lime-300 focus:bg-white"
+            className={controlFieldClass}
           >
             <option value="all">Tous</option>
             {trucks.map((truck) => (
@@ -1697,7 +1704,7 @@ function MapFilters({
             onChange={(event) =>
               onDayChange(event.target.value as DispatchDay | 'all')
             }
-            className="h-9 w-full rounded-2xl border border-black/5 bg-[#F3F4F0] px-3 text-xs font-semibold text-[#151611] outline-none transition focus:border-lime-300 focus:bg-white"
+            className={controlFieldClass}
           >
             <option value="all">Tous</option>
             {dispatchDays.map((day) => (
@@ -1708,13 +1715,11 @@ function MapFilters({
           </select>
         </FilterField>
 
-        <button
-          type="button"
+        <ControlButton
+          label="Réinitialiser les filtres"
+          icon={<Icons.refresh />}
           onClick={onReset}
-          className="h-9 rounded-2xl border border-black/10 bg-white px-3 text-xs font-semibold text-[#4f5549] transition hover:border-lime-300 hover:text-[#2f3a17]"
-        >
-          Réinitialiser
-        </button>
+        />
       </div>
     </div>
   )

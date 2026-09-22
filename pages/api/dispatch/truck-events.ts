@@ -1,10 +1,11 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requirePermission } from "../../../lib/auth/authorization";
 import { permissions } from "../../../lib/auth/permissions";
 
 import { prisma } from "../../../lib/prisma";
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -71,3 +72,5 @@ export default async function handler(
     });
   }
 }
+
+export default withTenantApiRoute(handler)

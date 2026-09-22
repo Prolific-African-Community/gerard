@@ -295,7 +295,7 @@ export function getMaintenanceSignalLabel(urgency: MaintenanceUrgency) {
 // Canonical card display status
 //
 // A truck/trailer card must show exactly ONE operational status. That status is
-// derived here from the NovoTralux vehicle status combined with the active SL
+// derived here from the Gerard vehicle status combined with the active SL
 // Automotive maintenance state, following a strict priority order so the user
 // never has to reconcile two systems at once.
 // ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ export type VehicleDisplayCardVariant =
   | 'terminal'
   | 'neutral'
 
-// How a raw NovoTralux vehicle status should read when no active maintenance
+// How a raw Gerard vehicle status should read when no active maintenance
 // overrides it. Each card maps its own status enum to one of these kinds.
 export type VehicleBaseStatusKind =
   | 'available'
@@ -442,7 +442,7 @@ export function getVehicleDisplayStatus(input: {
   }
 
   // 4 & 5. Terminal maintenance or no active maintenance: fall back to the raw
-  // NovoTralux vehicle status. The card must not look active or alarming.
+  // Gerard vehicle status. The card must not look active or alarming.
   return getBaseDisplayStatus(input.baseStatusLabel, input.baseStatusKind)
 }
 

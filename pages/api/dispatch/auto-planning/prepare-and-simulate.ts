@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../lib/auth/authorization'
@@ -33,7 +34,7 @@ function parseBody(body: unknown) {
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -90,3 +91,5 @@ export default async function handler(
     runningByUserId.delete(user.id)
   }
 }
+
+export default withTenantApiRoute(handler)

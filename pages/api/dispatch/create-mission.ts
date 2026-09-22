@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import {
   MissionEventType,
   MissionPreparationStatus,
@@ -372,11 +373,12 @@ function parseBody(body: unknown): CreateMissionBody | null {
   };
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
-  if (!(await requirePermission(req, res, permissions.missionsCreate))) return;
+  const currentUser = await requirePermission(req, res, permissions.missionsCreate);
+  if (!currentUser) return;
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ error: "Method not allowed" });
@@ -484,7 +486,7 @@ export default async function handler(
         `Référence déjà utilisée : créée sous ${resolvedReference}.`,
       );
     }
-    const existingReference = await prisma.mission.findUnique({
+    const existingReference = await prisma.mission.findFirst({
       where: { reference: body.reference },
       select: { id: true },
     });
@@ -506,7 +508,7 @@ export default async function handler(
 
     const mission = await prisma.$transaction(async (tx) => {
       if (isDemoRequest && sourceEmailId) {
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${sourceEmailId}))`;
+        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`${currentUser.organizationId}:${sourceEmailId}`}))`;
         const existing = await tx.mission.findFirst({
           where: { sourceEmailId },
           select: { id: true },
@@ -634,7 +636,7 @@ export default async function handler(
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
-      const existingMission = await prisma.mission.findUnique({
+      const existingMission = await prisma.mission.findFirst({
         where: { reference: body.reference },
         select: { id: true },
       });
@@ -657,3 +659,5 @@ export default async function handler(
     return res.status(500).json({ error: "Failed to create mission" });
   }
 }
+
+export default withTenantApiRoute(handler)

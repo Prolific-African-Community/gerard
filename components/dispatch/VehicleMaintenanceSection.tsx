@@ -741,7 +741,7 @@ function MaintenanceDetailDrawer({
               </div>
               <div>
                 <dt className="font-bold uppercase tracking-[0.1em] text-[#969c91]">
-                  ID NovoTralux
+                  ID Gerard
                 </dt>
                 <dd className="mt-1 break-all font-mono text-[11px] text-[#60665c]">
                   {request.id}

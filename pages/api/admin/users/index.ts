@@ -10,7 +10,8 @@ import { prisma } from '../../../../lib/prisma'
 function text(value: unknown) { return typeof value === 'string' ? value.trim() : '' }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!(await requireAdmin(req, res))) return
+  const admin = await requireAdmin(req, res)
+  if (!admin) return
 
   if (req.method === 'GET') {
     const search = text(req.query.search)
@@ -18,6 +19,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const active = req.query.active === 'true' ? true : req.query.active === 'false' ? false : undefined
     const mustChangePassword = req.query.mustChangePassword === 'true' ? true : req.query.mustChangePassword === 'false' ? false : undefined
     const where: Prisma.UserWhereInput = {
+      organizationMemberships: { some: { organizationId: admin.organizationId } },
       ...(role ? { role } : {}),
       ...(typeof active === 'boolean' ? { isActive: active } : {}),
       ...(typeof mustChangePassword === 'boolean' ? { mustChangePassword } : {}),
@@ -29,10 +31,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     const [users, total, activeCount, mustChangeCount, roleCounts, drivers] = await prisma.$transaction([
       prisma.user.findMany({ where, select: safeUserSelect, orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }] }),
-      prisma.user.count(),
-      prisma.user.count({ where: { isActive: true } }),
-      prisma.user.count({ where: { mustChangePassword: true } }),
-      prisma.user.groupBy({ by: ['role'], _count: { _all: true } }),
+      prisma.user.count({ where: { organizationMemberships: { some: { organizationId: admin.organizationId } } } }),
+      prisma.user.count({ where: { isActive: true, organizationMemberships: { some: { organizationId: admin.organizationId } } } }),
+      prisma.user.count({ where: { mustChangePassword: true, organizationMemberships: { some: { organizationId: admin.organizationId } } } }),
+      prisma.user.groupBy({ by: ['role'], where: { organizationMemberships: { some: { organizationId: admin.organizationId } } }, _count: { _all: true } }),
       prisma.driver.findMany({ select: { id: true, name: true, user: { select: { id: true } } }, orderBy: { name: 'asc' } }),
     ])
     return res.status(200).json({
@@ -66,12 +68,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           if (!driver) throw new Error('DRIVER_NOT_FOUND')
           if (driver.user) throw new Error('DRIVER_ALREADY_LINKED')
         }
-        return tx.user.create({ data: {
+        const user = await tx.user.create({ data: {
           firstName, lastName, name: `${firstName} ${lastName}`, email: null, username,
           passwordHash: hashPassword(password), role, driverId,
           isActive: req.body?.isActive !== false, mustChangePassword: true,
           temporaryPasswordIssuedAt: new Date(),
         }, select: safeUserSelect })
+        await tx.organizationUser.create({ data: {
+          organizationId: admin.organizationId,
+          userId: user.id,
+          role: role === UserRole.ADMIN ? 'ORG_ADMIN'
+            : role === UserRole.DISPATCHER ? 'DISPATCHER'
+            : role === UserRole.SECRETARY ? 'SECRETARY'
+            : role === UserRole.PARK_MANAGER ? 'MANAGER'
+            : 'DRIVER',
+        } })
+        return user
       })
       return res.status(201).json({ user })
     } catch (error) {

@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import { createReadStream } from 'fs'
 import path from 'path'
 
@@ -8,9 +9,11 @@ import type { File } from 'formidable'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../../lib/auth/authorization'
+import { requireActiveOrganizationId } from '../../../../../lib/auth/organization-context'
 import { permissions } from '../../../../../lib/auth/permissions'
 import { serializeInvoice } from '../../../../../lib/dispatch/invoices'
 import { prisma } from '../../../../../lib/prisma'
+import { tenantInvoiceBlobPath } from '../../../../../lib/tenant/billing-config'
 
 export const config = {
   api: {
@@ -84,7 +87,7 @@ function parseForm(req: NextApiRequest) {
   })
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse<ErrorResponse | { invoice: unknown }>
 ) {
@@ -145,9 +148,7 @@ export default async function handler(
       })
     }
 
-    const year = new Date().getFullYear()
-    const timestamp = Date.now()
-    const pathname = `novotralux/received-invoices/${year}/${invoiceId}-${timestamp}-${originalFilename}`
+    const pathname = tenantInvoiceBlobPath(requireActiveOrganizationId(), invoiceId, originalFilename)
     const blob = await put(pathname, createReadStream(file.filepath), {
       access: 'private',
       contentType: 'application/pdf',
@@ -191,3 +192,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

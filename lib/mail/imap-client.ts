@@ -1,6 +1,9 @@
 import { ImapFlow } from "imapflow";
 
 import type { NormalizedMailMessage } from "./types";
+import { OrganizationIntegrationType } from '@prisma/client'
+import { getActiveIntegration, parseMailIntakeConfig } from '../integrations/config'
+import { getIntegrationSecret } from '../integrations/secrets'
 
 export type ImapImportStep =
   | "config"
@@ -39,29 +42,10 @@ function parsePositiveInteger(value: string | undefined, defaultValue: number) {
     : defaultValue;
 }
 
-export function getImapConfig() {
-  if (process.env.MAIL_IMPORT_PROVIDER?.trim().toLowerCase() !== "imap") {
-    return null;
-  }
-
-  const host = process.env.MAIL_IMPORT_HOST?.trim();
-  const user = process.env.MAIL_IMPORT_USER?.trim();
-  const password = process.env.MAIL_IMPORT_PASSWORD;
-
-  if (!host || !user || !password) {
-    return null;
-  }
-
-  const config: ImapConfig = {
-    host,
-    port: parsePositiveInteger(process.env.MAIL_IMPORT_PORT, 993),
-    secure: parseBoolean(process.env.MAIL_IMPORT_SECURE, true),
-    user,
-    password,
-    limit: parsePositiveInteger(process.env.MAIL_IMPORT_LIMIT, 50),
-  };
-
-  return config;
+export async function getImapConfig(): Promise<ImapConfig> {
+  const integration = await getActiveIntegration(OrganizationIntegrationType.MAIL_INTAKE)
+  const config = parseMailIntakeConfig(integration.configJson)
+  return { host: config.host, port: config.port, secure: config.secure, limit: config.limit, user: await getIntegrationSecret(integration, 'username'), password: await getIntegrationSecret(integration, 'password') }
 }
 
 export class ImapImportError extends Error {

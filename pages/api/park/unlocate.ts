@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { ParkVehicleType } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
@@ -10,7 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -52,3 +53,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Retrait impossible.' })
   }
 }
+
+export default withTenantApiRoute(handler)

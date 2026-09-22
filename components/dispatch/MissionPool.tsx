@@ -49,7 +49,6 @@ import { ResourcePoolControlPanel } from './ResourcePoolPrimitives'
 import { TrailerRotationPanel } from './TrailerRotationPanel'
 import type { TrailerRotationResult } from './TrailerRotationPanel'
 import {
-  getPlanningBucketNote,
   isDragAllowedForBucket,
   planningBucketCardLabels,
   planningBucketEmptyLabels,
@@ -661,23 +660,13 @@ export function MissionPool({
                   <MissionCard
                     key={mission.id}
                     mission={mission}
-                    className="h-[128px] w-[300px] shrink-0 overflow-y-auto"
+                    className="h-auto min-h-[104px] w-[300px] shrink-0"
                     onClick={onMissionClick}
                     dragDisabled={bucketDragDisabled}
                     bucketBadge={{
                       label: planningBucketCardLabels[activeBucket],
                       className: bucketBadgeClass[activeBucket],
                     }}
-                    note={getPlanningBucketNote(
-                      {
-                        status: mission.status,
-                        preparationStatus: mission.preparationStatus,
-                        pickupDate: mission.pickupDate,
-                        deliveryDate: mission.deliveryDate,
-                      },
-                      activeBucket,
-                      weekStartDate
-                    )}
                   />
                 ))}
               </div>
@@ -1511,7 +1500,7 @@ function DriverFormModal({
               Accès chauffeur
             </p>
             <p className="mt-1 text-xs font-semibold text-[#7b8075]">
-              Identifiants utilisés sur la page de connexion NOVOTRALUX.
+              Identifiants utilisés sur la page de connexion Gerard.
             </p>
           </div>
 

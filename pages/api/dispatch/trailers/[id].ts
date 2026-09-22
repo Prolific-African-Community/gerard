@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   MissionStatus,
   Prisma,
@@ -212,7 +213,7 @@ export function parsePayload(body: unknown): ParseResult {
   };
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -400,3 +401,5 @@ export default async function handler(
   res.setHeader("Allow", "PATCH, DELETE");
   return res.status(405).json({ error: "Method not allowed" });
 }
+
+export default withTenantApiRoute(handler)

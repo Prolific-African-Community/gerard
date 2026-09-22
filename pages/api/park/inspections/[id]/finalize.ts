@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../../lib/auth/authorization'
@@ -7,7 +8,7 @@ import {
   ParkInspectionError,
 } from '../../../../../lib/park/inspections'
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const user = await requirePermission(req, res, permissions.parkInspectionManage)
   if (!user) return
   if (req.method !== 'POST') {
@@ -26,3 +27,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Finalisation impossible.' })
   }
 }
+
+export default withTenantApiRoute(handler)

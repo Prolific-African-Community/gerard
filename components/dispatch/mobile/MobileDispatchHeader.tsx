@@ -6,6 +6,7 @@ import {
 import type { MobileTab } from './types'
 import { LogoutButton } from '../../site/LogoutButton'
 import { SmartSearchButton } from '../DispatchSmartSearch'
+import { OrganizationLogo } from '../../branding/OrganizationLogo'
 
 type MobileDispatchHeaderProps = {
   activeTab: MobileTab
@@ -21,6 +22,7 @@ type MobileDispatchHeaderProps = {
   canAutoPlan?: boolean
   onOpenAutoPlanning?: () => void
   onOpenSearch?: () => void
+  onOpenAssistant?: () => void
 }
 
 type IconName =
@@ -58,6 +60,7 @@ export function MobileDispatchHeader({
   canAutoPlan = false,
   onOpenAutoPlanning,
   onOpenSearch,
+  onOpenAssistant,
 }: MobileDispatchHeaderProps) {
   const currentWeekStartDate = getWeekStartDate()
   const isCurrentWeek =
@@ -67,9 +70,7 @@ export function MobileDispatchHeader({
     <header className="sticky top-0 z-30 border-b border-black/5 bg-[#F4F5F1]/95 px-4 pb-3 pt-3 shadow-[0_10px_30px_rgba(17,18,15,0.05)] backdrop-blur-xl">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col items-start">
-          <img
-            src="/logo_gerard_texte.png"
-            alt="Gerard"
+          <OrganizationLogo
             className="h-12 w-auto max-w-[190px] object-contain"
           />
           <p className="mt-1 max-w-[165px] truncate text-[11px] font-medium text-[#747a6f]">
@@ -78,6 +79,9 @@ export function MobileDispatchHeader({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {onOpenAssistant && activeTab !== 'park' ? (
+            <button type="button" onClick={onOpenAssistant} aria-label="Assistant Gerard" title="Assistant Gerard" className="flex h-11 w-11 items-center justify-center rounded-full border-0 bg-[#eaffc8] text-sm font-black text-[#2d3d14] shadow-[0_10px_24px_rgba(120,170,40,0.16)] outline-none transition active:scale-95">G</button>
+          ) : null}
           {onOpenSearch && activeTab !== 'park' ? (
             <SmartSearchButton
               onClick={onOpenSearch}
@@ -88,7 +92,7 @@ export function MobileDispatchHeader({
             <button
               type="button"
               onClick={onOpenAutoPlanning}
-              className="flex h-11 w-11 items-center justify-center rounded-full border-0 bg-[#B9FF4A] text-[#11130f] shadow-[0_10px_24px_rgba(120,170,40,0.2)] outline-none transition active:scale-95 focus-visible:ring-2 focus-visible:ring-[#11130f]"
+              className="flex h-11 w-11 items-center justify-center rounded-full border-0 bg-[var(--brand-accent)] text-[#11130f] shadow-[0_10px_24px_rgba(120,170,40,0.2)] outline-none transition active:scale-95 focus-visible:ring-2 focus-visible:ring-[#11130f]"
               style={{ border: 0 }}
               aria-label="Planification automatique"
               title="Planification automatique"
@@ -175,7 +179,7 @@ export function MobileDispatchHeader({
               className={[
                 'flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-0 outline-none ring-0 transition duration-200 active:scale-95',
                 isActive
-                  ? 'bg-[#B9FF4A] text-[#11130f] shadow-[0_18px_34px_rgba(185,255,74,0.22)]'
+                  ? 'bg-[var(--brand-accent)] text-[#11130f] shadow-[0_18px_34px_rgba(185,255,74,0.22)]'
                   : 'bg-white text-[#70766b] shadow-[0_10px_24px_rgba(17,18,15,0.07)]',
               ].join(' ')}
               style={{ border: 0 }}

@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   MaintenanceRequestStatus,
   MaintenanceVehicleType,
@@ -21,7 +22,7 @@ function getFilterValue(queryValue: string | string[] | undefined) {
     : undefined;
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -196,3 +197,5 @@ export default async function handler(
   res.setHeader("Allow", "GET, POST");
   return res.status(405).json({ error: "Method not allowed" });
 }
+
+export default withTenantApiRoute(handler)

@@ -51,7 +51,7 @@ export async function buildProfitabilityPdf(
   doc
     .fillColor('#11130f')
     .fontSize(20)
-    .text('NOVOTRALUX', { continued: true })
+    .text('Gerard', { continued: true })
     .fillColor('#6f766b')
     .fontSize(10)
     .text('  Rapport rentabilite operationnelle', { align: 'right' })
@@ -154,12 +154,12 @@ export async function buildProfitabilityWorkbook(
   periodLabel: string
 ) {
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = 'NOVOTRALUX Dispatch'
+  workbook.creator = 'Gerard Dispatch'
   workbook.created = new Date()
 
   const summarySheet = workbook.addWorksheet('Synthese')
   summarySheet.addRows([
-    ['NOVOTRALUX - Rapport rentabilite operationnelle'],
+    ['Gerard - Rapport rentabilite operationnelle'],
     ['Periode', periodLabel],
     ['Export', new Date().toLocaleString('fr-FR')],
     [],

@@ -4,6 +4,7 @@ import {
   parseWeekStartParam,
 } from './date-utils'
 import { prisma } from '../prisma'
+import { requireActiveOrganizationId } from '../auth/organization-context'
 
 export type MissingDataItem = {
   missionId: string
@@ -186,9 +187,10 @@ export async function saveWeeklyProfitabilityAdjustment({
   weekStartDate: Date
   tollCostAmount: number
 }) {
+  const organizationId = requireActiveOrganizationId()
   return prisma.weeklyProfitabilityAdjustment.upsert({
     where: {
-      weekStartDate,
+      organizationId_weekStartDate: { organizationId, weekStartDate },
     },
     create: {
       weekStartDate,
@@ -305,7 +307,7 @@ export async function computeWeeklyProfitability({
         },
       },
     }),
-    prisma.weeklyProfitabilityAdjustment.findUnique({
+    prisma.weeklyProfitabilityAdjustment.findFirst({
       where: {
         weekStartDate,
       },

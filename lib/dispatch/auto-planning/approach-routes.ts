@@ -1,4 +1,4 @@
-import { computeGoogleRoute } from '../maps/google'
+import { computeGoogleRouteMetrics } from '../maps/google'
 import { routeKey, trailerChoices } from '../optimization'
 import type {
   DispatchOptimizationInput,
@@ -11,7 +11,7 @@ type RoutableLocation = TemporalLocation & {
   longitude: number
 }
 
-type RouteProvider = typeof computeGoogleRoute
+type RouteProvider = typeof computeGoogleRouteMetrics
 
 function routable(
   location: TemporalLocation | null | undefined
@@ -42,7 +42,7 @@ export async function prepareCandidateApproachRoutes(input: {
   existing: RouteTransition[]
   provider?: RouteProvider
 }) {
-  const provider = input.provider ?? computeGoogleRoute
+  const provider = input.provider ?? computeGoogleRouteMetrics
   const transitions = [...input.existing]
   const known = new Set(transitions.map((transition) => transition.key))
   const requested = new Map<
@@ -95,7 +95,7 @@ export async function prepareCandidateApproachRoutes(input: {
   const jobs = Array.from(requested.entries())
   let cursor = 0
   const workers = Array.from(
-    { length: Math.min(4, jobs.length) },
+    { length: Math.min(2, jobs.length) },
     async () => {
       while (cursor < jobs.length) {
         const [key, endpoints] = jobs[cursor++]

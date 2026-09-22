@@ -1,7 +1,8 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MissionEventType, MissionStatus, TruckStatus } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-import { requireActiveUser } from '../../../lib/auth/authorization'
+import { requireActiveUser, requireOrganizationModule } from '../../../lib/auth/authorization'
 import { prisma } from '../../../lib/prisma'
 import { synchronizeParkPresence } from '../../../lib/park/service'
 
@@ -94,7 +95,7 @@ function getNextTruckStatus(action: DriverMissionAction) {
   return null
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -108,6 +109,7 @@ export default async function handler(
   if (!sessionUser) {
     return
   }
+  if (!(await requireOrganizationModule(req, res, 'PLANNING'))) return
 
   if (sessionUser.role !== 'DRIVER' || !sessionUser.driverId) {
     return res.status(403).json({ error: 'Forbidden' })
@@ -243,3 +245,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to apply mission action' })
   }
 }
+
+export default withTenantApiRoute(handler)

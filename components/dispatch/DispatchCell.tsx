@@ -164,12 +164,11 @@ export function DispatchCell({
   }
 
   return (
-    <td className="h-[9
-    2px] border-l border-black/10 p-1 align-top">
+    <td className="h-[104px] border-l border-black/10 p-1 align-top">
       <div
         ref={setNodeRef}
         className={[
-          "relative h-[84px] rounded-lg border border-dashed p-1 transition",
+          "relative h-[96px] rounded-lg border border-dashed p-1 transition",
           isOver && !dragDisabled
             ? "border-lime-300 bg-lime-50/70 ring-4 ring-lime-200/40"
             : "border-black/10 bg-[#fbfcf8]",
@@ -209,7 +208,7 @@ export function DispatchCell({
             mission={missions[0]}
             status={getVisibleStatus(missions[0])}
             compact
-            className="h-full overflow-y-auto"
+            className="h-full overflow-hidden"
             onClick={onMissionClick}
             dragDisabled={dragDisabled}
           />

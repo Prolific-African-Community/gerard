@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { TruckStatus } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requirePermission } from "../../../lib/auth/authorization";
@@ -17,7 +18,7 @@ function isTruckStatus(value: unknown): value is TruckStatus {
   );
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -106,3 +107,5 @@ export default async function handler(
     });
   }
 }
+
+export default withTenantApiRoute(handler)

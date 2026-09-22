@@ -6,6 +6,7 @@ import {
 import type { Prisma } from '@prisma/client'
 
 import { prisma } from '../prisma'
+import { requireActiveOrganizationId } from '../auth/organization-context'
 
 type EnsureWeekPlanningRowsResult = {
   initialized: boolean
@@ -147,9 +148,10 @@ export function planMissingPlanningRows(input: {
 export async function ensurePlanningRowsForWeek(
   weekStartDate: Date
 ): Promise<EnsureWeekPlanningRowsResult> {
+  const organizationId = requireActiveOrganizationId()
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`
-      SELECT pg_advisory_xact_lock(hashtext(${`dispatch-planning-week:${weekStartDate.toISOString()}`}))
+      SELECT pg_advisory_xact_lock(hashtext(${`dispatch-planning-week:${organizationId}:${weekStartDate.toISOString()}`}))
     `
 
     const existingRows = await tx.planningRow.findMany({

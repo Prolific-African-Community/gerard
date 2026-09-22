@@ -1,19 +1,24 @@
-# NovoTralux ↔ SL Automotive maintenance E2E checklist
+# Gerard ↔ SL Automotive maintenance E2E checklist
+
+> The environment variable names, the `sourceCompany` / `sourceSystem` values and
+> the `NOVOTRALUX_*` keys below are part of the SL Automotive integration
+> contract. They are kept verbatim on purpose: renaming them would break the
+> exchange with the partner repository and the matching of rows already stored.
 
 ## Local setup
 
-Use two terminals. Both applications default to port 3000, so start NovoTralux
+Use two terminals. Both applications default to port 3000, so start Gerard
 explicitly on 3001.
 
 ```bash
-# /Users/zuluu/SLautomotive
+# <path>/SLautomotive
 npm run dev
 
-# /Users/zuluu/novotralux
+# <path>/gerard
 npm run dev -- -p 3001
 ```
 
-NovoTralux (`http://localhost:3001`) needs:
+Gerard (`http://localhost:3001`) needs:
 
 ```dotenv
 SL_AUTOMOTIVE_API_BASE_URL="http://localhost:3000"
@@ -35,22 +40,22 @@ pending Prisma migrations to its own database before testing.
 ## Manual UI sequence
 
 1. Open `http://localhost:3001/dispatch` and create a maintenance request from
-   a truck or trailer. Note the NovoTralux request ID from the API response or
+   a truck or trailer. Note the Gerard request ID from the API response or
    browser network panel as `NOVO_REQUEST_ID`.
 2. Click **Envoyer à SL Automotive**.
-3. Inspect the NovoTralux request response or database. Expect
+3. Inspect the Gerard request response or database. Expect
    `externalProvider = SL_AUTOMOTIVE`,
    `externalRequestId = NOVO_REQUEST_ID`, a non-empty `providerRequestId`, and
    `status = SUBMITTED`. Save `providerRequestId` as `SL_REQUEST_ID`.
 4. Open `http://localhost:3000/dashboard/garage`. Verify exactly one external
    queue item whose reference is `NOVO_REQUEST_ID`.
-5. Change that item to `UNDER_REVIEW`. Refresh NovoTralux and expect status
+5. Change that item to `UNDER_REVIEW`. Refresh Gerard and expect status
    `UNDER_REVIEW`, one matching history entry, and the maintenance planning
    badge to update.
-6. Change it to `QUOTE_SENT`. Refresh NovoTralux and expect status
+6. Change it to `QUOTE_SENT`. Refresh Gerard and expect status
    `QUOTE_RECEIVED`, one matching history entry, and the badge to update.
 7. Repeat the `QUOTE_SENT` webhook curl below. Expect HTTP 200,
-   `statusChanged: false`, `idempotent: true`, and no additional NovoTralux
+   `statusChanged: false`, `idempotent: true`, and no additional Gerard
    history row.
 8. Click **Envoyer à SL Automotive** again. Expect `alreadySent: true` and
    `idempotent: true`; the SL queue must still contain exactly one item for
@@ -61,13 +66,13 @@ pending Prisma migrations to its own database before testing.
 Set IDs and secrets once:
 
 ```bash
-export NOVO_REQUEST_ID='<NovoTralux maintenance request ID>'
+export NOVO_REQUEST_ID='<Gerard maintenance request ID>'
 export SL_REQUEST_ID='<SL Automotive external request ID>'
 export SHARED_SECRET='shared-local-secret'
 export WEBHOOK_SECRET='shared-webhook-secret'
 ```
 
-Resend an existing NovoTralux request (same action as the UI button):
+Resend an existing Gerard request (same action as the UI button):
 
 ```bash
 curl -i -X PATCH "http://localhost:3001/api/dispatch/maintenance-requests/$NOVO_REQUEST_ID" \
@@ -97,7 +102,7 @@ curl -i -X POST 'http://localhost:3000/api/garage/external-maintenance' \
   }'
 ```
 
-Change an SL item status; this also attempts the NovoTralux webhook:
+Change an SL item status; this also attempts the Gerard webhook:
 
 ```bash
 curl -i -X PATCH "http://localhost:3000/api/garage/external-maintenance/$SL_REQUEST_ID" \
@@ -105,7 +110,7 @@ curl -i -X PATCH "http://localhost:3000/api/garage/external-maintenance/$SL_REQU
   --data '{"status":"UNDER_REVIEW","statusComment":"E2E review"}'
 ```
 
-Call the NovoTralux webhook directly twice. For a request currently at
+Call the Gerard webhook directly twice. For a request currently at
 `QUOTE_RECEIVED`, both repeated calls are idempotent and add no history row.
 
 ```bash
@@ -125,25 +130,25 @@ curl -i -X POST 'http://localhost:3001/api/integrations/sl-automotive/maintenanc
 
 | Boundary | Expected values |
 | --- | --- |
-| NovoTralux after send | `externalProvider=SL_AUTOMOTIVE`, `externalRequestId=NOVO_REQUEST_ID`, `providerRequestId=SL_REQUEST_ID`, `status=SUBMITTED` |
+| Gerard after send | `externalProvider=SL_AUTOMOTIVE`, `externalRequestId=NOVO_REQUEST_ID`, `providerRequestId=SL_REQUEST_ID`, `status=SUBMITTED` |
 | SL after receive | one row for `(sourceCompany=NOVOTRALUX, externalRequestId=NOVO_REQUEST_ID)`, initially `status=RECEIVED` |
-| NovoTralux after SL `UNDER_REVIEW` | `status=UNDER_REVIEW`; exactly one new status-history row |
-| NovoTralux after SL `QUOTE_SENT` | `status=QUOTE_RECEIVED`; exactly one new status-history row |
+| Gerard after SL `UNDER_REVIEW` | `status=UNDER_REVIEW`; exactly one new status-history row |
+| Gerard after SL `QUOTE_SENT` | `status=QUOTE_RECEIVED`; exactly one new status-history row |
 | Duplicate webhook | unchanged status and history count; response reports `idempotent=true` |
 | Duplicate send | unchanged SL row count and `SL_REQUEST_ID` |
 
 ## Common failures
 
 - **401 from SL:** `SL_AUTOMOTIVE_API_KEY` and `NOVOTRALUX_API_KEY` differ.
-- **401 from NovoTralux webhook:** the two
+- **401 from Gerard webhook:** the two
   `NOVOTRALUX_WEBHOOK_API_KEY` values differ.
 - **Webhook skipped warning in SL logs:** webhook base URL or key is missing.
-- **502 while sending:** SL is not listening on port 3000 or the NovoTralux base
+- **502 while sending:** SL is not listening on port 3000 or the Gerard base
   URL is wrong.
-- **Webhook 404:** `externalRequestId` is not the NovoTralux maintenance request
+- **Webhook 404:** `externalRequestId` is not the Gerard maintenance request
   ID, or the repositories point at unexpected databases.
 - **Webhook 409:** `providerRequestId` differs from the SL request ID already
-  stored in NovoTralux.
+  stored in Gerard.
 - **Missing tables/enums:** apply the pending Prisma migrations in both repos.
 - **Duplicate SL rows despite HTTP idempotency:** verify the SL unique migration
   is applied and requests use the same `sourceCompany + externalRequestId`.
@@ -162,7 +167,7 @@ curl -i -X POST \
 ```
 
 Retry sends the exact stored payload and increments its attempt count. A
-delivered row cannot be retried. NovoTralux's receiver remains idempotent, so a
+delivered row cannot be retried. Gerard's receiver remains idempotent, so a
 retry of an already-applied status does not create duplicate status history.
 There is still no automatic retry queue: failed delivery does not roll back the
 SL Automotive business action and requires manual recovery.

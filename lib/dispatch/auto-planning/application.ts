@@ -12,6 +12,7 @@ import {
 } from '../optimization'
 import type { DispatchOptimizationResult } from '../optimization'
 import { prisma } from '../../prisma'
+import { requireActiveOrganizationId } from '../../auth/organization-context'
 import { buildAutoPlanningSnapshot } from './snapshot'
 import { verifySnapshotToken } from './token'
 import type { ApplyRequest, ApplyResult, AutoPlanningSnapshot } from './types'
@@ -82,7 +83,7 @@ export async function applyAutoPlanning(input: {
   userId: string
   request: ApplyRequest
 }): Promise<ApplyResult> {
-  const existing = await prisma.dispatchOptimizationApplication.findUnique({
+  const existing = await prisma.dispatchOptimizationApplication.findFirst({
     where: { idempotencyKey: input.request.idempotencyKey },
   })
   if (existing) {
@@ -142,6 +143,7 @@ export async function persistValidatedAutoPlanning(input: {
   snapshot: AutoPlanningSnapshot
   result: DispatchOptimizationResult
 }): Promise<ApplyResult> {
+  const organizationId = requireActiveOrganizationId()
   const selected = input.request.selectedMissionIds
   const adjustedMissionIds = input.request.adjustments.map(
     (adjustment) => adjustment.missionId
@@ -245,8 +247,8 @@ export async function persistValidatedAutoPlanning(input: {
   )
 
   return prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`auto-planning:${input.snapshot.input.period.startsAt}`}))`
-    const replay = await tx.dispatchOptimizationApplication.findUnique({
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`auto-planning:${organizationId}:${input.snapshot.input.period.startsAt}`}))`
+    const replay = await tx.dispatchOptimizationApplication.findFirst({
       where: { idempotencyKey: input.request.idempotencyKey },
     })
     if (replay) {

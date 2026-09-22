@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   InvoiceDirection,
   InvoiceStatus,
@@ -554,7 +555,7 @@ async function handlePatch(
   })
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -596,3 +597,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import { Buffer } from 'buffer'
 
 import { InvoiceDirection } from '@prisma/client'
@@ -64,7 +65,7 @@ async function pipeWebStream(
   res.end()
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -156,3 +157,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

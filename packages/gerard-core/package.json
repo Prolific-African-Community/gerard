@@ -1,0 +1,15 @@
+{
+  "name": "@prolific/gerard-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./application": "./src/application/index.ts",
+    "./react": "./src/react.tsx",
+    "./intelligence": "./src/intelligence.ts"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  }
+}

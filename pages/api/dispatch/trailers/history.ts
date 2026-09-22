@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 /**
  * Derniers mouvements d'une remorque, en lecture seule.
  *
@@ -10,7 +11,7 @@ import { permissions } from '../../../../lib/auth/permissions'
 import { prisma } from '../../../../lib/prisma'
 import type { TrailerCustodyMovement } from '../../../../lib/dispatch/trailer-rotation'
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -59,3 +60,5 @@ export default async function handler(
 
   return res.status(200).json({ movements })
 }
+
+export default withTenantApiRoute(handler)

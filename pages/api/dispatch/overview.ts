@@ -1,6 +1,7 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MaintenanceUrgency, MissionStatus } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { requirePermission } from '../../../lib/auth/authorization'
+import { requirePermission, runWithCurrentOrganization } from '../../../lib/auth/authorization'
 import { permissions } from '../../../lib/auth/permissions'
 
 import {
@@ -164,12 +165,13 @@ function getRequestedWeekStartDate(queryValue: string | string[] | undefined) {
   return parseWeekStartParam(queryValue)
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse<unknown | ErrorResponse>
 ) {
   const user = await requirePermission(req, res, permissions.dispatchView)
   if (!user) return
+  return runWithCurrentOrganization(user, async () => {
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET')
     return res.status(405).json({
@@ -581,4 +583,7 @@ export default async function handler(
           : undefined,
     })
   }
+  })
 }
+
+export default withTenantApiRoute(handler)

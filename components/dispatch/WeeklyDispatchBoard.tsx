@@ -55,6 +55,7 @@ import { DispatchMapView } from './DispatchMapView'
 import { ImportedMissionsPanel } from './ImportedMissionsPanel'
 import { InvoicesPanel } from './InvoicesPanel'
 import { MissionCardVisual } from './MissionCard'
+import { useGerardApplication } from '@prolific/gerard-core/react'
 import { MissionDetailPanel } from './MissionDetailPanel'
 import { missionPoolDroppableId, MissionPool } from './MissionPool'
 import type {
@@ -74,7 +75,7 @@ import { TrailerCard } from './TrailerCard'
 import { TruckCard } from './TruckCard'
 import { useResourceCardActivation } from './useResourceCardActivation'
 import { ProfitabilityPanel } from './ProfitabilityPanel'
-import { WeekNavigator } from './WeekNavigator'
+import { DispatchToolbar } from './DispatchToolbar'
 import type { ClientProfile } from '../../lib/dispatch/client-profiles'
 import { normalizeClientProfile } from '../../lib/dispatch/client-profiles'
 import {
@@ -96,6 +97,8 @@ import {
 } from '../../lib/dispatch/trailer-rotation'
 import { getMissionDisplayLocation } from '../../lib/dispatch/mission-display-location'
 import { DriverOperationalCardContent } from './DriverOperationalCardContent'
+import { GerardSuggestionsPanel } from './intelligence/GerardSuggestionsPanel'
+import { GerardAssistantPanel } from './intelligence/GerardAssistantPanel'
 
 type MissionPlacement = {
   assignmentId?: string
@@ -809,11 +812,11 @@ function TruckAssignmentCell({
   })
 
   return (
-    <td className="h-[92px] w-[142px] border-l border-black/10 p-1 align-top">
+    <td className="h-[104px] w-[142px] border-l border-black/10 p-1 align-top">
       <div
         ref={setNodeRef}
         className={[
-          'h-[84px] rounded-lg border border-dashed p-1 transition',
+          'h-[96px] rounded-lg border border-dashed p-1 transition',
           isOver && !dragDisabled
             ? 'ring-lime-200/35 border-lime-300 bg-lime-50/70 ring-4'
             : 'bg-white/35 border-black/10',
@@ -863,11 +866,11 @@ function TrailerAssignmentCell({
   })
 
   return (
-    <td className="h-[92px] w-[142px] border-l border-black/10 p-1 align-top">
+    <td className="h-[104px] w-[142px] border-l border-black/10 p-1 align-top">
       <div
         ref={setNodeRef}
         className={[
-          'h-[84px] rounded-lg border border-dashed p-1 transition',
+          'h-[96px] rounded-lg border border-dashed p-1 transition',
           isOver && !dragDisabled
             ? 'ring-lime-200/35 border-lime-300 bg-lime-50/70 ring-4'
             : 'bg-white/35 border-black/10',
@@ -962,7 +965,7 @@ function PlanningDriverCell({
         driver && onEditDriver ? `Ouvrir la fiche de ${driver.name}` : undefined
       }
       className={[
-        'relative flex h-[84px] rounded-lg border px-1.5 py-1 transition',
+        'relative flex h-[96px] rounded-lg border px-1.5 py-1 transition',
         driver
           ? 'items-center justify-start pr-6 text-left'
           : 'items-center justify-center text-center',
@@ -1087,9 +1090,9 @@ function PlanningRowView({
   return (
     <tr
       data-planning-row-id={row.id}
-      className="group h-[92px] border-b border-black/10 last:border-b-0"
+      className="group h-[104px] border-b border-black/10 last:border-b-0"
     >
-      <th className="h-[92px] w-[158px] p-1 text-left align-top">
+      <th className="h-[104px] w-[158px] p-1 text-left align-top">
         <PlanningDriverCell
           rowId={row.id}
           driver={driver}
@@ -1162,54 +1165,6 @@ function DragPreviewCard({
   )
 }
 
-type ViewModeSwitchProps = {
-  viewMode: ViewMode
-  onChange: (viewMode: ViewMode) => void
-  capabilities: DispatchCapabilities
-}
-
-function ViewModeSwitch({ viewMode, onChange, capabilities }: ViewModeSwitchProps) {
-  const options: Array<{ value: ViewMode; label: string }> = [
-    ...(capabilities.canViewPlanning
-      ? [{ value: 'planning' as const, label: 'Planning' }]
-      : []),
-    ...(capabilities.canViewMap ? [{ value: 'map' as const, label: 'Carte' }] : []),
-    ...(capabilities.canViewProfitability ? [{ value: 'profitability' as const, label: 'Rentabilité' }] : []),
-    ...(capabilities.canViewInvoices ? [{ value: 'invoices' as const, label: 'Factures' }] : []),
-    ...(capabilities.canViewPark ? [{ value: 'park' as const, label: 'Parc' }] : []),
-  ]
-
-  return (
-    <div className="mb-3 flex items-center justify-between gap-4">
-      <div className="inline-flex items-center gap-1 rounded-[22px] bg-black/[0.035] p-1.5 shadow-[0_14px_40px_rgba(17,18,15,0.045)]">
-        {options.map((option) => {
-          const isActive = viewMode === option.value
-
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              className={[
-                'h-10 rounded-[17px] px-4 text-xs font-semibold tracking-[-0.01em] transition-all duration-200',
-                isActive
-                  ? 'bg-[#11130f] text-white shadow-[0_10px_26px_rgba(17,18,15,0.14)]'
-                  : 'text-[#5f665b] hover:bg-white/75 hover:text-[#11130f]',
-              ].join(' ')}
-            >
-              {option.label}
-            </button>
-          )
-        })}
-      </div>
-
-      <p className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa090] md:block">
-        {capabilities.canViewPlanning ? 'Cockpit Dispatch' : 'Gestion du Parc'}
-      </p>
-    </div>
-  )
-}
-
 export function WeeklyDispatchBoard({
   capabilities = fullDispatchCapabilities,
   initialView = 'planning',
@@ -1276,10 +1231,33 @@ export function WeeklyDispatchBoard({
     )
   }
   const [viewMode, setViewMode] = useState<ViewMode>(initialView)
+  const application = useGerardApplication()
+  const hiddenNavigationItems = application.features.hiddenNavigationItems
+  // Les vues accessibles dépendent des droits : la barre n'affiche que celles-là.
+  const viewOptions = useMemo(
+    () => [
+      ...(capabilities.canViewPlanning ? [{ value: 'planning' as const, label: 'Planning' }] : []),
+      ...(capabilities.canViewMap ? [{ value: 'map' as const, label: 'Carte' }] : []),
+      ...(capabilities.canViewProfitability
+        ? [{ value: 'profitability' as const, label: 'Rentabilité' }]
+        : []),
+      ...(capabilities.canViewInvoices ? [{ value: 'invoices' as const, label: 'Factures' }] : []),
+      ...(capabilities.canViewPark ? [{ value: 'park' as const, label: application.terminology.park }] : []),
+    ].filter((item) => !hiddenNavigationItems.includes(item.value)),
+    [application.terminology.park, capabilities, hiddenNavigationItems],
+  )
+  useEffect(() => {
+    if (!viewOptions.some((option) => option.value === viewMode) && viewOptions[0]) {
+      setViewMode(viewOptions[0].value)
+    }
+  }, [viewMode, viewOptions])
+  // L'analyse Gerard est déclenchée depuis la barre : le panneau expose son action.
+  const analyzePlanningRef = useRef<(() => void) | null>(null)
   const [isPlanningFullscreen, setIsPlanningFullscreen] = useState(false)
   const [resourceEditRequest, setResourceEditRequest] =
     useState<ResourceEditRequest | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [isAssistantOpen, setIsAssistantOpen] = useState(false)
   const [poolLocatorRequest, setPoolLocatorRequest] =
     useState<PoolLocatorRequest | null>(null)
   const { requestHighlight } = useLocatorHighlight()
@@ -3299,10 +3277,10 @@ export function WeeklyDispatchBoard({
   if (viewMode === 'park' && initialParkOverview) {
     return (
       <div className="min-h-0 flex-1 pb-8 pt-3">
-        <ViewModeSwitch
+        <DispatchToolbar
           viewMode={viewMode}
-          onChange={handleViewChange}
-          capabilities={capabilities}
+          viewOptions={viewOptions}
+          onViewChange={handleViewChange}
         />
         <ParkView initialOverview={initialParkOverview} />
       </div>
@@ -3319,36 +3297,51 @@ export function WeeklyDispatchBoard({
       onDragCancel={cleanupDragState}
     >
       <div className={`min-h-0 flex-1 pt-3 ${viewMode === 'planning' ? 'pb-[212px]' : 'pb-8'}`}>
-        {viewMode !== 'park' ? (
-          <WeekNavigator
-            selectedWeekStartDate={selectedWeekStartDate}
-            onWeekChange={handleWeekChange}
-            onCreateMission={capabilities.canCreateMission ? () => setIsCreateMissionOpen(true) : undefined}
-            onOpenImports={capabilities.canViewImports ? () => setIsImportedMissionsOpen(true) : undefined}
-            onOpenClientProfiles={capabilities.canManageCustomers ? () => setIsClientProfilesOpen(true) : undefined}
-            onOpenAutoPlanning={
-              capabilities.canAssign && viewMode === 'planning'
-                ? () => setIsAutoPlanningOpen(true)
-                : undefined
-            }
-            onOpenSearch={
-              capabilities.canViewPlanning
-                ? () => setIsSearchOpen(true)
-                : undefined
-            }
-          />
-        ) : null}
-
-        <ViewModeSwitch viewMode={viewMode} onChange={handleViewChange} capabilities={capabilities} />
-
-        {viewMode === 'planning' && capabilities.canAssign && !isLoadingOverview &&
-        !overviewError ? (
-          <button type="button" onClick={() => void handleInitializePlanningRows()}
-            className="mx-3 mb-3 rounded-xl bg-[#11130f] px-4 py-2 text-xs font-semibold text-white">
-            {dispatchData.planningRows.length === 0
+        <DispatchToolbar
+          viewMode={viewMode}
+          viewOptions={viewOptions}
+          onViewChange={handleViewChange}
+          selectedWeekStartDate={viewMode !== 'park' ? selectedWeekStartDate : undefined}
+          onWeekChange={viewMode !== 'park' ? handleWeekChange : undefined}
+          onOpenSearch={capabilities.canViewPlanning ? () => setIsSearchOpen(true) : undefined}
+          onOpenAssistant={capabilities.canViewPlanning ? () => setIsAssistantOpen(true) : undefined}
+          onOpenAutoPlanning={
+            capabilities.canAssign && viewMode === 'planning'
+              ? () => setIsAutoPlanningOpen(true)
+              : undefined
+          }
+          onAnalyzePlanning={
+            viewMode === 'planning' && capabilities.canViewPlanning
+              ? () => analyzePlanningRef.current?.()
+              : undefined
+          }
+          onCompletePlanningRows={
+            viewMode === 'planning' &&
+            capabilities.canAssign &&
+            !isLoadingOverview &&
+            !overviewError
+              ? () => void handleInitializePlanningRows()
+              : undefined
+          }
+          completePlanningRowsLabel={
+            dispatchData.planningRows.length === 0
               ? 'Initialiser les lignes de cette semaine'
-              : 'Compléter les lignes de cette semaine'}
-          </button>
+              : 'Compléter les lignes de cette semaine'
+          }
+          onOpenImports={capabilities.canViewImports ? () => setIsImportedMissionsOpen(true) : undefined}
+          onOpenClientProfiles={
+            capabilities.canManageCustomers ? () => setIsClientProfilesOpen(true) : undefined
+          }
+          onCreateMission={capabilities.canCreateMission ? () => setIsCreateMissionOpen(true) : undefined}
+        />
+
+        {viewMode === 'planning' && capabilities.canViewPlanning ? (
+          <GerardSuggestionsPanel
+            weekStart={formatDateParam(selectedWeekStartDate)}
+            onApplied={() => loadOverview()}
+            hideTrigger
+            analyzeRef={analyzePlanningRef}
+          />
         ) : null}
 
         {viewMode === 'planning' && !capabilities.canAssign ? (
@@ -3614,6 +3607,13 @@ export function WeeklyDispatchBoard({
         onClose={() => setIsSearchOpen(false)}
         weekStart={formatDateParam(selectedWeekStartDate)}
         onSelect={handleLocatorSelect}
+      />
+
+      <GerardAssistantPanel
+        open={isAssistantOpen}
+        onClose={() => setIsAssistantOpen(false)}
+        weekStart={formatDateParam(selectedWeekStartDate)}
+        missionReference={selectedMission?.reference}
       />
 
       {(isLoadingOverview || overviewError) && (

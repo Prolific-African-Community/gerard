@@ -1,4 +1,4 @@
-import { UserRole } from '@prisma/client'
+import { OrganizationRole, UserRole } from '@prisma/client'
 import type { DispatchCapabilities } from './dispatch-capabilities'
 
 export const permissions = {
@@ -95,15 +95,49 @@ export const rolePermissions: Readonly<Record<UserRole, ReadonlySet<Permission>>
   [UserRole.DRIVER]: new Set(),
 }
 
+export const organizationRolePermissions: Readonly<Record<OrganizationRole, ReadonlySet<Permission>>> = {
+  [OrganizationRole.ORG_ADMIN]: new Set(allPermissions),
+  [OrganizationRole.MANAGER]: new Set(allPermissions.filter(permission => permission !== permissions.usersManage)),
+  [OrganizationRole.DISPATCHER]: rolePermissions[UserRole.DISPATCHER],
+  [OrganizationRole.SECRETARY]: rolePermissions[UserRole.SECRETARY],
+  [OrganizationRole.ACCOUNTING]: new Set([
+    permissions.dispatchView,
+    permissions.missionsView,
+    permissions.customersView,
+    permissions.profitabilityView,
+    permissions.profitabilityManage,
+    permissions.invoicesView,
+    permissions.invoicesManage,
+  ]),
+  [OrganizationRole.DRIVER]: new Set(),
+  [OrganizationRole.VIEWER]: new Set([
+    permissions.dispatchView,
+    permissions.missionsView,
+    permissions.customersView,
+    permissions.driversView,
+    permissions.trucksView,
+    permissions.trailersView,
+    permissions.mapView,
+    permissions.profitabilityView,
+    permissions.invoicesView,
+    permissions.maintenanceView,
+    permissions.parkView,
+    permissions.parkHistoryView,
+    permissions.parkInspectionView,
+  ]),
+}
+
 export function hasPermission(
-  user: { role: UserRole; isActive?: boolean } | null,
+  user: { role: UserRole; organizationRole?: OrganizationRole; isActive?: boolean } | null,
   permission: Permission
 ) {
-  return Boolean(user && user.isActive !== false && rolePermissions[user.role].has(permission))
+  return Boolean(user && user.isActive !== false && (user.organizationRole
+    ? organizationRolePermissions[user.organizationRole]
+    : rolePermissions[user.role]).has(permission))
 }
 
 export function hasAnyPermission(
-  user: { role: UserRole; isActive?: boolean } | null,
+  user: { role: UserRole; organizationRole?: OrganizationRole; isActive?: boolean } | null,
   requiredPermissions: readonly Permission[]
 ) {
   return requiredPermissions.some((permission) => hasPermission(user, permission))
@@ -149,4 +183,55 @@ export function getDispatchCapabilities(role: UserRole): DispatchCapabilities {
       permissions.parkInspectionManage
     ),
   }
+}
+
+export function getDispatchCapabilitiesForUser(user: {
+  role: UserRole
+  organizationRole?: OrganizationRole
+  isActive?: boolean
+  enabledModules: readonly string[]
+}): DispatchCapabilities {
+  const allowed = (permission: Permission) => {
+    const module = moduleForPermissionName(permission)
+    return hasPermission(user, permission) && (!module || user.enabledModules.includes(module))
+  }
+  return {
+    canViewPlanning: allowed(permissions.dispatchView),
+    canCreateMission: allowed(permissions.missionsCreate),
+    canEditMission: allowed(permissions.missionsEdit),
+    canDeleteMission: allowed(permissions.missionsDelete),
+    canAssign: allowed(permissions.dispatchAssign),
+    canDragDrop: allowed(permissions.dispatchDragDrop),
+    canManageCustomers: allowed(permissions.customersManage),
+    canManageDrivers: allowed(permissions.driversManage),
+    canManageDriverCredentials: allowed(permissions.driversCredentialsManage),
+    canManageTrucks: allowed(permissions.trucksManage),
+    canManageTrailers: allowed(permissions.trailersManage),
+    canDeleteResources: allowed(permissions.driversDelete) && allowed(permissions.trucksDelete) && allowed(permissions.trailersDelete),
+    canViewImports: allowed(permissions.importsView),
+    canManageImports: allowed(permissions.importsManage),
+    canViewMap: allowed(permissions.mapView),
+    canViewProfitability: allowed(permissions.profitabilityView),
+    canManageProfitability: allowed(permissions.profitabilityManage),
+    canViewInvoices: allowed(permissions.invoicesView),
+    canManageInvoices: allowed(permissions.invoicesManage),
+    canViewMaintenance: allowed(permissions.maintenanceView),
+    canRequestMaintenance: allowed(permissions.maintenanceRequest),
+    canManageMaintenance: allowed(permissions.maintenanceManage),
+    canViewPark: allowed(permissions.parkView),
+    canMovePark: allowed(permissions.parkMove),
+    canViewParkHistory: allowed(permissions.parkHistoryView),
+    canViewParkInspections: allowed(permissions.parkInspectionView),
+    canManageParkInspections: allowed(permissions.parkInspectionManage),
+  }
+}
+
+function moduleForPermissionName(permission: Permission) {
+  if (permission === permissions.mapView) return 'MAP'
+  if (permission === permissions.profitabilityView || permission === permissions.profitabilityManage) return 'PROFITABILITY'
+  if (permission === permissions.invoicesView || permission === permissions.invoicesManage) return 'INVOICING'
+  if (permission.startsWith('maintenance.')) return 'MAINTENANCE'
+  if (permission.startsWith('park.')) return 'FLEET'
+  if (permission === permissions.usersManage) return null
+  return 'PLANNING'
 }

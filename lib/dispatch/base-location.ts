@@ -1,4 +1,4 @@
-export const NOVOTRALUX_BASE = {
+export const GERARD_BASE = {
   name: "Base Gerard",
   address: "Sedan, France",
   lat: 49.679703,

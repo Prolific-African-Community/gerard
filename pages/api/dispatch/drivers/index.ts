@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import { DriverStatus, UserRole } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
@@ -148,7 +149,7 @@ const manualPositionFields = [
   'currentHeading',
 ] as const
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -228,7 +229,7 @@ export default async function handler(
         })
 
         if (payload.username) {
-          await tx.user.create({
+          const driverUser = await tx.user.create({
             data: {
               name: payload.name,
               email: null,
@@ -236,6 +237,13 @@ export default async function handler(
               passwordHash: hashPassword(payload.password ?? ''),
               role: UserRole.DRIVER,
               driverId: driver.id,
+            },
+          })
+          await tx.organizationUser.create({
+            data: {
+              organizationId: sessionUser.organizationId,
+              userId: driverUser.id,
+              role: 'DRIVER',
             },
           })
         }
@@ -308,3 +316,5 @@ export default async function handler(
   res.setHeader('Allow', 'GET, POST')
   return res.status(405).json({ error: 'Method not allowed' })
 }
+
+export default withTenantApiRoute(handler)

@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePermission } from '../../../../lib/auth/authorization'
@@ -5,7 +6,7 @@ import { permissions } from '../../../../lib/auth/permissions'
 import { parseWeekStartParam } from '../../../../lib/dispatch/date-utils'
 import { ensurePlanningRowsForWeek } from '../../../../lib/dispatch/planning-rows'
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!(await requirePermission(req, res, permissions.dispatchAssign))) return
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
@@ -26,3 +27,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Failed to initialize planning rows' })
   }
 }
+
+export default withTenantApiRoute(handler)

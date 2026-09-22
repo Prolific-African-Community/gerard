@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MissionEventType, MissionStatus, Prisma } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { requirePermission } from "../../../lib/auth/authorization";
@@ -258,7 +259,7 @@ function parseBody(body: unknown): UpdateMissionBody | null {
   };
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -557,3 +558,5 @@ export default async function handler(
     return res.status(500).json({ error: "Failed to update mission" });
   }
 }
+
+export default withTenantApiRoute(handler)

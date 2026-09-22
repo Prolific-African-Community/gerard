@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import { MissionEventType, MissionStatus, Prisma, TrailerCustodyState, TrailerStatus } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -9,7 +10,7 @@ function routeId(value: string | string[] | undefined) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const user = await requirePermission(req, res, permissions.dispatchAssign);
   if (!user) return;
   if (req.method !== "PATCH") {
@@ -120,3 +121,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: "Impossible de modifier la remorque planifiée." });
   }
 }
+
+export default withTenantApiRoute(handler)

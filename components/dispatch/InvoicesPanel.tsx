@@ -1,5 +1,12 @@
 'use client'
 
+import {
+  segmentedItemActiveClass,
+  segmentedItemClass,
+  segmentedItemIdleClass,
+  segmentedShellClass,
+} from '../ui/ControlKit'
+
 import type React from 'react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -164,13 +171,15 @@ type MaintenanceRequestOption = {
 }
 
 const defaultSeller = {
-  sellerName: 'NOVOTRALUX S.À R.L.',
+  // Identite legale de l'emetteur, alignee sur lib/dispatch/invoices.ts.
+  // Donnee de facturation, pas du branding produit : voir le commentaire la-bas.
+  sellerName: '',
   sellerAddress: '21 Stawelerstrooss, 9964\nHuldang Ëlwen,\nLuxembourg',
   sellerVatNumber: 'LU31249718',
   sellerIban: 'LU00 0000 0000 0000 0000',
   sellerBic: 'BILLLULLXXX',
   sellerBankName: 'BIL',
-  sellerBeneficiary: 'NOVOTRALUX S.À R.L.',
+  sellerBeneficiary: '',
   paymentTerms: 'Paiement à 30 jours',
 }
 
@@ -959,7 +968,7 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
               Factures
             </h2>
             <p className="mt-2 max-w-2xl text-sm font-semibold text-[#6f766b]">
-              Centralisation des factures émises et reçues NOVOTRALUX.
+              Centralisation des factures émises et reçues.
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
@@ -990,7 +999,7 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
 
         <div className="rounded-[30px] border border-black/[0.04] bg-white p-4 shadow-[0_18px_55px_rgba(17,18,15,0.055)]">
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="inline-flex w-full items-center gap-1 overflow-x-auto rounded-[22px] bg-[#F4F5F1] p-1.5 xl:w-auto">
+            <div className={`w-full overflow-x-auto xl:w-auto ${segmentedShellClass}`}>
               {[
                 ['ISSUED', 'Factures émises'],
                 ['RECEIVED', 'Factures reçues'],
@@ -1001,10 +1010,8 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
                   type="button"
                   onClick={() => setActiveTab(value as InvoiceDirection | 'ALL')}
                   className={[
-                    'h-10 shrink-0 rounded-[17px] px-4 text-xs font-semibold transition',
-                    activeTab === value
-                      ? 'bg-[#11130f] text-white shadow-[0_10px_26px_rgba(17,18,15,0.14)]'
-                      : 'text-[#5f665b] hover:bg-white',
+                    segmentedItemClass,
+                    activeTab === value ? segmentedItemActiveClass : segmentedItemIdleClass,
                   ].join(' ')}
                 >
                   {label}
@@ -1049,7 +1056,7 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
 
           {activeTab === 'RECEIVED' && invoices.length === 0 && !isLoading ? (
             <div className="mt-4 rounded-[24px] border border-dashed border-black/10 bg-[#F7F8F4] px-5 py-8 text-sm font-semibold text-[#6f766b]">
-              Ajoutez ici les factures fournisseurs reçues par NOVOTRALUX,
+              Ajoutez ici les factures fournisseurs reçues,
               notamment les factures liées aux interventions SL Automotive.
             </div>
           ) : null}
@@ -1088,7 +1095,7 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
                 <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#11130f]">
                   {isReceivedInvoice
                     ? form.externalInvoiceNumber || 'Facture fournisseur'
-                    : form.invoiceNumber || 'Brouillon NOVOTRALUX'}
+                    : form.invoiceNumber || 'Brouillon'}
                 </h3>
               </div>
               <button
@@ -1254,7 +1261,7 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
                   </Section>
 
                   <div className="grid gap-4 lg:grid-cols-2">
-                    <Section title={isReceivedInvoice ? 'Fournisseur' : 'NOVOTRALUX'}>
+                    <Section title={isReceivedInvoice ? 'Fournisseur' : 'Émetteur'}>
                       {isReceivedInvoice ? (
                         <button
                           type="button"
@@ -1286,12 +1293,12 @@ export function InvoicesPanel({ missions }: InvoicesPanelProps) {
                       ) : null}
                     </Section>
 
-                    <Section title={isReceivedInvoice ? 'NOVOTRALUX' : 'Client'}>
+                    <Section title={isReceivedInvoice ? 'Émetteur' : 'Client'}>
                       <TextField label="Nom" value={form.buyerName} onChange={(value) => setFormValue('buyerName', value, setForm)} disabled={isReadOnly} />
                       <TextareaField label="Adresse" value={form.buyerAddress} onChange={(value) => setFormValue('buyerAddress', value, setForm)} disabled={isReadOnly} />
                       <div className="grid gap-3 md:grid-cols-2">
-                        <TextField label={isReceivedInvoice ? 'TVA NOVOTRALUX' : 'TVA client'} value={form.buyerVatNumber} onChange={(value) => setFormValue('buyerVatNumber', value, setForm)} disabled={isReadOnly} />
-                        <TextField label={isReceivedInvoice ? 'Email NOVOTRALUX' : 'Email client'} value={form.buyerEmail} onChange={(value) => setFormValue('buyerEmail', value, setForm)} disabled={isReadOnly} />
+                        <TextField label={isReceivedInvoice ? 'TVA émetteur' : 'TVA client'} value={form.buyerVatNumber} onChange={(value) => setFormValue('buyerVatNumber', value, setForm)} disabled={isReadOnly} />
+                        <TextField label={isReceivedInvoice ? 'Email émetteur' : 'Email client'} value={form.buyerEmail} onChange={(value) => setFormValue('buyerEmail', value, setForm)} disabled={isReadOnly} />
                       </div>
                     </Section>
                   </div>

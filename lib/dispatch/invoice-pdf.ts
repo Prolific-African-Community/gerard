@@ -6,7 +6,6 @@ import PDFDocument from 'pdfkit'
 
 import {
   calculateInvoiceTotals,
-  defaultIssuedInvoiceSeller,
   normalizeInvoiceLines,
 } from './invoices'
 
@@ -90,7 +89,7 @@ export function getInvoicePdfFilename(invoice: {
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
 
-  return `Facture-${safeNumber || 'NOVOTRALUX'}.pdf`
+  return `Facture-${safeNumber || 'Gerard'}.pdf`
 }
 
 export async function buildInvoicePdf(invoice: InvoicePdfData) {
@@ -134,7 +133,7 @@ export async function buildInvoicePdf(invoice: InvoicePdfData) {
 }
 
 function drawHeader(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
-  const logoPath = path.join(process.cwd(), 'public', 'logo-novotralux4.png')
+  const logoPath = path.join(process.cwd(), 'public', 'logo_gerard_texte.png')
 
   if (existsSync(logoPath)) {
     doc.image(logoPath, page.margin, 42, {
@@ -145,11 +144,11 @@ function drawHeader(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
       .font('Helvetica-Bold')
       .fontSize(22)
       .fillColor('#11130f')
-      .text('NOVOTRALUX', page.margin, 44)
+      .text(safeText(invoice.sellerName, 'Identité légale manquante'), page.margin, 44)
       .font('Helvetica')
       .fontSize(8)
       .fillColor('#6f766b')
-      .text('Transport & Logistics', page.margin, 70)
+      .text('Transport & Logistique', page.margin, 70)
   }
 
   doc
@@ -193,12 +192,12 @@ function drawHeader(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
 
 function drawParties(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
   const y = doc.y
-  drawBox(doc, page.margin, y, 246, 'NOVOTRALUX', [
-    safeText(invoice.sellerName, defaultIssuedInvoiceSeller.sellerName),
-    safeText(invoice.sellerAddress, defaultIssuedInvoiceSeller.sellerAddress),
+  drawBox(doc, page.margin, y, 246, 'Émetteur', [
+    safeText(invoice.sellerName, 'Identité légale manquante'),
+    safeText(invoice.sellerAddress, ''),
     `TVA : ${safeText(
       invoice.sellerVatNumber,
-      defaultIssuedInvoiceSeller.sellerVatNumber
+      ''
     )}`,
   ])
   drawBox(doc, 307, y, 246, 'Client', [
@@ -333,20 +332,20 @@ function drawPayment(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
   ensureSpace(doc, 120)
   const y = doc.y
   drawBox(doc, page.margin, y, 246, 'Conditions de paiement', [
-    safeText(invoice.paymentTerms, defaultIssuedInvoiceSeller.paymentTerms),
+    safeText(invoice.paymentTerms, ''),
     `Date d'echeance : ${formatDate(invoice.dueDate)}`,
   ])
   drawBox(doc, 307, y, 246, 'Coordonnees bancaires', [
     `Beneficiaire : ${safeText(
       invoice.sellerBeneficiary,
-      defaultIssuedInvoiceSeller.sellerBeneficiary
+      invoice.sellerName ?? undefined
     )}`,
     `Banque : ${safeText(
       invoice.sellerBankName,
-      defaultIssuedInvoiceSeller.sellerBankName
+      ''
     )}`,
-    `IBAN : ${safeText(invoice.sellerIban, defaultIssuedInvoiceSeller.sellerIban)}`,
-    `BIC : ${safeText(invoice.sellerBic, defaultIssuedInvoiceSeller.sellerBic)}`,
+    `IBAN : ${safeText(invoice.sellerIban, '')}`,
+    `BIC : ${safeText(invoice.sellerBic, '')}`,
     `Reference : ${safeText(invoice.invoiceNumber, invoice.id)}`,
   ])
   doc.y = y + 140
@@ -386,10 +385,10 @@ function drawFooters(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
       .text(
         `${safeText(
           invoice.sellerName,
-          defaultIssuedInvoiceSeller.sellerName
+          'Identité légale manquante'
         )} - TVA ${safeText(
           invoice.sellerVatNumber,
-          defaultIssuedInvoiceSeller.sellerVatNumber
+          ''
         )} - Merci pour votre confiance.`,
         page.margin,
         784,

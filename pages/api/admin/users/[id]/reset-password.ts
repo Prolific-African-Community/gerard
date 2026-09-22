@@ -6,13 +6,14 @@ import { prisma } from '../../../../../lib/prisma'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Méthode non autorisée' }) }
-  if (!(await requireAdmin(req, res))) return
+  const admin = await requireAdmin(req, res)
+  if (!admin) return
   const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id
   const password = typeof req.body?.password === 'string' ? req.body.password : ''
   const error = passwordError(password)
   if (error) return res.status(400).json({ error })
   if (password !== req.body?.passwordConfirmation) return res.status(400).json({ error: 'La confirmation ne correspond pas.' })
-  const result = await prisma.user.updateMany({ where: { id }, data: {
+  const result = await prisma.user.updateMany({ where: { id, organizationMemberships: { some: { organizationId: admin.organizationId } } }, data: {
     passwordHash: hashPassword(password), mustChangePassword: true,
     temporaryPasswordIssuedAt: new Date(), sessionVersion: { increment: 1 },
   } })

@@ -1,7 +1,8 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { DriverActivitySource, UserRole } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-import { requireActiveUser } from '../../../lib/auth/authorization'
+import { requireActiveUser, requireOrganizationModule } from '../../../lib/auth/authorization'
 import { parseActivityInput } from '../../../lib/dispatch/regulatory/activity-input'
 import {
   getDriverActivityState,
@@ -24,12 +25,13 @@ async function inferMissionId(driverId: string, effectiveAt: Date) {
   return candidates.length === 1 ? candidates[0].missionId : null
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
   const user = await requireActiveUser(req, res)
   if (!user) return
+  if (!(await requireOrganizationModule(req, res, 'PLANNING'))) return
   if (user.role !== UserRole.DRIVER || !user.driverId) {
     return res.status(403).json({ error: 'Accès réservé au chauffeur.' })
   }
@@ -85,3 +87,5 @@ export default async function handler(
     message: 'Données chauffeur modifiées — relancez la simulation.',
   })
 }
+
+export default withTenantApiRoute(handler)

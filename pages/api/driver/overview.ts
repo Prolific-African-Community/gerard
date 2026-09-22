@@ -1,7 +1,8 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MissionStatus } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-import { requireActiveUser } from '../../../lib/auth/authorization'
+import { requireActiveUser, requireOrganizationModule } from '../../../lib/auth/authorization'
 import { prisma } from '../../../lib/prisma'
 
 function getMissionPriority(status: MissionStatus) {
@@ -109,7 +110,7 @@ function getAssignmentTimestamp(
   ).getTime()
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -123,6 +124,7 @@ export default async function handler(
   if (!sessionUser) {
     return
   }
+  if (!(await requireOrganizationModule(req, res, 'PLANNING'))) return
 
   if (sessionUser.role !== 'DRIVER' || !sessionUser.driverId) {
     return res.status(403).json({ error: 'Forbidden' })
@@ -238,3 +240,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to load driver overview' })
   }
 }
+
+export default withTenantApiRoute(handler)

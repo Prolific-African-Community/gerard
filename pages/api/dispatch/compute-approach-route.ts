@@ -1,8 +1,10 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { requirePermission } from '../../../lib/auth/authorization'
 import { permissions } from '../../../lib/auth/permissions'
 
 import { prisma } from '../../../lib/prisma'
+import { computeGoogleRoute } from '../../../lib/dispatch/maps/google'
 
 type ApproachRouteResponse = {
   assignmentId: string
@@ -101,7 +103,7 @@ function buildRouteResponse({
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -233,104 +235,14 @@ export default async function handler(
       })
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY
-
-    if (!apiKey) {
-      return res.status(500).json({
-        error: 'GOOGLE_MAPS_API_KEY is missing',
-        reason: 'missing_google_maps_api_key',
-        assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
-      })
-    }
-
-    const googleResponse = await fetch(
-      'https://routes.googleapis.com/directions/v2:computeRoutes',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask':
-            'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
-        },
-        body: JSON.stringify({
-          origin: {
-            location: {
-              latLng: {
-                latitude: truckPosition.latitude,
-                longitude: truckPosition.longitude,
-              },
-            },
-          },
-          destination: {
-            location: {
-              latLng: {
-                latitude: assignment.mission.pickupLat,
-                longitude: assignment.mission.pickupLng,
-              },
-            },
-          },
-          travelMode: 'DRIVE',
-          routingPreference: 'TRAFFIC_AWARE',
-          computeAlternativeRoutes: false,
-          languageCode: 'fr-FR',
-          units: 'METRIC',
-        }),
-      }
-    )
-
-    if (!googleResponse.ok) {
-      const errorPayload = await googleResponse.text()
-
-      console.error('Google Approach Routes error', {
-        status: googleResponse.status,
-        payload: errorPayload,
-        assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
-      })
-
-      return res.status(500).json({
-        error: 'Google Routes request failed',
-        reason: 'google_routes_error',
-        status: googleResponse.status,
-        assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
-        details: errorPayload,
-      })
-    }
-
-    const routeData = (await googleResponse.json()) as GoogleRoutesResponse
-    const route = routeData.routes?.[0]
-    const distanceMeters = route?.distanceMeters
-    const durationSeconds = parseGoogleDuration(route?.duration)
-    const polyline = route?.polyline?.encodedPolyline
-
-    if (
-      typeof distanceMeters !== 'number' ||
-      typeof durationSeconds !== 'number' ||
-      typeof polyline !== 'string' ||
-      polyline.length === 0
-    ) {
-      console.error('Approach route failed: invalid Google Routes response', {
-        assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
-        routeData,
-      })
-
-      return res.status(500).json({
-        error: 'Invalid Google Routes response',
-        reason: 'invalid_google_routes_response',
-        assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
-        details: routeData,
-      })
-    }
+    const route = await computeGoogleRoute({
+      origin: { latitude: truckPosition.latitude, longitude: truckPosition.longitude },
+      destination: {
+        latitude: assignment.mission.pickupLat,
+        longitude: assignment.mission.pickupLng,
+      },
+    })
+    const { distanceMeters, durationSeconds, polyline } = route
 
     await prisma.missionAssignment.update({
       where: {
@@ -370,3 +282,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

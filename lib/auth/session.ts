@@ -1,10 +1,12 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { IncomingMessage } from 'http'
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { UserRole } from '@prisma/client'
+import { OrganizationRole, PlatformRole, UserRole } from '@prisma/client'
 import { prisma } from '../prisma'
+import { enterOrganizationContext, selectActiveOrganizationMembership } from './organization-context'
+import { assertDomainSessionCoherence, resolveOrganizationFromRequest } from '../tenant/request-resolution'
 
-export const sessionCookieName = 'novotralux_session'
+export const sessionCookieName = 'gerard_session'
 
 const sessionDurationSeconds = 60 * 60 * 24 * 7
 const allowedDispatcherRoles = new Set<UserRole>([
@@ -20,6 +22,9 @@ type SessionPayload = {
   role: UserRole
   driverId?: string | null
   sessionVersion?: number
+  platformRole?: PlatformRole | null
+  organizationId?: string | null
+  organizationRole?: OrganizationRole | null
   exp: number
 }
 
@@ -31,6 +36,9 @@ type SessionUserInput = {
   role: UserRole
   driverId?: string | null
   sessionVersion?: number
+  platformRole?: PlatformRole | null
+  organizationId?: string | null
+  organizationRole?: OrganizationRole | null
 }
 
 function getJwtSecret() {
@@ -103,6 +111,9 @@ export function createSessionToken(user: SessionUserInput) {
       role: user.role,
       driverId: user.driverId ?? null,
       sessionVersion: user.sessionVersion ?? 0,
+      platformRole: user.platformRole ?? null,
+      organizationId: user.organizationId ?? null,
+      organizationRole: user.organizationRole ?? null,
       exp: Math.floor(Date.now() / 1000) + sessionDurationSeconds,
     })
   )
@@ -163,6 +174,13 @@ export function verifySessionToken(token: string): SessionUser | null {
       typeof parsedPayload.sessionVersion === 'number'
         ? parsedPayload.sessionVersion
         : 0,
+    platformRole: Object.values(PlatformRole).includes(parsedPayload.platformRole as PlatformRole)
+      ? parsedPayload.platformRole as PlatformRole
+      : null,
+    organizationId: typeof parsedPayload.organizationId === 'string' ? parsedPayload.organizationId : null,
+    organizationRole: Object.values(OrganizationRole).includes(parsedPayload.organizationRole as OrganizationRole)
+      ? parsedPayload.organizationRole as OrganizationRole
+      : null,
   }
 }
 
@@ -190,7 +208,21 @@ export async function requireDispatcher(req: NextApiRequest, res: NextApiRespons
 
   const user = await prisma.user.findUnique({
     where: { id: sessionUser.userId },
-    select: { role: true, isActive: true, mustChangePassword: true, sessionVersion: true },
+    select: {
+      role: true,
+      isActive: true,
+      mustChangePassword: true,
+      sessionVersion: true,
+      platformRole: true,
+      organizationMemberships: {
+        where: {
+          ...(sessionUser.organizationId ? { organizationId: sessionUser.organizationId } : {}),
+          organization: { status: 'ACTIVE' },
+        },
+        take: sessionUser.organizationId ? 1 : 2,
+        orderBy: { createdAt: 'asc' },
+      },
+    },
   })
   if (!user || user.sessionVersion !== (sessionUser.sessionVersion ?? 0)) {
     res.status(401).json({ error: 'Unauthorized' })
@@ -201,7 +233,19 @@ export async function requireDispatcher(req: NextApiRequest, res: NextApiRespons
     return null
   }
 
-  return { ...sessionUser, role: user.role }
+  const membership = selectActiveOrganizationMembership(user.organizationMemberships, sessionUser.organizationId)
+  if (!membership) {
+    res.status(403).json({ error: 'Organisation active requise' })
+    return null
+  }
+  try {
+    assertDomainSessionCoherence(await resolveOrganizationFromRequest(req), membership.organizationId)
+  } catch {
+    res.status(403).json({ error: 'Domaine et organisation active incompatibles', code: 'DOMAIN_ORGANIZATION_MISMATCH' })
+    return null
+  }
+  enterOrganizationContext({ userId: sessionUser.userId, platformRole: user.platformRole, organizationId: membership.organizationId, organizationRole: membership.role })
+  return { ...sessionUser, role: user.role, platformRole: user.platformRole, organizationId: membership.organizationId, organizationRole: membership.role }
 }
 
 export function canAccessDispatcher(sessionUser: SessionUser | null) {

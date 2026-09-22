@@ -20,7 +20,7 @@ export default function ChangePasswordPage() {
   }
   return <main className="flex min-h-screen items-center justify-center bg-[#F4F5F1] px-5 text-[#171814]">
     <section className="w-full max-w-lg rounded-[32px] border border-black/10 bg-white p-6 shadow-[0_24px_80px_rgba(17,18,15,.12)] sm:p-9">
-      <img src="/logo-novotralux4.png" alt="NOVOTRALUX" className="h-10 w-auto" />
+      <img src="/logo_gerard_texte.png" alt="Gerard" className="h-10 w-auto" />
       <p className="mt-8 text-[10px] font-bold uppercase tracking-[.22em] text-[#73796d]">Sécurisation du compte</p>
       <h1 className="mt-2 text-3xl font-semibold">Choisir un nouveau mot de passe</h1>
       <p className="mt-3 text-sm text-[#6d7268]">12 caractères minimum, avec majuscule, minuscule, chiffre et symbole.</p>

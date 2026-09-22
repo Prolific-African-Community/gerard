@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 /**
  * Rotation physique des remorques : décrochage et attelage / reprise.
  *
@@ -95,7 +96,7 @@ async function loadTrailerContext(trailerId: string) {
   return { trailer, activeAssignment, situation }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -322,3 +323,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to rotate trailer' })
   }
 }
+
+export default withTenantApiRoute(handler)

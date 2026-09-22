@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 // DEMO UNIQUEMENT — route de secours locale pour la boite de traitement Gerard.
 // Les imports mail reels sont desactives (MAIL_IMPORT_PROVIDER="disabled").
 // Ne sert QUE des donnees fictives, et refuse de repondre en production.
@@ -180,7 +181,7 @@ const imports: MissionImportPreview[] = [
   })),
 ]
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse<MailImportsResponse>) {
+async function handler(req: NextApiRequest, res: NextApiResponse<MailImportsResponse>) {
   if (process.env.NODE_ENV === 'production') {
     res.status(404).end()
     return
@@ -213,3 +214,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   })
   res.status(200).json({ provider: 'imap', connected: true, imports: applyImportStates(hydrated) })
 }
+
+export default withTenantApiRoute(handler)

@@ -1,5 +1,6 @@
 import { supportedRegionCodes } from './europe-coverage'
 import type { SupportedCountryCode } from './europe-coverage'
+import { getOrComputeRoute, withRouteOperation, type RouteRequest } from './route-control'
 
 export type AddressCandidate = {
   placeId: string
@@ -122,16 +123,13 @@ export async function searchGoogleAddresses(
   return Promise.all(placeIds.map(getGooglePlaceDetails))
 }
 
-export async function computeGoogleRoute(input: {
-  origin: { latitude: number; longitude: number }
-  destination: { latitude: number; longitude: number }
-  routingPreference?: 'TRAFFIC_AWARE' | 'TRAFFIC_UNAWARE'
-}): Promise<CalculatedRoute> {
+async function requestGoogleRoute(input: Required<RouteRequest>): Promise<CalculatedRoute> {
   const data = await googleJson<GoogleRoutesResponse>(
     await fetch(
       'https://routes.googleapis.com/directions/v2:computeRoutes',
       {
         method: 'POST',
+        signal: AbortSignal.timeout(8000),
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': apiKey(),
@@ -155,8 +153,11 @@ export async function computeGoogleRoute(input: {
               },
             },
           },
-          travelMode: 'DRIVE',
-          routingPreference: input.routingPreference ?? 'TRAFFIC_AWARE',
+          ...(input.waypoints.length ? { intermediates: input.waypoints.map((waypoint) => ({
+            location: { latLng: waypoint },
+          })) } : {}),
+          travelMode: input.travelMode,
+          routingPreference: input.routingPreference,
           computeAlternativeRoutes: false,
           languageCode: 'fr-FR',
           units: 'METRIC',
@@ -187,4 +188,29 @@ export async function computeGoogleRoute(input: {
     polyline,
     provider: 'GOOGLE_ROUTES',
   }
+}
+
+/**
+ * Unique entry point for Google Routes. Coordinates are normalized to five
+ * decimals (roughly one metre), persisted by fingerprint and deduplicated
+ * while an identical provider request is in flight.
+ */
+export async function computeGoogleRoute(input: RouteRequest): Promise<CalculatedRoute> {
+  const route = await withRouteOperation('Google route request', () =>
+    getOrComputeRoute(input, { provider: requestGoogleRoute })
+  )
+  if (!route.polyline) throw new Error('GOOGLE_ROUTES_GEOMETRY_MISSING')
+  return { ...route, polyline: route.polyline }
+}
+
+/**
+ * Route lookup for deterministic dispatch calculations that consume only
+ * distance and duration. This may reuse a legacy cache entry without encoded
+ * geometry; map rendering continues to use computeGoogleRoute above.
+ */
+export async function computeGoogleRouteMetrics(input: RouteRequest): Promise<CalculatedRoute> {
+  const route = await withRouteOperation('Google route metrics request', () =>
+    getOrComputeRoute(input, { provider: requestGoogleRoute, allowMetricsOnly: true })
+  )
+  return { ...route, polyline: route.polyline ?? '' }
 }

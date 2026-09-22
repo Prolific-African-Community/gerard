@@ -7,7 +7,7 @@ import {
 import type { ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 
-import { NOVOTRALUX_BASE } from "../../../lib/dispatch/base-location";
+import { GERARD_BASE } from "../../../lib/dispatch/base-location";
 import { decodePolyline } from "../../../lib/dispatch/polyline";
 import type { Driver, Mission, Trailer, Truck } from "../../../lib/dispatch/mock-data";
 import type { MissionPlacement, TruckPosition } from "./types";
@@ -313,7 +313,7 @@ function GoogleMobileMap({
 
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: apiKey,
-    id: "novotralux-mobile-dispatch-map",
+    id: "gerard-mobile-dispatch-map",
   });
 
   async function handleRefresh() {
@@ -345,7 +345,7 @@ function GoogleMobileMap({
       return;
     }
 
-    const points = [NOVOTRALUX_BASE, ...filteredMarkers.map((marker) => marker.position)];
+    const points = [GERARD_BASE, ...filteredMarkers.map((marker) => marker.position)];
     fitMapToPoints(map, points, 48);
   }
 
@@ -404,7 +404,7 @@ function GoogleMobileMap({
 
       <section className="relative mt-3 h-[64vh] overflow-hidden rounded-[32px] bg-white shadow-[0_14px_38px_rgba(17,18,15,0.10)]">
         <GoogleMap
-          center={filteredMarkers[0]?.position ?? NOVOTRALUX_BASE}
+          center={filteredMarkers[0]?.position ?? GERARD_BASE}
           mapContainerStyle={mapContainerStyle}
           onClick={() => onSelect(null)}
           onLoad={(map) => {
@@ -426,8 +426,8 @@ function GoogleMobileMap({
               fontWeight: "900",
               fontSize: "12px",
             }}
-            position={NOVOTRALUX_BASE}
-            title={NOVOTRALUX_BASE.name}
+            position={GERARD_BASE}
+            title={GERARD_BASE.name}
           />
 
           {pickupPoint ? (
@@ -904,7 +904,7 @@ function getSelectedMapPoints(
   }
 
   if (visibleRoutes.return && canRenderPolylinePath(routePaths.return)) {
-    points.push(...routePaths.return, NOVOTRALUX_BASE);
+    points.push(...routePaths.return, GERARD_BASE);
   }
 
   return points.filter(isValidMapPoint);
@@ -914,7 +914,7 @@ function fitMapToPoints(map: google.maps.Map, points: MapPoint[], padding: numbe
   const validPoints = points.filter(isValidMapPoint);
 
   if (validPoints.length === 0) {
-    map.panTo(NOVOTRALUX_BASE);
+    map.panTo(GERARD_BASE);
     map.setZoom(8);
     return;
   }

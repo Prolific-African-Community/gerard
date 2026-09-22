@@ -1,8 +1,10 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { requirePermission } from '../../../lib/auth/authorization'
 import { permissions } from '../../../lib/auth/permissions'
 
-import { NOVOTRALUX_BASE } from '../../../lib/dispatch/base-location'
+import { GERARD_BASE } from '../../../lib/dispatch/base-location'
+import { computeGoogleRoute } from '../../../lib/dispatch/maps/google'
 import { prisma } from '../../../lib/prisma'
 
 type ReturnToBaseRouteResponse = {
@@ -90,7 +92,7 @@ function buildRouteResponse({
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -158,82 +160,11 @@ export default async function handler(
       })
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY
-
-    if (!apiKey) {
-      return res.status(500).json({
-        error: 'GOOGLE_MAPS_API_KEY is missing',
-      })
-    }
-
-    const googleResponse = await fetch(
-      'https://routes.googleapis.com/directions/v2:computeRoutes',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': apiKey,
-          'X-Goog-FieldMask':
-            'routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline',
-        },
-        body: JSON.stringify({
-          origin: {
-            location: {
-              latLng: {
-                latitude: truckPosition.latitude,
-                longitude: truckPosition.longitude,
-              },
-            },
-          },
-          destination: {
-            location: {
-              latLng: {
-                latitude: NOVOTRALUX_BASE.lat,
-                longitude: NOVOTRALUX_BASE.lng,
-              },
-            },
-          },
-          travelMode: 'DRIVE',
-          routingPreference: 'TRAFFIC_AWARE',
-          computeAlternativeRoutes: false,
-          languageCode: 'fr-FR',
-          units: 'METRIC',
-        }),
-      }
-    )
-
-    if (!googleResponse.ok) {
-      const errorPayload = await googleResponse.text()
-
-      console.error('Google return-to-base route request failed', {
-        status: googleResponse.status,
-        payload: errorPayload,
-        truckId,
-      })
-
-      return res.status(500).json({
-        error: 'Google Routes request failed',
-        status: googleResponse.status,
-        details: errorPayload,
-      })
-    }
-
-    const routeData = (await googleResponse.json()) as GoogleRoutesResponse
-    const route = routeData.routes?.[0]
-    const distanceMeters = route?.distanceMeters
-    const durationSeconds = parseGoogleDuration(route?.duration)
-    const polyline = route?.polyline?.encodedPolyline
-
-    if (
-      typeof distanceMeters !== 'number' ||
-      typeof durationSeconds !== 'number' ||
-      typeof polyline !== 'string' ||
-      polyline.length === 0
-    ) {
-      return res.status(500).json({
-        error: 'Invalid Google Routes response',
-      })
-    }
+    const route = await computeGoogleRoute({
+      origin: { latitude: truckPosition.latitude, longitude: truckPosition.longitude },
+      destination: { latitude: GERARD_BASE.lat, longitude: GERARD_BASE.lng },
+    })
+    const { distanceMeters, durationSeconds, polyline } = route
 
     await prisma.truck.update({
       where: {
@@ -265,3 +196,5 @@ export default async function handler(
     })
   }
 }
+
+export default withTenantApiRoute(handler)

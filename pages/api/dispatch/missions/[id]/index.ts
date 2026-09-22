@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import { MissionStatus } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -11,7 +12,7 @@ function getMissionId(queryValue: string | string[] | undefined) {
     : null;
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
@@ -69,3 +70,5 @@ export default async function handler(
     return res.status(500).json({ error: "Impossible de supprimer la mission." });
   }
 }
+
+export default withTenantApiRoute(handler)

@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../lib/auth/authorization'
 import { MissionStatus } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
@@ -84,7 +85,7 @@ function buildMissionWhere(term: string) {
   }
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse<SmartSearchResponse | { error: string }>
 ) {
@@ -373,3 +374,5 @@ export default async function handler(
     return res.status(500).json({ error: 'Failed to run dispatch search' })
   }
 }
+
+export default withTenantApiRoute(handler)

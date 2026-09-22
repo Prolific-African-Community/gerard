@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
   ParkInspectionOverallResult,
   ParkInspectionStatus,
@@ -26,7 +27,7 @@ function queryDate(value: string | undefined) {
   return date
 }
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   const permission =
     req.method === 'GET'
       ? permissions.parkInspectionView
@@ -83,3 +84,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(500).json({ error: 'Gestion des contrôles impossible.' })
   }
 }
+
+export default withTenantApiRoute(handler)

@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import { MaintenanceRequestStatus } from "@prisma/client";
 import type { NextApiRequest, NextApiResponse } from "next";
 
@@ -16,7 +17,7 @@ import {
 } from "../../../../lib/dispatch/maintenance-requests";
 import { prisma } from "../../../../lib/prisma";
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -381,3 +382,5 @@ export default async function handler(
   res.setHeader("Allow", "GET, PATCH");
   return res.status(405).json({ error: "Method not allowed" });
 }
+
+export default withTenantApiRoute(handler)

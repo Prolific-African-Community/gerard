@@ -1,0 +1,17 @@
+{
+  "name": "@prolific/gerard-novotralux",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@prolific/gerard-core": "1.0.0" },
+  "scripts": {
+    "check:core": "tsx config/check-core.ts",
+    "typecheck": "tsc --noEmit --incremental false --pretty false",
+    "test": "tsx tests/application.test.ts",
+    "configure:staging": "tsx scripts/configure-staging.ts",
+    "qa:staging": "tsx ../../scripts/qa-novotralux-custom.ts",
+    "dev": "node scripts/run-shared.mjs dev",
+    "build": "node scripts/run-shared.mjs build",
+    "start": "node scripts/run-shared.mjs start"
+  }
+}

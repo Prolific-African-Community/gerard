@@ -1,5 +1,15 @@
 import type { TemporalLocation } from './regulatory'
 
+/**
+ * Base d'exploitation utilisee quand DISPATCH_BASE_LATITUDE / LONGITUDE ne sont
+ * pas renseignees. C'est la base Gerard actuelle (Luxembourg).
+ */
+export const DEFAULT_OPERATING_BASE = {
+  latitude: 49.5988403,
+  longitude: 6.1326175,
+  label: 'Base d’exploitation · Luxembourg',
+} as const
+
 export const DRIVER_GPS_MAX_AGE_SECONDS = 30 * 60
 export const COMPLETED_MISSION_DIRECT_MAX_AGE_SECONDS = 24 * 60 * 60
 
@@ -220,6 +230,9 @@ export function resolveDriverPosition(input: {
 export function configuredOperatingBase(): OperatingBasePosition | null {
   const latitude = Number(process.env.DISPATCH_BASE_LATITUDE)
   const longitude = Number(process.env.DISPATCH_BASE_LONGITUDE)
+  if (!validCoordinate(latitude, longitude)) {
+    return DEFAULT_OPERATING_BASE
+  }
   return validCoordinate(latitude, longitude)
     ? {
         latitude,

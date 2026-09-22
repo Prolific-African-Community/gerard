@@ -1,22 +1,5 @@
 import { Prisma } from '@prisma/client'
 
-export const defaultIssuedInvoiceSeller = {
-  sellerName: 'NOVOTRALUX S.À R.L.',
-  sellerAddress: '21 Stawelerstrooss\n9964, Huldange,\nLuxembourg',
-  sellerVatNumber: 'LU31249718',
-  sellerIban: 'LU00 0000 0000 0000 0000',
-  sellerBic: 'BILLLULLXXX',
-  sellerBankName: 'BIL',
-  sellerBeneficiary: 'NOVOTRALUX S.À R.L.',
-  paymentTerms: 'Paiement à 30 jours',
-}
-
-export const defaultReceivedInvoiceBuyer = {
-  buyerName: defaultIssuedInvoiceSeller.sellerName,
-  buyerAddress: defaultIssuedInvoiceSeller.sellerAddress,
-  buyerVatNumber: defaultIssuedInvoiceSeller.sellerVatNumber,
-}
-
 export const slAutomotiveSupplier = {
   sellerName: 'SL Automotive',
   sellerAddress: 'À compléter',

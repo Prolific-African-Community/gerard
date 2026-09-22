@@ -1,3 +1,4 @@
+import { withTenantApiRoute } from '../../../../../lib/auth/authorization'
 import { DriverActivitySource } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
@@ -17,7 +18,7 @@ function driverIdFromRequest(req: NextApiRequest) {
   return typeof req.query.id === 'string' ? req.query.id.trim() : ''
 }
 
-export default async function handler(
+async function handler(
   req: NextApiRequest,
   res: NextApiResponse
 ) {
@@ -157,3 +158,5 @@ export default async function handler(
     message: 'Données chauffeur modifiées — relancez la simulation.',
   })
 }
+
+export default withTenantApiRoute(handler)

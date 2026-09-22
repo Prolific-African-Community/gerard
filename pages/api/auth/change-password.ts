@@ -24,6 +24,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     passwordChangedAt: new Date(), temporaryPasswordIssuedAt: null,
     sessionVersion: { increment: 1 },
   } })
-  setSessionCookie(res, createSessionToken(updated))
+  setSessionCookie(res, createSessionToken({
+    ...updated,
+    organizationId: currentUser.organizationId,
+    organizationRole: currentUser.organizationRole,
+    platformRole: currentUser.platformRole,
+  }))
   return res.status(200).json({ ok: true, redirectTo: homeForRole(updated.role) })
 }

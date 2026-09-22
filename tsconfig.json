@@ -23,14 +23,31 @@
       {
         "name": "next"
       }
-    ]
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@prolific/gerard-core": [
+        "packages/gerard-core/src/index.ts"
+      ],
+      "@prolific/gerard-core/application": [
+        "packages/gerard-core/src/application/index.ts"
+      ],
+      "@prolific/gerard-core/react": [
+        "packages/gerard-core/src/react.tsx"
+      ],
+      "@prolific/gerard-core/intelligence": [
+        "packages/gerard-core/src/intelligence.ts"
+      ]
+    }
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-novotralux/types/**/*.ts",
+    ".next-novotralux/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

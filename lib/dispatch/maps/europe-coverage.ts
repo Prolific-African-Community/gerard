@@ -1,5 +1,5 @@
 /**
- * Couverture géographique du géocoding NOVOTRALUX.
+ * Couverture géographique du géocoding Gerard.
  *
  * Ce module ne fait aucun appel réseau : il prépare la requête envoyée à
  * Google (normalisation, détection de pays, stratégie de repli) et arbitre
