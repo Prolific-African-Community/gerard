@@ -6,6 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { BrandingProvider } from '../components/branding/BrandingProvider';
 import { GerardApplicationProvider } from '@prolific/gerard-core/react';
 import { activeGerardApplication } from '../lib/runtime/application-registry';
+import { activeRuntimeBranding } from '../lib/runtime/branding-registry';
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   return (
@@ -16,7 +17,7 @@ export default function MyApp({ Component, pageProps }: AppProps) {
       </Head>
       <CssBaseline />
       <GerardApplicationProvider application={activeGerardApplication}>
-        <BrandingProvider><Component {...pageProps} /></BrandingProvider>
+        <BrandingProvider fallbackBranding={activeRuntimeBranding}><Component {...pageProps} /></BrandingProvider>
       </GerardApplicationProvider>
     </StyledEngineProvider>
   );

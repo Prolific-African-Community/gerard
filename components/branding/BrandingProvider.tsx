@@ -4,8 +4,8 @@ import { DEFAULT_BRANDING, type OrganizationBranding } from '../../lib/tenant/br
 
 const BrandingContext = createContext<OrganizationBranding>(DEFAULT_BRANDING)
 
-export function BrandingProvider({ children }: { children: React.ReactNode }) {
-  const [branding, setBranding] = useState<OrganizationBranding>(DEFAULT_BRANDING)
+export function BrandingProvider({ children, fallbackBranding = DEFAULT_BRANDING }: { children: React.ReactNode, fallbackBranding?: OrganizationBranding }) {
+  const [branding, setBranding] = useState<OrganizationBranding>(fallbackBranding)
   useEffect(() => {
     let active = true
     fetch('/api/tenant/branding').then(async (response) => response.ok ? response.json() : null).then((body) => {
