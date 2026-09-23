@@ -56,6 +56,16 @@ export async function resolveOrganizationFromRequest(req: IncomingMessage): Prom
   if (process.env.NODE_ENV !== 'production' && isLocalHostname(hostname)) {
     return { hostname, pathname, source, organizationId: null, domainId: null, status: 'local' }
   }
+  const instanceOrganizationId = process.env.GERARD_INSTANCE_ORGANIZATION_ID?.trim()
+  if (instanceOrganizationId) {
+    const organization = await prisma.organization.findFirst({
+      where: { id: instanceOrganizationId, status: 'ACTIVE' },
+      select: { id: true },
+    })
+    return organization
+      ? { hostname, pathname, source, organizationId: organization.id, domainId: null, status: 'resolved' }
+      : { hostname, pathname, source, organizationId: null, domainId: null, status: 'unknown' }
+  }
   const mappings = await prisma.organizationDomain.findMany({
     where: { hostname, isActive: true, organization: { status: 'ACTIVE' } },
     orderBy: { pathPrefix: 'desc' },

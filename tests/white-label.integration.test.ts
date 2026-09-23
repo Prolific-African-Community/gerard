@@ -27,10 +27,20 @@ async function main() {
   assert.equal(resolution.hostname, 'qa-gerard.local')
   assert.doesNotThrow(() => assertDomainSessionCoherence(resolution, organizationId))
   assert.throws(() => assertDomainSessionCoherence(resolution, 'another-organization'), /DOMAIN_ORGANIZATION_MISMATCH/)
+
+  process.env.GERARD_INSTANCE_ORGANIZATION_ID = organizationId
+  const instanceRequest = { headers: { host: 'custom-app.vercel.app' }, url: '/dispatch' } as IncomingMessage
+  const instanceResolution = await resolveOrganizationFromRequest(instanceRequest)
+  assert.equal(instanceResolution.status, 'resolved')
+  assert.equal(instanceResolution.organizationId, organizationId)
+  assert.equal(instanceResolution.domainId, null)
+  assert.doesNotThrow(() => assertDomainSessionCoherence(instanceResolution, organizationId))
+  assert.throws(() => assertDomainSessionCoherence(instanceResolution, 'another-organization'), /DOMAIN_ORGANIZATION_MISMATCH/)
   console.log('QA_WHITE_LABEL branding and simulated domain: OK')
 }
 
 main().finally(async () => {
+  delete process.env.GERARD_INSTANCE_ORGANIZATION_ID
   if (organizationId) {
     await prisma.platformAuditLog.deleteMany({ where: { organizationId } })
     await prisma.organizationDomain.deleteMany({ where: { organizationId } })
