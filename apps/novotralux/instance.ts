@@ -7,6 +7,8 @@ if (!compatibility.compatible) throw new Error(`NOVOTRALUX_CORE_INCOMPATIBLE:${c
 export const novotraluxInstance: GerardInstanceRegistryEntry = {
   client: 'Novotralux', application: 'novotralux', applicationType: 'CUSTOM',
   coreVersion: GERARD_CORE_VERSION, compatibleCore: novotraluxManifest.compatibleCore,
-  environment: 'staging', organizationId: 'org-novotralux', domain: null,
-  status: 'READY_FOR_CUTOVER', lastCompatibilityStatus: compatibility.status,
+  environment: 'production', organizationId: 'org-novotralux', domain: 'www.novotralux.eu',
+  status: 'ACTIVE', lastCompatibilityStatus: compatibility.status,
+  deploymentReference: 'dpl_7YmfV7zeo5CuzG2q4cyVogLTLn1d',
+  cutoverAt: '2026-09-23T15:46:18Z',
 }
