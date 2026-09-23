@@ -1,7 +1,7 @@
 import { Prisma, UserRole } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-import { requireAdmin } from '../../../../lib/auth/authorization'
+import { requireAdmin, runWithCurrentOrganization } from '../../../../lib/auth/authorization'
 import { hashPassword } from '../../../../lib/auth/password'
 import { safeUserSelect } from '../../../../lib/auth/safe-user'
 import { isUserRole, normalizeUsername, passwordError, usernameError } from '../../../../lib/auth/validation'
@@ -12,6 +12,8 @@ function text(value: unknown) { return typeof value === 'string' ? value.trim() 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const admin = await requireAdmin(req, res)
   if (!admin) return
+
+  return runWithCurrentOrganization(admin, async () => {
 
   if (req.method === 'GET') {
     const search = text(req.query.search)
@@ -96,4 +98,5 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   res.setHeader('Allow', 'GET, POST')
   return res.status(405).json({ error: 'Méthode non autorisée' })
+  })
 }
