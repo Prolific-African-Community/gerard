@@ -103,6 +103,8 @@ export default async function handler(
         ? '/change-password'
         : user.platformRole
           ? '/admin'
+          : membership?.role === 'ORG_ADMIN'
+            ? '/dispatch'
           : homeForRole(user.role),
     })
   } catch (error) {
