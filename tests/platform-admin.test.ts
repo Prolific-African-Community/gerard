@@ -6,12 +6,14 @@ import { requirePermission } from '../lib/auth/authorization'
 import { permissions } from '../lib/auth/permissions'
 import { runWithOrganization } from '../lib/auth/organization-context'
 import { addOrganizationMember, removeOrganizationMember, updateOrganization, updateOrganizationMember } from '../lib/platform/organizations'
-import { hashPassword } from '../lib/auth/password'
+import { hashPassword, verifyPassword } from '../lib/auth/password'
 import { prisma } from '../lib/prisma'
 import organizationsHandler from '../pages/api/platform/organizations'
 import organizationAdminHandler from '../pages/api/admin/organization'
 import organizationMembersHandler from '../pages/api/admin/organization/members'
 import organizationMemberHandler from '../pages/api/admin/organization/members/[membershipId]'
+import resetOrganizationPasswordHandler from '../pages/api/admin/organization/members/[membershipId]/reset-password'
+import invalidateOrganizationSessionsHandler from '../pages/api/admin/organization/members/[membershipId]/invalidate-sessions'
 import { getServerSideProps as platformAdminPageProps } from '../pages/admin'
 
 const prefix = 'QA_PLATFORM_ADMIN_'
@@ -103,6 +105,25 @@ async function main() {
     const createdByOrgAdmin = await prisma.user.findFirstOrThrow({ where: { username: 'qa_org_admin_created' } })
     createdUserIds.push(createdByOrgAdmin.id)
     assert.equal(createdByOrgAdmin.platformRole, null, 'S-platform-role-protected')
+    const createdMembership = await prisma.organizationUser.findFirstOrThrow({ where: { organizationId, userId: createdByOrgAdmin.id } })
+
+    const resetRes = response()
+    const resetReq = request(orgAdminSession, 'POST')
+    resetReq.query = { membershipId: createdMembership.id }
+    await resetOrganizationPasswordHandler(resetReq, resetRes as any)
+    assert.equal(resetRes.statusCode, 200, 'S-password-reset')
+    const afterReset = await prisma.user.findUniqueOrThrow({ where: { id: createdByOrgAdmin.id } })
+    assert.equal(afterReset.mustChangePassword, true, 'S-password-change-required')
+    assert.ok(afterReset.passwordHash && verifyPassword(resetRes.payload.temporaryPassword, afterReset.passwordHash), 'S-password-hashed')
+    assert.equal(JSON.stringify(await prisma.platformAuditLog.findMany({ where: { organizationId } })).includes(resetRes.payload.temporaryPassword), false, 'S-password-not-audited')
+
+    const sessionVersion = afterReset.sessionVersion
+    const sessionsRes = response()
+    const sessionsReq = request(orgAdminSession, 'POST')
+    sessionsReq.query = { membershipId: createdMembership.id }
+    await invalidateOrganizationSessionsHandler(sessionsReq, sessionsRes as any)
+    assert.equal(sessionsRes.statusCode, 200, 'S-session-invalidation')
+    assert.equal((await prisma.user.findUniqueOrThrow({ where: { id: createdByOrgAdmin.id } })).sessionVersion, sessionVersion + 1, 'S-session-version')
 
     const demoteLastAdminRes = response()
     const demoteLastAdminReq = request(orgAdminSession, 'PATCH', { role: 'MANAGER' })
