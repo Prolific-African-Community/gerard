@@ -153,8 +153,14 @@ export const getServerSideProps: GetServerSideProps = async ({ req, query }) => 
         ? await runWithCurrentOrganization(user, () => buildParkOverview(user.role))
         : null,
       isAdmin: Boolean(user.platformRole),
-      googleMapsBrowserKey:
-        process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY?.trim() || null,
+      googleMapsBrowserKey: getRuntimeGoogleMapsBrowserKey(),
     },
   }
+}
+
+function getRuntimeGoogleMapsBrowserKey() {
+  // Dynamic lookup is intentional: Next inlines static NEXT_PUBLIC references
+  // at build time, while Vercel also exposes this public key to SSR at runtime.
+  const envName = ['NEXT', 'PUBLIC', 'GOOGLE', 'MAPS', 'BROWSER', 'KEY'].join('_')
+  return process.env[envName]?.trim() || null
 }

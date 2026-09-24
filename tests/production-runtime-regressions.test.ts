@@ -61,7 +61,9 @@ async function main() {
   }
   assert.match(nextConfig, /NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
   assert.doesNotMatch(nextConfig, /NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY:\s*process\.env\.GOOGLE_MAPS_API_KEY/)
-  assert.match(dispatchPage, /googleMapsBrowserKey:[\s\S]*NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
+  assert.match(dispatchPage, /googleMapsBrowserKey: getRuntimeGoogleMapsBrowserKey\(\)/)
+  assert.match(dispatchPage, /\['NEXT', 'PUBLIC', 'GOOGLE', 'MAPS', 'BROWSER', 'KEY'\]\.join\('_'\)/)
+  assert.doesNotMatch(dispatchPage, /process\.env\[.*GOOGLE_MAPS_API_KEY/)
   assert.match(desktopMap, /googleMapsBrowserKey \|\| process\.env\.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
   assert.match(mobileMap, /googleMapsBrowserKey \|\| process\.env\.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
 
