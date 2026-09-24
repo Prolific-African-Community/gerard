@@ -6,7 +6,7 @@ Status: `MIGRATION_CLOSED`
 - Application: `novotralux` (`CUSTOM`)
 - Gerard Core: `1.0.0` (`^1.0.0`, compatible)
 - Organization: `org-novotralux`
-- Production deployment: `dpl_DcsVvov5Du5AeqNKTrf4YAch5xCY`
+- Production deployment: stable alias `https://novotralux-custom.vercel.app`
 - Public site: legacy remains the default application
 - Public operational route: `https://www.novotralux.eu/dispatch`
 - Operational surface: Novotralux Custom through the validated external rewrites
