@@ -328,6 +328,10 @@ export async function updateOrganizationMember(input: {
 }) {
   return prisma.$transaction(async (tx) => {
     const current = await tx.organizationUser.findFirstOrThrow({ where: { id: input.membershipId, organizationId: input.organizationId } })
+    if (current.role === OrganizationRole.ORG_ADMIN && input.role !== OrganizationRole.ORG_ADMIN) {
+      const adminCount = await tx.organizationUser.count({ where: { organizationId: input.organizationId, role: OrganizationRole.ORG_ADMIN } })
+      if (adminCount <= 1) throw new Error('LAST_ORG_ADMIN')
+    }
     const membership = await tx.organizationUser.update({ where: { id: current.id }, data: { role: input.role } })
     await tx.platformAuditLog.create({ data: { actorUserId: input.actorUserId, organizationId: input.organizationId, action: PlatformAuditAction.MEMBER_ROLE_CHANGED, metadata: { userId: current.userId, before: current.role, after: input.role } } })
     return membership

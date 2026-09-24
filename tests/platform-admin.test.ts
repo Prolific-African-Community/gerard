@@ -104,6 +104,12 @@ async function main() {
     createdUserIds.push(createdByOrgAdmin.id)
     assert.equal(createdByOrgAdmin.platformRole, null, 'S-platform-role-protected')
 
+    const demoteLastAdminRes = response()
+    const demoteLastAdminReq = request(orgAdminSession, 'PATCH', { role: 'MANAGER' })
+    demoteLastAdminReq.query = { membershipId: adminMembership.id }
+    await organizationMemberHandler(demoteLastAdminReq, demoteLastAdminRes as any)
+    assert.equal(demoteLastAdminRes.statusCode, 409, 'S-last-org-admin-preserved')
+
     const foreignMembership = await prisma.organizationUser.findFirstOrThrow({ where: { organizationId: { not: organizationId } }, select: { id: true } })
     const crossTenantRes = response()
     const crossTenantReq = request(orgAdminSession, 'PATCH', { role: 'MANAGER' })
