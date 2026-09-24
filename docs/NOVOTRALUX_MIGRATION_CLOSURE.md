@@ -38,7 +38,7 @@ Status: `MIGRATION_CLOSED`
 
 ## Legacy fallback
 
-The legacy repository, production database, final snapshot `pre-gerard-final-cutover-20260923-172829`, and legacy-only Vercel deployment `dpl_GiNTXWQehG7eEKrb7s64SmKwfBAq` are retained. The legacy runtime remains read-only. A rollback requires freezing Custom writes, reconciling any Custom-only deltas, then promoting the known legacy-only deployment; blind rollback is forbidden.
+The legacy repository, production database, final snapshot `pre-gerard-final-cutover-20260923-172829`, and legacy-only Vercel deployment are retained. The fallback runtime connects with the dedicated `legacy_fallback_reader` role: transactions default to read-only, `SELECT` is granted, and métier `INSERT` is denied. Mail polling, SL credentials, server-side Google credentials, and Preview access to Production DB/JWT/Blob credentials were removed from the legacy Vercel project. A rollback requires freezing Custom writes, reconciling any Custom-only deltas, deliberately restoring a writable credential, then promoting the known legacy-only deployment; blind rollback is forbidden.
 
 ## Future Core updates
 
