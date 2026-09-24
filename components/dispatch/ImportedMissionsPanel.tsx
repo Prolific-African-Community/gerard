@@ -429,7 +429,7 @@ export function ImportedMissionsPanel({
                     : 'border-amber-200 bg-amber-50 text-amber-800',
                 ].join(' ')}
               >
-                {connected ? 'Demandes fictives' : 'Non connectée'}
+                {connected ? 'Connectée' : 'Non connectée'}
               </span>
               <button
                 type="button"

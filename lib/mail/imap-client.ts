@@ -4,6 +4,7 @@ import type { NormalizedMailMessage } from "./types";
 import { OrganizationIntegrationType } from '@prisma/client'
 import { getActiveIntegration, parseMailIntakeConfig } from '../integrations/config'
 import { getIntegrationSecret } from '../integrations/secrets'
+import type { IntegrationSecretProvider } from '../integrations/secrets'
 
 export type ImapImportStep =
   | "config"
@@ -18,6 +19,7 @@ type ImapConfig = {
   host: string;
   port: number;
   secure: boolean;
+  folder: string;
   user: string;
   password: string;
   limit: number;
@@ -42,10 +44,25 @@ function parsePositiveInteger(value: string | undefined, defaultValue: number) {
     : defaultValue;
 }
 
+export async function resolveImapConfig(
+  integration: { configJson: Parameters<typeof parseMailIntakeConfig>[0]; secretRef: string | null },
+  provider?: IntegrationSecretProvider,
+): Promise<ImapConfig> {
+  const config = parseMailIntakeConfig(integration.configJson)
+  return {
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    folder: config.folder,
+    limit: config.limit,
+    user: await getIntegrationSecret(integration, 'username', provider),
+    password: await getIntegrationSecret(integration, 'password', provider),
+  }
+}
+
 export async function getImapConfig(): Promise<ImapConfig> {
   const integration = await getActiveIntegration(OrganizationIntegrationType.MAIL_INTAKE)
-  const config = parseMailIntakeConfig(integration.configJson)
-  return { host: config.host, port: config.port, secure: config.secure, limit: config.limit, user: await getIntegrationSecret(integration, 'username'), password: await getIntegrationSecret(integration, 'password') }
+  return resolveImapConfig(integration)
 }
 
 export class ImapImportError extends Error {
@@ -80,7 +97,7 @@ function getErrorDetails(error: unknown) {
 
 export function logImapError(
   step: ImapImportStep,
-  config: Pick<ImapConfig, "host" | "port" | "user">,
+  config: Pick<ImapConfig, "host" | "port">,
   error: unknown,
 ) {
   console.error("IMAP import failed", {
@@ -88,7 +105,6 @@ export function logImapError(
     provider: "imap",
     host: config.host,
     port: config.port,
-    user: config.user,
     ...getErrorDetails(error),
   });
 }
@@ -350,7 +366,6 @@ export async function fetchRecentImapMessages(
       provider: "imap",
       host: config.host,
       port: config.port,
-      user: config.user,
     });
 
     try {
@@ -363,16 +378,15 @@ export async function fetchRecentImapMessages(
     console.info("IMAP import step", {
       step: "mailbox",
       provider: "imap",
-      mailbox: "INBOX",
-      user: config.user,
+      mailbox: config.folder,
     });
 
     let mailbox;
     try {
-      mailbox = await client.mailboxOpen("INBOX", { readOnly: true });
+      mailbox = await client.mailboxOpen(config.folder, { readOnly: true });
     } catch (error) {
       logImapError("mailbox", config, error);
-      throw new ImapImportError("mailbox", "Boîte INBOX inaccessible", error);
+      throw new ImapImportError("mailbox", "Boîte mail inaccessible", error);
     }
 
     const messageCount = mailbox.exists ?? 0;
@@ -380,7 +394,6 @@ export async function fetchRecentImapMessages(
     console.info("IMAP import step", {
       step: "mailbox_count",
       provider: "imap",
-      user: config.user,
       messageCount,
     });
 
@@ -394,7 +407,6 @@ export async function fetchRecentImapMessages(
     console.info("IMAP import step", {
       step: "fetch",
       provider: "imap",
-      user: config.user,
       range: `${start}:*`,
       limit: config.limit,
     });
@@ -460,7 +472,6 @@ export async function fetchRecentImapMessages(
     console.info("IMAP import step", {
       step: "logout",
       provider: "imap",
-      user: config.user,
     });
     await client.logout().catch((error) => {
       logImapError("logout", config, error);
