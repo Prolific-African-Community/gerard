@@ -9,6 +9,9 @@ import { addOrganizationMember, removeOrganizationMember, updateOrganization, up
 import { hashPassword } from '../lib/auth/password'
 import { prisma } from '../lib/prisma'
 import organizationsHandler from '../pages/api/platform/organizations'
+import organizationAdminHandler from '../pages/api/admin/organization'
+import organizationMembersHandler from '../pages/api/admin/organization/members'
+import organizationMemberHandler from '../pages/api/admin/organization/members/[membershipId]'
 import { getServerSideProps as platformAdminPageProps } from '../pages/admin'
 
 const prefix = 'QA_PLATFORM_ADMIN_'
@@ -71,6 +74,7 @@ async function main() {
     assert.equal(adminMembership.role, OrganizationRole.ORG_ADMIN, 'F')
     await prisma.user.update({ where: { id: adminMembership.userId }, data: { mustChangePassword: false } })
     adminMembership.user.mustChangePassword = false
+    const orgAdminSession = { ...adminMembership.user, organizationId, organizationRole: OrganizationRole.ORG_ADMIN }
 
     const orgAdminRes = response()
     await organizationsHandler(request({ ...adminMembership.user, organizationId, organizationRole: OrganizationRole.ORG_ADMIN }), orgAdminRes as any)
@@ -79,6 +83,34 @@ async function main() {
     assert.deepEqual(await (platformAdminPageProps as any)({ req: request({ ...adminMembership.user, organizationId, organizationRole: OrganizationRole.ORG_ADMIN }), res: orgAdminPageRes }), { props: { accessDenied: true } }, 'B-page')
     assert.equal(orgAdminPageRes.statusCode, 403, 'B-page-status')
 
+    const ownWorkspaceRes = response()
+    await organizationAdminHandler(request(orgAdminSession), ownWorkspaceRes as any)
+    assert.equal(ownWorkspaceRes.statusCode, 200, 'P-org-admin-own-workspace')
+    assert.equal(ownWorkspaceRes.payload.organization.id, organizationId, 'P-org-admin-own-tenant')
+
+    await prisma.organizationUser.create({ data: { organizationId, userId: normalUser.id, role: OrganizationRole.DISPATCHER } })
+    const dispatcherSession = { ...normalUser, organizationId, organizationRole: OrganizationRole.DISPATCHER }
+    const dispatcherWorkspaceRes = response()
+    await organizationAdminHandler(request(dispatcherSession), dispatcherWorkspaceRes as any)
+    assert.equal(dispatcherWorkspaceRes.statusCode, 403, 'Q-dispatcher-denied')
+
+    const createdByOrgAdminRes = response()
+    await organizationMembersHandler(request(orgAdminSession, 'POST', {
+      firstName: 'QA', lastName: 'Created', username: 'qa_org_admin_created', role: 'VIEWER', platformRole: 'SUPER_ADMIN',
+    }), createdByOrgAdminRes as any)
+    assert.equal(createdByOrgAdminRes.statusCode, 201, 'R-org-admin-create-member')
+    assert.equal(typeof createdByOrgAdminRes.payload.temporaryPassword, 'string', 'R-temporary-password-returned-once')
+    const createdByOrgAdmin = await prisma.user.findFirstOrThrow({ where: { username: 'qa_org_admin_created' } })
+    createdUserIds.push(createdByOrgAdmin.id)
+    assert.equal(createdByOrgAdmin.platformRole, null, 'S-platform-role-protected')
+
+    const foreignMembership = await prisma.organizationUser.findFirstOrThrow({ where: { organizationId: { not: organizationId } }, select: { id: true } })
+    const crossTenantRes = response()
+    const crossTenantReq = request(orgAdminSession, 'PATCH', { role: 'MANAGER' })
+    crossTenantReq.query = { membershipId: foreignMembership.id }
+    await organizationMemberHandler(crossTenantReq, crossTenantRes as any)
+    assert.equal(crossTenantRes.statusCode, 404, 'T-cross-tenant-membership-denied')
+
     const member = await addOrganizationMember({ actorUserId: superUser.id, organizationId, role: OrganizationRole.VIEWER, newUser: { firstName: 'QA', lastName: 'Member', username: 'qa_platform_member', password: 'Qa!Password2026' } })
     createdUserIds.push(member.userId)
     const changed = await updateOrganizationMember({ actorUserId: superUser.id, organizationId, membershipId: member.id, role: OrganizationRole.MANAGER })
@@ -86,7 +118,6 @@ async function main() {
     await removeOrganizationMember({ actorUserId: superUser.id, organizationId, membershipId: member.id })
     assert.equal(await prisma.organizationUser.count({ where: { id: member.id } }), 0, 'H')
 
-    const orgAdminSession = { ...adminMembership.user, organizationId, organizationRole: OrganizationRole.ORG_ADMIN }
     await updateOrganization({ actorUserId: superUser.id, organizationId, status: 'SUSPENDED' })
     const suspendedRes = response()
     assert.equal(await requirePermission(request(orgAdminSession), suspendedRes as any, permissions.dispatchView), null, 'I')

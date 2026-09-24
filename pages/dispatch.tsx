@@ -20,6 +20,7 @@ type DispatchPageProps = {
   initialView: ViewMode
   initialParkOverview: ParkOverviewDTO | null
   isAdmin: boolean
+  isOrganizationAdmin: boolean
   googleMapsBrowserKey: string | null
 }
 
@@ -29,6 +30,7 @@ export default function DispatchPage({
   initialView,
   initialParkOverview,
   isAdmin,
+  isOrganizationAdmin,
   googleMapsBrowserKey,
 }: DispatchPageProps) {
   const isMobile = useIsMobile()
@@ -36,7 +38,8 @@ export default function DispatchPage({
   const extensionLinks = resolveApplicationNavigation(application, capabilities)
     .map((item) => [item.label, item.href] as const)
   const appLinks: ReadonlyArray<readonly [string, string]> = [
-    ...(isAdmin ? ([['Administration', '/admin']] as const) : []),
+    ...(isAdmin ? ([['Plateforme', '/admin']] as const) : []),
+    ...(isOrganizationAdmin ? ([['Organisation', '/admin/organization']] as const) : []),
     ...extensionLinks,
   ]
 
@@ -153,6 +156,7 @@ export const getServerSideProps: GetServerSideProps = async ({ req, query }) => 
         ? await runWithCurrentOrganization(user, () => buildParkOverview(user.role))
         : null,
       isAdmin: Boolean(user.platformRole),
+      isOrganizationAdmin: user.organizationRole === 'ORG_ADMIN',
       googleMapsBrowserKey: getRuntimeGoogleMapsBrowserKey(),
     },
   }

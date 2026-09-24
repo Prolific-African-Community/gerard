@@ -4,6 +4,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { requirePlatformAccess, requireSuperAdmin } from '../../../../lib/auth/platform-authorization'
 import { passwordError, normalizeUsername, usernameError } from '../../../../lib/auth/validation'
 import { createOrganization, getPlatformDashboard, isOrganizationStatus, normalizeSlug, parseModules } from '../../../../lib/platform/organizations'
+import { listRegisteredGerardInstances } from '../../../../lib/runtime/instance-registry'
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : ''
 
@@ -11,7 +12,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (req.method === 'GET') {
     const actor = await requirePlatformAccess(req, res)
     if (!actor) return
-    return res.status(200).json({ ...(await getPlatformDashboard()), platformRole: actor.platformRole })
+    const dashboard = await getPlatformDashboard()
+    const instances = listRegisteredGerardInstances()
+    return res.status(200).json({
+      ...dashboard,
+      instances,
+      instanceSummary: {
+        total: instances.length,
+        standard: instances.filter((item) => item.applicationType === 'STANDARD').length,
+        custom: instances.filter((item) => item.applicationType === 'CUSTOM').length,
+        active: instances.filter((item) => item.status === 'ACTIVE').length,
+      },
+      platformRole: actor.platformRole,
+    })
   }
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST')

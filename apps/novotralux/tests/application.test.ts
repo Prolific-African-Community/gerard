@@ -12,7 +12,7 @@ assert.equal(checkCoreCompatibility(novotraluxManifest.compatibleCore, GERARD_CO
 assert.equal(novotraluxManifest.type, 'CUSTOM')
 assert.equal(novotraluxManifest.coreVersion, '1.0.0')
 assert.equal(novotraluxInstance.organizationId, 'org-novotralux')
-assert.equal(novotraluxInstance.domain, null)
+assert.equal(novotraluxInstance.domain, 'www.novotralux.eu')
 assert.equal(novotraluxApplication.identity.productName, 'Novotralux')
 assert.deepEqual(novotraluxApplication.ui.missionCard, defaultGerardApplication.ui.missionCard)
 assert.equal(novotraluxApplication.policies.missionReference({ reference: 'INT-1', clientReference: 'CLIENT-1' }).primary, 'CLIENT-1')
