@@ -6,11 +6,13 @@ Status: `MIGRATION_CLOSED`
 - Application: `novotralux` (`CUSTOM`)
 - Gerard Core: `1.0.0` (`^1.0.0`, compatible)
 - Organization: `org-novotralux`
-- Production deployment: `dpl_7YmfV7zeo5CuzG2q4cyVogLTLn1d`
+- Production deployment: `dpl_DcsVvov5Du5AeqNKTrf4YAch5xCY`
 - Public site: legacy remains the default application
 - Public operational route: `https://www.novotralux.eu/dispatch`
 - Operational surface: Novotralux Custom through the validated external rewrites
 - Writable métier database: Novotralux Custom production only
+- Production database: Neon `lucky-wildflower-15424624`, branch `br-cool-sea-zaufb5ng`, database `neondb`, host prefix `ep-ancient-surf-zav7xo37`
+- Gerard Standard database: Neon `lucky-wildflower-15424624`, branch `br-patient-wildflower-zarmyqcq`, database `neondb`, host prefix `ep-ancient-block-za26cw6e`
 
 ## Migration integrity
 
@@ -20,6 +22,7 @@ Status: `MIGRATION_CLOSED`
 - Critical identifiers and 17 password hashes preserved
 - Final migrator result: `ALREADY_MIGRATED`
 - No post-cutover count drift observed during stabilization
+- Prisma migration state: 58/58 applied, 0 unfinished, 0 rolled back; schema up to date
 
 ## Integrations
 
