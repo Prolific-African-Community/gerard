@@ -270,11 +270,13 @@ export function MobileDispatchView({
   capabilities,
   initialView,
   initialParkOverview,
+  googleMapsBrowserKey,
 }: {
   displayName: string
   capabilities: DispatchCapabilities
   initialView: ViewMode
   initialParkOverview: ParkOverviewDTO | null
+  googleMapsBrowserKey: string | null
 }) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<MobileTab>(
@@ -884,6 +886,7 @@ export function MobileDispatchView({
 
       {!isLoading && activeTab === 'map' ? (
         <MobileMapPanel
+          googleMapsBrowserKey={googleMapsBrowserKey}
           drivers={data.drivers}
           missions={data.missions}
           placements={data.placements}

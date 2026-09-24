@@ -1169,10 +1169,12 @@ export function WeeklyDispatchBoard({
   capabilities = fullDispatchCapabilities,
   initialView = 'planning',
   initialParkOverview = null,
+  googleMapsBrowserKey = null,
 }: {
   capabilities?: DispatchCapabilities
   initialView?: ViewMode
   initialParkOverview?: ParkOverviewDTO | null
+  googleMapsBrowserKey?: string | null
 }) {
   const router = useRouter()
   const [dispatchData, setDispatchData] = useState<DispatchOverviewState>({
@@ -3536,6 +3538,7 @@ export function WeeklyDispatchBoard({
           </section>
         ) : viewMode === 'map' ? (
           <DispatchMapView
+            googleMapsBrowserKey={googleMapsBrowserKey}
             drivers={dispatchData.drivers}
             trucks={dispatchData.trucks}
             missions={missions}

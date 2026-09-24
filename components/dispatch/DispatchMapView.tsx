@@ -55,6 +55,7 @@ type TruckPosition = {
 }
 
 type DispatchMapViewProps = {
+  googleMapsBrowserKey?: string | null
   drivers: Driver[]
   trucks: Truck[]
   missions: Mission[]
@@ -484,6 +485,7 @@ const mapOptions: google.maps.MapOptions = {
 }
 
 export function DispatchMapView({
+  googleMapsBrowserKey,
   drivers,
   trucks,
   missions,
@@ -498,7 +500,8 @@ export function DispatchMapView({
   onTruckStatusUpdate,
   onTruckReturnRouteUpdate,
 }: DispatchMapViewProps) {
-  const browserKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
+  const browserKey =
+    googleMapsBrowserKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY
 
   if (!browserKey) {
     return (

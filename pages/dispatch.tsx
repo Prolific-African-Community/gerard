@@ -20,6 +20,7 @@ type DispatchPageProps = {
   initialView: ViewMode
   initialParkOverview: ParkOverviewDTO | null
   isAdmin: boolean
+  googleMapsBrowserKey: string | null
 }
 
 export default function DispatchPage({
@@ -28,6 +29,7 @@ export default function DispatchPage({
   initialView,
   initialParkOverview,
   isAdmin,
+  googleMapsBrowserKey,
 }: DispatchPageProps) {
   const isMobile = useIsMobile()
   const application = useGerardApplication()
@@ -47,6 +49,7 @@ export default function DispatchPage({
           capabilities={capabilities}
           initialView={initialView}
           initialParkOverview={initialParkOverview}
+          googleMapsBrowserKey={googleMapsBrowserKey}
         />
       </main>
     )
@@ -67,6 +70,7 @@ export default function DispatchPage({
           capabilities={capabilities}
           initialView={initialView}
           initialParkOverview={initialParkOverview}
+          googleMapsBrowserKey={googleMapsBrowserKey}
         />
       </div>
     </main>
@@ -149,6 +153,8 @@ export const getServerSideProps: GetServerSideProps = async ({ req, query }) => 
         ? await runWithCurrentOrganization(user, () => buildParkOverview(user.role))
         : null,
       isAdmin: Boolean(user.platformRole),
+      googleMapsBrowserKey:
+        process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY?.trim() || null,
     },
   }
 }

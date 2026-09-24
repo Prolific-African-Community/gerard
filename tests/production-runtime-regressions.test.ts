@@ -53,6 +53,7 @@ async function main() {
 
   const desktopMap = fs.readFileSync(path.join(root, 'components/dispatch/DispatchMapView.tsx'), 'utf8')
   const mobileMap = fs.readFileSync(path.join(root, 'components/dispatch/mobile/MobileMapPanel.tsx'), 'utf8')
+  const dispatchPage = fs.readFileSync(path.join(root, 'pages/dispatch.tsx'), 'utf8')
   const nextConfig = fs.readFileSync(path.join(root, 'next.config.js'), 'utf8')
   for (const source of [desktopMap, mobileMap]) {
     assert.match(source, /process\.env\.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
@@ -60,6 +61,9 @@ async function main() {
   }
   assert.match(nextConfig, /NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
   assert.doesNotMatch(nextConfig, /NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY:\s*process\.env\.GOOGLE_MAPS_API_KEY/)
+  assert.match(dispatchPage, /googleMapsBrowserKey:[\s\S]*NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
+  assert.match(desktopMap, /googleMapsBrowserKey \|\| process\.env\.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
+  assert.match(mobileMap, /googleMapsBrowserKey \|\| process\.env\.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY/)
 
   console.log('production runtime regressions: PASS')
 }

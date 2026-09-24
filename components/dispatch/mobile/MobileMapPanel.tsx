@@ -13,6 +13,7 @@ import type { Driver, Mission, Trailer, Truck } from "../../../lib/dispatch/mock
 import type { MissionPlacement, TruckPosition } from "./types";
 
 type MobileMapPanelProps = {
+  googleMapsBrowserKey?: string | null;
   drivers: Driver[];
   missions: Mission[];
   placements: Record<string, MissionPlacement | null>;
@@ -62,6 +63,7 @@ const mapContainerStyle = {
 };
 
 export function MobileMapPanel({
+  googleMapsBrowserKey,
   drivers,
   missions,
   placements,
@@ -70,7 +72,8 @@ export function MobileMapPanel({
   truckPositions,
   onRefresh,
 }: MobileMapPanelProps) {
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
+  const apiKey =
+    googleMapsBrowserKey || process.env.NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY;
   const [selectedTruckId, setSelectedTruckId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<MapFilter>("all");
   const [visibleRoutes, setVisibleRoutes] = useState<Record<RouteType, boolean>>({
