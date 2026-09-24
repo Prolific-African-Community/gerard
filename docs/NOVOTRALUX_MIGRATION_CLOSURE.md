@@ -51,3 +51,10 @@ The final production deployment is published through the stable `novotralux-cust
 ## Known debt
 
 The `/api/dispatch/overview` response can exceed 4 MiB. It remains functional and is tracked separately from migration closure.
+
+## Final production repair — 2026-09-24
+
+- `MAIL_INTAKE` now serves the Imports panel through the canonical tenant integration, `secretRef`, and `IntegrationSecretProvider` path. The runtime no longer depends on legacy `MAIL_IMPORT_*` variables; production IMAP validation is read-only and connected.
+- The Google Maps browser configuration now uses only `NEXT_PUBLIC_GOOGLE_MAPS_BROWSER_KEY`. Vercel stores this intentionally public browser key as Production Config so it is available to the build, while `GOOGLE_MAPS_API_KEY` remains server-only.
+- Public validation on `www.novotralux.eu` confirmed connected mail imports, direct map refresh, Google map rendering, vehicle positions, and the operational mission panel without Google Routes calls.
+- Final validated Custom deployment: `dpl_2GT4JoSfw8uVYPTkVH6JLU4vT88P`.
