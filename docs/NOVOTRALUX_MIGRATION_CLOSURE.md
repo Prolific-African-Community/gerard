@@ -46,7 +46,7 @@ Update `@prolific/gerard-core` through the documented SemVer flow: verify the Cu
 
 ## Final deployment
 
-The final production deployment is `dpl_9otM8PwaVZGxDm9HJtAad9f3LCys`. It was built after environment cleanup and contains no temporary migration endpoint or token. Novotralux Custom remains the sole writable métier database; the legacy database, final snapshot, and legacy-only deployment remain available as read-only rollback references.
+The final production deployment is published through the stable `novotralux-custom.vercel.app` Production alias from the Gerard `main` branch. It is built after environment cleanup and contains no temporary migration endpoint or token. Novotralux Custom remains the sole writable métier database; the legacy database, final snapshot, and legacy-only deployment remain available as read-only rollback references.
 
 ## Known debt
 
