@@ -23,7 +23,18 @@ Status: `MIGRATION_CLOSED`
 
 ## Integrations
 
-`MAIL_INTAKE` and `SL_AUTOMOTIVE` remain disabled. Their non-sensitive configuration exists, but no tenant `secretRef` is configured. They must only be enabled after their secrets are added through the server-side integration secret provider and a non-destructive connectivity check passes.
+`MAIL_INTAKE` is active on the preserved integration ID. Its non-sensitive IMAP configuration is tenant-scoped, `secretRef` is `NOVOTRALUX_MAIL`, and production validation confirmed secret resolution, authentication, and read-only mailbox access without importing or modifying messages.
+
+`SL_AUTOMOTIVE` remains disabled and isolated. Its new Production-only secret-provider variables are retained, but the legacy production base URL is not HTTPS and failed the safe provider validation before any SL integration data was changed. The existing SL integration row therefore remains disabled with no secret reference until a verified HTTPS provider URL is supplied.
+
+## Final Vercel environment
+
+- Runtime/build: `DATABASE_URL`, `NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL`, application/organization/environment identity, and the public application definition are retained in Production.
+- Auth, Blob, server Google, browser Google, and all integration credentials are Production-only.
+- Preview has no production database, JWT, Blob, Google, mail, or SL credentials; only the non-sensitive dispatch base coordinates remain shared.
+- Migration/staging aliases, demo database variables, bootstrap/reset credentials, development cleanup credentials, legacy mail variables, and superseded SL key variables were removed from the normal Custom runtime.
+- `SL_AUTOMOTIVE_API_BASE_URL` is retained Production-only solely as the isolated unresolved provider configuration; it is not consumed by the disabled tenant integration.
+- Google Maps/Routes variables remain configured, with the per-operation limit retained. No Google call was made during cleanup.
 
 ## Legacy fallback
 
@@ -32,6 +43,10 @@ The legacy repository, production database, final snapshot `pre-gerard-final-cut
 ## Future Core updates
 
 Update `@prolific/gerard-core` through the documented SemVer flow: verify the Custom compatibility range, apply Core migrations before any Custom migrations, run Core/Standard/Custom tests and builds, validate on a non-production deployment, then promote. Novotralux extensions must continue to use only the Core public API; Core source is never copied or patched in the Custom app.
+
+## Final deployment
+
+The final production deployment is `dpl_9otM8PwaVZGxDm9HJtAad9f3LCys`. It was built after environment cleanup and contains no temporary migration endpoint or token. Novotralux Custom remains the sole writable métier database; the legacy database, final snapshot, and legacy-only deployment remain available as read-only rollback references.
 
 ## Known debt
 
