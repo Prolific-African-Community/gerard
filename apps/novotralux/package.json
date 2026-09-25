@@ -10,6 +10,7 @@
     "test": "tsx tests/application.test.ts",
     "configure:staging": "tsx scripts/configure-staging.ts",
     "qa:staging": "tsx ../../scripts/qa-novotralux-custom.ts",
+    "preview:seed": "tsx scripts/seed-preview.ts",
     "dev": "node scripts/run-shared.mjs dev",
     "build": "node scripts/run-shared.mjs build",
     "start": "node scripts/run-shared.mjs start"

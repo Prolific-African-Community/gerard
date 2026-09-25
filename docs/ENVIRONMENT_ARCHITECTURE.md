@@ -10,7 +10,7 @@ or mutating Production.
 | --- | --- | --- | --- |
 | Gerard Core | Shared contracts, tenant security, business services and integration abstractions | No client runtime database | No client credentials |
 | Gerard Standard | The standard multi-tenant product | Its own Vercel project and `DATABASE_URL`; local work uses a development database | Its own Production-only auth/provider credentials |
-| Novotralux Custom | Operational Novotralux application and `org-novotralux` | `novotralux-custom`; `DATABASE_URL` is the runtime connection. The deployment wrapper may select the dedicated Custom URL before exposing it as `DATABASE_URL` | Production-only auth, Blob, Google server and integration-secret variables |
+| Novotralux Custom | Operational Novotralux application and `org-novotralux` | `novotralux-custom`; the wrapper selects the environment-specific Custom URL and exposes only that value as `DATABASE_URL` | Production-only auth, Blob, Google server and integration-secret variables |
 | Novotralux legacy | Public website and read-only fallback | `novotralux`; approved read-only fallback `DATABASE_URL` | Only credentials required to render public/fallback reads; no mail polling, SL mutation or server-side route-provider credentials |
 
 ## Production database identities
@@ -19,6 +19,7 @@ or mutating Production.
 | --- | --- | --- | --- | --- | --- |
 | Gerard Standard | `lucky-wildflower-15424624` | `br-patient-wildflower-zarmyqcq` (`production`) | `neondb` | `ep-ancient-block-za26cw6e` | writable Standard runtime |
 | Novotralux Custom | `lucky-wildflower-15424624` | `br-cool-sea-zaufb5ng` (`novotralux-custom-production`) | `neondb` | `ep-ancient-surf-zav7xo37` | sole writable Novotralux métier runtime |
+| Novotralux Preview | `lucky-wildflower-15424624` | `br-still-field-za5dh59a` (`novotralux-custom-preview`) | `neondb` | `ep-mute-poetry-za1swvwu` | synthetic Preview-only data |
 | Novotralux legacy | `noisy-cloud-70722717` | `br-blue-tree-al34k8hl` (`production`) | `neondb` | Neon legacy endpoint | `legacy_fallback_reader` (read-only) |
 
 The branches are the isolation boundary even when two applications share a
@@ -31,6 +32,15 @@ branch positionally to `neonctl connection-string`; the command has no
 
 - Local Gerard uses a local/development database, development credentials and
   integrations disabled by default. Google provider calls default to `0`.
+- Novotralux local development uses `DATABASE_URL` with a development database.
+- Novotralux Preview requires `NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL` and uses
+  the schema-only `novotralux-custom-preview` branch with synthetic users only.
+  Vercel also maps its Preview-scoped `DATABASE_URL` to that same branch because
+  serverless functions do not inherit variables calculated by the build wrapper.
+- Novotralux Production requires
+  `NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL`. Preview never falls back to it.
+- `LEGACY_TARGET_DATABASE_URL` is an obsolete migration variable and is not a
+  Custom runtime input.
 - Preview uses Preview-specific disposable resources. When none exist, the
   sensitive variable is absent rather than inherited from Production.
 - Production secrets live in the owning Vercel project and Production scope.
