@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
+import { getVercelOidcToken } from '@vercel/oidc'
 import { isPlatformConfigurationAction } from '@prolific/gerard-core'
 import { requireSuperAdmin } from '../../../../../lib/auth/platform-authorization'
 import { getRegisteredGerardInstance } from '../../../../../lib/runtime/instance-registry'
@@ -23,9 +24,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     throw error
   }
   try {
-    const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
     const headers: Record<string, string> = { 'content-type': 'application/json', 'x-gerard-platform-signature': signed.signature, 'x-gerard-platform-actor': actor.id }
-    if (bypass && new URL(instance.configurationEndpoint).hostname.endsWith('.vercel.app')) headers['x-vercel-protection-bypass'] = bypass
+    if (process.env.VERCEL_ENV === 'preview') {
+      const oidcToken = await getVercelOidcToken()
+      if (!oidcToken) return res.status(503).json({ error: 'Platform preview identity unavailable' })
+      headers['x-vercel-trusted-oidc-idp-token'] = oidcToken
+    }
     const response = await fetch(instance.configurationEndpoint, { method: 'POST', headers, body: JSON.stringify({ request: signed.request }), signal: AbortSignal.timeout(8000) })
     const result = await response.json().catch(() => ({}))
     await prisma.platformAuditLog.create({ data: { actorUserId: actor.id, organizationId: 'org-gerard-default', action: 'ORGANIZATION_UPDATED', metadata: { source: 'PLATFORM_INSTANCE_CONFIGURATION', targetApplication: instance.application, targetOrganizationId: instance.organizationId, action, success: response.ok } } })
