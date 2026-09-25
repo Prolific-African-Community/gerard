@@ -3,7 +3,7 @@ import { OrganizationIntegrationType, OrganizationRole, PlatformAuditAction, Use
 
 import { createSessionToken, sessionCookieName } from '../lib/auth/session'
 import { requirePermission } from '../lib/auth/authorization'
-import { permissions } from '../lib/auth/permissions'
+import { hasPermission, permissions } from '../lib/auth/permissions'
 import { runWithOrganization } from '../lib/auth/organization-context'
 import { addOrganizationMember, removeOrganizationMember, updateOrganization, updateOrganizationMember } from '../lib/platform/organizations'
 import { hashPassword, verifyPassword } from '../lib/auth/password'
@@ -14,6 +14,7 @@ import organizationMembersHandler from '../pages/api/admin/organization/members'
 import organizationMemberHandler from '../pages/api/admin/organization/members/[membershipId]'
 import resetOrganizationPasswordHandler from '../pages/api/admin/organization/members/[membershipId]/reset-password'
 import invalidateOrganizationSessionsHandler from '../pages/api/admin/organization/members/[membershipId]/invalidate-sessions'
+import driversHandler from '../pages/api/dispatch/drivers'
 import { getServerSideProps as platformAdminPageProps } from '../pages/admin'
 
 const prefix = 'QA_PLATFORM_ADMIN_'
@@ -39,6 +40,7 @@ async function main() {
   const superUser = await prisma.user.create({ data: { id: `${prefix}SUPER`, name: 'QA Super', firstName: 'QA', lastName: 'Super', username: 'qa_platform_super', passwordHash, role: UserRole.ADMIN, platformRole: 'SUPER_ADMIN', isActive: true, mustChangePassword: false } })
   const supportUser = await prisma.user.create({ data: { id: `${prefix}SUPPORT`, name: 'QA Support', firstName: 'QA', lastName: 'Support', username: 'qa_platform_support', passwordHash, role: UserRole.DISPATCHER, platformRole: 'PLATFORM_SUPPORT', isActive: true, mustChangePassword: false } })
   let organizationId = ''
+  let createdDriverId = ''
   const createdUserIds: string[] = []
 
   try {
@@ -92,12 +94,24 @@ async function main() {
     assert.equal(ownWorkspaceRes.payload.organization.id, organizationId, 'P-org-admin-own-tenant')
     assert.equal(JSON.stringify(ownWorkspaceRes.payload).includes('must-not-leak'), false, 'P-integration-secret-config-redacted')
     assert.equal(JSON.stringify(ownWorkspaceRes.payload).includes('QA_SECRET_REF'), false, 'P-secret-ref-hidden')
+    assert.equal(JSON.stringify(ownWorkspaceRes.payload).includes('integrations'), false, 'P-config-not-exposed')
+    const forbiddenOrgConfigRes = response()
+    await organizationAdminHandler(request(orgAdminSession, 'PATCH', { name: 'Forbidden rename', enabledModules: [] }), forbiddenOrgConfigRes as any)
+    assert.equal(forbiddenOrgConfigRes.statusCode, 405, 'P-org-admin-config-mutation-denied')
 
     await prisma.organizationUser.create({ data: { organizationId, userId: normalUser.id, role: OrganizationRole.DISPATCHER } })
     const dispatcherSession = { ...normalUser, organizationId, organizationRole: OrganizationRole.DISPATCHER }
     const dispatcherWorkspaceRes = response()
     await organizationAdminHandler(request(dispatcherSession), dispatcherWorkspaceRes as any)
     assert.equal(dispatcherWorkspaceRes.statusCode, 403, 'Q-dispatcher-denied')
+    assert.equal(hasPermission(dispatcherSession, permissions.driversCredentialsManage), false, 'Q-dispatcher-no-account-provisioning')
+    const driverResourceRes = response()
+    await driversHandler(request(dispatcherSession, 'POST', { name: 'QA Resource Driver' }), driverResourceRes as any)
+    assert.equal(driverResourceRes.statusCode, 201, 'Q-dispatcher-driver-resource-created')
+    createdDriverId = driverResourceRes.payload.driver.id
+    const driverAccountRes = response()
+    await driversHandler(request(dispatcherSession, 'POST', { name: 'QA Login Driver', username: 'qa_login_driver', password: 'Qa!Password2026' }), driverAccountRes as any)
+    assert.equal(driverAccountRes.statusCode, 403, 'Q-dispatcher-driver-account-denied')
 
     const createdByOrgAdminRes = response()
     await organizationMembersHandler(request(orgAdminSession, 'POST', {
@@ -109,6 +123,26 @@ async function main() {
     createdUserIds.push(createdByOrgAdmin.id)
     assert.equal(createdByOrgAdmin.platformRole, null, 'S-platform-role-protected')
     const createdMembership = await prisma.organizationUser.findFirstOrThrow({ where: { organizationId, userId: createdByOrgAdmin.id } })
+
+    const identityRes = response()
+    const identityReq = request(orgAdminSession, 'PATCH', { firstName: 'Renamed', lastName: 'Member', username: 'qa_org_admin_renamed', email: 'renamed@example.invalid' })
+    identityReq.query = { membershipId: createdMembership.id }
+    await organizationMemberHandler(identityReq, identityRes as any)
+    assert.equal(identityRes.statusCode, 200, 'R-org-admin-identity-update')
+    const afterIdentity = await prisma.user.findUniqueOrThrow({ where: { id: createdByOrgAdmin.id } })
+    assert.equal(afterIdentity.username, 'qa_org_admin_renamed', 'R-username-updated')
+    assert.equal(afterIdentity.email, 'renamed@example.invalid', 'R-email-updated')
+
+    const disableRes = response()
+    const disableReq = request(orgAdminSession, 'PATCH', { isActive: false })
+    disableReq.query = { membershipId: createdMembership.id }
+    await organizationMemberHandler(disableReq, disableRes as any)
+    assert.equal(disableRes.statusCode, 200, 'R-member-disabled')
+    const enableRes = response()
+    const enableReq = request(orgAdminSession, 'PATCH', { isActive: true })
+    enableReq.query = { membershipId: createdMembership.id }
+    await organizationMemberHandler(enableReq, enableRes as any)
+    assert.equal(enableRes.statusCode, 200, 'R-member-reactivated')
 
     const resetRes = response()
     const resetReq = request(orgAdminSession, 'POST')
@@ -179,6 +213,7 @@ async function main() {
   } finally {
     if (organizationId) {
       await runWithOrganization({ organizationId, organizationRole: OrganizationRole.ORG_ADMIN, platformRole: null, userId: superUser.id }, async () => {
+        if (createdDriverId) await prisma.driver.deleteMany({ where: { id: createdDriverId } })
         await prisma.mission.deleteMany({ where: { id: { startsWith: prefix } } })
       })
       await prisma.platformAuditLog.deleteMany({ where: { organizationId } })

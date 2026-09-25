@@ -7,19 +7,16 @@ import { LogoutButton } from '../../components/site/LogoutButton'
 import { getCurrentUser } from '../../lib/auth/authorization'
 
 const roles = ['ORG_ADMIN', 'MANAGER', 'DISPATCHER', 'SECRETARY', 'ACCOUNTING', 'DRIVER', 'VIEWER'] as const
-const sections = [{ id: 'overview', label: 'Aperçu' }, { id: 'team', label: 'Équipe' }, { id: 'organization', label: 'Organisation' }] as const
+const sections = [{ id: 'overview', label: 'Aperçu' }, { id: 'team', label: 'Équipe' }] as const
 type Section = (typeof sections)[number]['id']
-const moduleLabels: Record<string, string> = { PLANNING: 'Planning', MAP: 'Carte', PROFITABILITY: 'Rentabilité', INVOICING: 'Facturation', FLEET: 'Flotte', MAINTENANCE: 'Maintenance', INTELLIGENCE: 'Intelligence', ASSISTANT: 'Assistant' }
-const integrationCatalog = [
-  { type: 'MAIL_INTAKE', name: 'Réception e-mail', purpose: 'Import des demandes reçues par e-mail' },
-  { type: 'SL_AUTOMOTIVE', name: 'SL Automotive', purpose: 'Réception des ordres de transport' },
-] as const
+const moduleLabels: Record<string, string> = {}
+const integrationCatalog: readonly { type: string; name: string; purpose: string }[] = []
 const INACTIVE_DAYS = 30
 
 type Member = { id: string; role: string; createdAt: string; user: { id: string; firstName: string; lastName: string; username: string; email: string | null; isActive: boolean; mustChangePassword: boolean; lastLoginAt: string | null; createdAt: string; sessionVersion: number } }
 type Integration = { id: string; type: string; enabled: boolean; configJson: Record<string, unknown>; updatedAt: string }
 type Activity = { id: string; action: string; metadata: Record<string, unknown> | null; createdAt: string; actor: { firstName: string; lastName: string; username: string } }
-type Organization = { id: string; name: string; slug: string; status: string; enabledModules: string[]; displayName: string | null; applicationTitle: string | null; accentColor: string | null; logoUrl: string | null; faviconUrl: string | null; users: Member[]; integrations: Integration[]; platformAuditLogs: Activity[] }
+type Organization = { id: string; name: string; status: string; displayName: string | null; logoUrl: string | null; applicationTitle: string | null; accentColor: string | null; faviconUrl: string | null; enabledModules: string[]; integrations: Integration[]; users: Member[]; platformAuditLogs: Activity[] }
 type Request = (url: string, init: RequestInit) => Promise<Record<string, unknown>>
 type Confirmation = { title: string; body: ReactNode; confirm: string; destructive?: boolean; run: () => Promise<void> }
 type Attention = { member: Member; reason: string; tone: 'warning' | 'neutral' }
@@ -100,7 +97,6 @@ export default function OrganizationAdminPage({ accessDenied = false, platformAd
     <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8 lg:py-8">
       {section === 'overview' && <Overview organization={organization} stats={stats} attention={attention} openMember={openMember} addMember={() => setAddOpen(true)} openActivity={() => setActivityOpen(true)} navigate={navigate} />}
       {section === 'team' && <Team members={members} currentUserId={currentUserId} openMember={openMember} addMember={() => setAddOpen(true)} />}
-      {section === 'organization' && <OrganizationSettings organization={organization} request={request} notify={setToast} />}
     </div>
 
     {selected && <MemberDrawer member={selected} isSelf={selected.user.id === currentUserId} activeAdmins={stats.admins} activity={organization.platformAuditLogs.filter((item) => item.metadata?.userId === selected.user.id)} close={() => setSelectedId(null)} request={request} confirm={confirmThen} notify={setToast} reveal={setCredential} />}
@@ -127,12 +123,11 @@ function Surface({ title, action, children, className = '' }: { title?: string; 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
 function Overview({ organization, stats, attention, openMember, addMember, openActivity, navigate }: { organization: Organization; stats: { total: number; active: number; admins: number }; attention: Attention[]; openMember: (member: Member) => void; addMember: () => void; openActivity: () => void; navigate: (section: Section) => void }) {
-  const enabledIntegrations = organization.integrations.filter((item) => item.enabled).length
   const summary = [
     { label: 'Membres actifs', value: stats.active, hint: stats.total - stats.active ? `${stats.total - stats.active} désactivé${stats.total - stats.active > 1 ? 's' : ''}` : `sur ${stats.total}` },
     { label: 'Administrateurs', value: stats.admins, hint: stats.admins < 2 ? 'Recommandé : 2 minimum' : 'actifs', warn: stats.admins < 2 },
     { label: 'À vérifier', value: attention.length, hint: attention.length ? 'accès à revoir' : 'rien à signaler', warn: attention.length > 0 },
-    { label: 'Intégrations', value: `${enabledIntegrations}/${organization.integrations.length}`, hint: 'activées' },
+    { label: 'Accès désactivés', value: stats.total - stats.active, hint: 'historique conservé' },
   ]
   return <>
     <SectionHeader title={organization.displayName || organization.name} description="Accès, sécurité et identité de votre espace Gerard." action={<button onClick={addMember} className={buttonClass.accent}>＋ Ajouter un membre</button>} />
@@ -152,9 +147,7 @@ function Overview({ organization, stats, attention, openMember, addMember, openA
         <Surface title="Activité récente" action={organization.platformAuditLogs.length > 0 && <button onClick={openActivity} className={buttonClass.ghost}>Tout voir →</button>}>
           <ActivityRows items={organization.platformAuditLogs.slice(0, 5)} members={organization.users} compact />
         </Surface>
-        <Surface title="Intégrations" action={<button onClick={() => navigate('organization')} className={buttonClass.ghost}>Détails →</button>}>
-          <IntegrationRows integrations={organization.integrations} compact />
-        </Surface>
+        <Surface title="Responsabilité"><p className="px-4 py-4 text-sm leading-6 text-black/55">Vous gérez ici les membres et leurs accès. La configuration du produit, des modules, des intégrations et de l’apparence relève de l’administration Gerard.</p></Surface>
       </div>
     </div>
   </>
@@ -214,6 +207,8 @@ function Team({ members, currentUserId, openMember, addMember }: { members: Memb
 function MemberDrawer({ member, isSelf, activeAdmins, activity, close, request, confirm, notify, reveal }: { member: Member; isSelf: boolean; activeAdmins: number; activity: Activity[]; close: () => void; request: Request; confirm: (value: Confirmation) => void; notify: (text: string) => void; reveal: (value: { name: string; username: string; password: string }) => void }) {
   const [error, setError] = useState('')
   const [savingRole, setSavingRole] = useState(false)
+  const [editingIdentity, setEditingIdentity] = useState(false)
+  const [identity, setIdentity] = useState({ firstName: member.user.firstName, lastName: member.user.lastName, username: member.user.username, email: member.user.email || '' })
   const { user } = member
   const name = fullName(member)
   const base = `/api/admin/organization/members/${member.id}`
@@ -222,6 +217,14 @@ function MemberDrawer({ member, isSelf, activeAdmins, activity, close, request, 
   const changeRole = async (role: string) => {
     setError(''); setSavingRole(true)
     try { await request(base, { method: 'PATCH', body: JSON.stringify({ role }) }); notify(`${name} est maintenant ${roleLabels[role].toLowerCase()}.`) } catch (cause) { setError(message(cause, 'Changement de rôle impossible')) } finally { setSavingRole(false) }
+  }
+  const saveIdentity = async (event: FormEvent) => {
+    event.preventDefault(); setError('')
+    try {
+      await request(base, { method: 'PATCH', body: JSON.stringify(identity) })
+      setEditingIdentity(false)
+      notify('Identité mise à jour.')
+    } catch (cause) { setError(message(cause, 'Mise à jour impossible')) }
   }
   // Errors raised inside the confirmation are surfaced here, in the drawer, next to the member they concern.
   const guarded = (run: () => Promise<void>) => async () => { setError(''); try { await run() } catch (cause) { setError(message(cause, 'Action impossible')) } }
@@ -234,9 +237,17 @@ function MemberDrawer({ member, isSelf, activeAdmins, activity, close, request, 
   return <Drawer close={close} eyebrow={roleLabels[member.role]} title={<span className="flex items-center gap-2">{name}{isSelf && <span className="text-xs font-normal text-black/40">(vous)</span>}</span>}>
     {error && <p className="mx-5 mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>}
     <DrawerSection title="Identité">
-      <Row label="Identifiant" value={`@${user.username}`} />
-      <Row label="E-mail" value={user.email || '—'} />
-      <Row label="Membre depuis" value={formatDate(member.createdAt)} />
+      {editingIdentity ? <form onSubmit={saveIdentity} className="space-y-3">
+        <div className="grid grid-cols-2 gap-2"><TextField label="Prénom" value={identity.firstName} set={(firstName) => setIdentity({ ...identity, firstName })} required /><TextField label="Nom" value={identity.lastName} set={(lastName) => setIdentity({ ...identity, lastName })} required /></div>
+        <TextField label="Identifiant" value={identity.username} set={(username) => setIdentity({ ...identity, username })} required />
+        <TextField label="E-mail" value={identity.email} set={(email) => setIdentity({ ...identity, email })} />
+        <div className="flex justify-end gap-2"><button type="button" onClick={() => setEditingIdentity(false)} className={buttonClass.secondary}>Annuler</button><button className={buttonClass.primary}>Enregistrer</button></div>
+      </form> : <>
+        <Row label="Identifiant" value={`@${user.username}`} />
+        <Row label="E-mail" value={user.email || '—'} />
+        <Row label="Membre depuis" value={formatDate(member.createdAt)} />
+        <button onClick={() => setEditingIdentity(true)} className={`${buttonClass.secondary} mt-3`}>Modifier l’identité</button>
+      </>}
     </DrawerSection>
     <DrawerSection title="Accès">
       <label className="block"><span className="text-xs text-black/50">Rôle</span>

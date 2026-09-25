@@ -53,6 +53,7 @@ export const rolePermissions: Readonly<Record<UserRole, ReadonlySet<Permission>>
     allPermissions.filter(
       (permission) =>
         permission !== permissions.usersManage &&
+        permission !== permissions.driversCredentialsManage &&
         permission !== permissions.parkMove &&
         permission !== permissions.parkInspectionManage
     )
@@ -97,7 +98,10 @@ export const rolePermissions: Readonly<Record<UserRole, ReadonlySet<Permission>>
 
 export const organizationRolePermissions: Readonly<Record<OrganizationRole, ReadonlySet<Permission>>> = {
   [OrganizationRole.ORG_ADMIN]: new Set(allPermissions),
-  [OrganizationRole.MANAGER]: new Set(allPermissions.filter(permission => permission !== permissions.usersManage)),
+  [OrganizationRole.MANAGER]: new Set(allPermissions.filter(permission =>
+    permission !== permissions.usersManage &&
+    permission !== permissions.driversCredentialsManage
+  )),
   [OrganizationRole.DISPATCHER]: rolePermissions[UserRole.DISPATCHER],
   [OrganizationRole.SECRETARY]: rolePermissions[UserRole.SECRETARY],
   [OrganizationRole.ACCOUNTING]: new Set([

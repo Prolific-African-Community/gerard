@@ -10,8 +10,7 @@ export async function getOrganizationAdminWorkspace(organizationId: string) {
   const organization = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: {
-      id: true, name: true, slug: true, status: true, enabledModules: true,
-      displayName: true, logoUrl: true, accentColor: true, faviconUrl: true, applicationTitle: true,
+      id: true, name: true, status: true, displayName: true, logoUrl: true,
       users: {
         orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
         select: {
@@ -19,7 +18,6 @@ export async function getOrganizationAdminWorkspace(organizationId: string) {
           user: { select: { id: true, firstName: true, lastName: true, username: true, email: true, isActive: true, mustChangePassword: true, lastLoginAt: true, createdAt: true, sessionVersion: true } },
         },
       },
-      integrations: { orderBy: { type: 'asc' }, select: { id: true, type: true, enabled: true, configJson: true, updatedAt: true } },
       platformAuditLogs: {
         orderBy: { createdAt: 'desc' }, take: 100,
         select: { id: true, action: true, metadata: true, createdAt: true, actor: { select: { id: true, firstName: true, lastName: true, username: true } } },
@@ -27,20 +25,7 @@ export async function getOrganizationAdminWorkspace(organizationId: string) {
     },
   })
   if (!organization) return null
-  return {
-    ...organization,
-    integrations: organization.integrations.map(({ configJson, ...integration }) => {
-      const config = typeof configJson === 'object' && configJson !== null && !Array.isArray(configJson) ? configJson as Record<string, unknown> : {}
-      return {
-        ...integration,
-        configJson: {
-          ...(typeof config.mailboxAddress === 'string' ? { mailboxAddress: config.mailboxAddress } : {}),
-          ...(typeof config.provider === 'string' ? { provider: config.provider } : {}),
-          ...(typeof config.providerName === 'string' ? { providerName: config.providerName } : {}),
-        },
-      }
-    }),
-  }
+  return organization
 }
 
 export function generateTemporaryPassword() {
@@ -55,6 +40,40 @@ async function getMutableMembership(tx: Prisma.TransactionClient, organizationId
   if (membership.user.platformRole) throw new Error('PLATFORM_ACCOUNT_PROTECTED')
   if (membership.user._count.organizationMemberships > 1) throw new Error('SHARED_ACCOUNT_PROTECTED')
   return membership
+}
+
+export async function updateOrganizationMemberIdentity(input: {
+  actorUserId: string
+  organizationId: string
+  membershipId: string
+  firstName: string
+  lastName: string
+  username: string
+  email: string | null
+}) {
+  return prisma.$transaction(async (tx) => {
+    const membership = await getMutableMembership(tx, input.organizationId, input.membershipId)
+    const user = await tx.user.update({
+      where: { id: membership.userId },
+      data: {
+        firstName: input.firstName,
+        lastName: input.lastName,
+        name: `${input.firstName} ${input.lastName}`.trim(),
+        username: input.username,
+        email: input.email,
+      },
+      select: { id: true, firstName: true, lastName: true, username: true, email: true },
+    })
+    await tx.platformAuditLog.create({
+      data: {
+        actorUserId: input.actorUserId,
+        organizationId: input.organizationId,
+        action: PlatformAuditAction.ORGANIZATION_UPDATED,
+        metadata: { kind: 'USER_IDENTITY_UPDATED', userId: user.id, fields: ['firstName', 'lastName', 'username', 'email'] },
+      },
+    })
+    return user
+  })
 }
 
 export async function setOrganizationMemberActive(input: { actorUserId: string; organizationId: string; membershipId: string; isActive: boolean }) {
