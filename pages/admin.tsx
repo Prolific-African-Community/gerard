@@ -1,6 +1,7 @@
 import type { GetServerSideProps } from 'next'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
+import type { PlatformConfigurationSnapshot } from '@prolific/gerard-core'
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AdminShell, Badge, Modal, Notice, SaveBar, SectionHeader, Surface, Switch, TextField, Toast, auditLabel, buttonClass, formatDate, formatRelative, headerLinkClass, inputClass, roleLabels } from '../components/admin/ui'
@@ -56,9 +57,8 @@ type Instance = { client: string; application: string; applicationType: 'STANDAR
 type Dashboard = { organizations: Organization[]; instances: Instance[]; platformRole: 'SUPER_ADMIN' | 'PLATFORM_SUPPORT' }
 type AvailableUser = { id: string; firstName: string; lastName: string; username: string; email: string | null }
 
-// What the workspace knows about an organization's configuration. For a Custom instance the platform never reads the
-// Custom database, so values are only known once the instance has confirmed a change (null = not known yet).
-type Configuration = { name: string | null; displayName: string | null; applicationTitle: string | null; accentColor: string | null; logoUrl: string | null; faviconUrl: string | null; enabledModules: string[] | null; integrations: Partial<Record<IntegrationType, Integration>>; confirmedAt: string | null }
+// Workspace view of the normalised configuration snapshot (read locally for Standard, over the signed channel for Custom).
+type Configuration = { name: string; displayName: string | null; applicationTitle: string | null; accentColor: string | null; logoUrl: string | null; faviconUrl: string | null; enabledModules: string[]; integrations: Partial<Record<IntegrationType, Integration>>; readAt: string }
 type Save = (kind: 'identity' | 'branding' | 'modules', payload: Record<string, unknown>) => Promise<void>
 type SaveIntegration = (type: IntegrationType, change: { enabled?: boolean; configJson?: Record<string, unknown>; secretRef?: string }) => Promise<void>
 type Target = { kind: 'standard'; id: string } | { kind: 'custom'; application: string }
@@ -68,7 +68,7 @@ const errorText = (cause: unknown, fallback: string) => cause instanceof Error ?
 const customErrors: Record<string, string> = {
   'Platform instance channel unavailable': 'Le canal de configuration n’est pas configuré sur cet environnement.',
   'Platform preview identity unavailable': 'Identité Preview indisponible : la requête signée n’a pas pu être émise.',
-  'Custom configuration unavailable': 'L’instance n’a pas répondu. Aucune modification n’a été confirmée.',
+  'Custom configuration unavailable': 'L’instance n’a pas répondu.',
   'Custom instance unavailable': 'Cette instance n’accepte pas de configuration depuis cet environnement.',
 }
 const customCodes: Record<string, string> = { FORBIDDEN_CONFIGURATION_FIELD: 'Champ non autorisé par l’instance.', INVALID_BRANDING: 'Apparence refusée : vérifiez la couleur (#RRGGBB) et les URL.', INVALID_MODULES: 'Liste de modules refusée.', INVALID_INTEGRATION: 'Intégration inconnue de l’instance.', SECRET_FIELD_FORBIDDEN: 'Les secrets ne transitent jamais par ce canal.', LOCAL_AUDIT_ACTOR_NOT_FOUND: 'L’instance n’a aucun administrateur actif pour tracer la modification.', ORGANIZATION_NOT_FOUND: 'Organisation introuvable sur l’instance.' }
@@ -80,13 +80,11 @@ async function call(url: string, init: RequestInit) {
   return body
 }
 
-const pickOrganizationConfiguration = (value: Record<string, unknown>) => ({
-  name: typeof value.name === 'string' ? value.name : null,
-  displayName: (value.displayName as string | null) ?? null, applicationTitle: (value.applicationTitle as string | null) ?? null,
-  accentColor: (value.accentColor as string | null) ?? null, logoUrl: (value.logoUrl as string | null) ?? null, faviconUrl: (value.faviconUrl as string | null) ?? null,
-  enabledModules: Array.isArray(value.enabledModules) ? value.enabledModules as string[] : null,
+const fromSnapshot = (snapshot: PlatformConfigurationSnapshot): Configuration => ({
+  ...snapshot.identity, ...snapshot.branding, enabledModules: snapshot.enabledModules,
+  integrations: Object.fromEntries(snapshot.integrations.map((item) => [item.type, item as Integration])),
+  readAt: new Date().toISOString(),
 })
-const emptyConfiguration: Configuration = { name: null, displayName: null, applicationTitle: null, accentColor: null, logoUrl: null, faviconUrl: null, enabledModules: null, integrations: {}, confirmedAt: null }
 
 export default function PlatformAdminPage({ accessDenied = false }: { accessDenied?: boolean }) {
   const router = useRouter()
@@ -94,7 +92,6 @@ export default function PlatformAdminPage({ accessDenied = false }: { accessDeni
   const [loadError, setLoadError] = useState('')
   const [toast, setToast] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
-  const [customState, setCustomState] = useState<Record<string, Configuration>>({})
   const canWrite = data?.platformRole === 'SUPER_ADMIN'
 
   const loadDashboard = useCallback(async () => {
@@ -125,7 +122,7 @@ export default function PlatformAdminPage({ accessDenied = false }: { accessDeni
       tabs={target ? workspaceTabs : undefined} active={tab} onTab={(id) => go({ ...(target?.kind === 'standard' ? { org: target.id } : { instance: (target as { application: string }).application }), tab: id })}>
       {!data ? (loadError ? <Notice tone="error">{loadError}</Notice> : <div className="space-y-3"><div className="h-8 w-64 animate-pulse rounded bg-black/[.06]" /><div className="h-64 animate-pulse rounded-xl bg-black/[.04]" /></div>)
         : !target ? <Directory data={data} canWrite={canWrite} standardInstance={standardInstance} open={(next) => go(next.kind === 'standard' ? { org: next.id } : { instance: next.application })} create={() => setCreateOpen(true)} />
-        : target.kind === 'custom' ? (customInstance ? <CustomWorkspace key={customInstance.application} instance={customInstance} tab={tab} canWrite={canWrite} state={customState[customInstance.application] || emptyConfiguration} setState={(next) => setCustomState((all) => ({ ...all, [customInstance.application]: next }))} notify={setToast} /> : <Notice tone="error">Instance introuvable dans le registre.</Notice>)
+        : target.kind === 'custom' ? (customInstance ? <CustomWorkspace key={customInstance.application} instance={customInstance} tab={tab} canWrite={canWrite} notify={setToast} /> : <Notice tone="error">Instance introuvable dans le registre.</Notice>)
         : <StandardWorkspace key={target.id} id={target.id} instance={standardInstance} tab={tab} canWrite={canWrite} notify={setToast} refreshDirectory={loadDashboard} />}
     </AdminShell>
     {createOpen && <CreateOrganizationModal close={() => setCreateOpen(false)} created={async (id) => { setCreateOpen(false); await loadDashboard(); setToast('Organisation créée.'); go({ org: id }) }} />}
@@ -168,53 +165,58 @@ function RowButton({ onClick, title, subtitle, type, status, meta }: { onClick: 
 
 // ─── Workspaces ──────────────────────────────────────────────────────────────
 
-function CustomWorkspace({ instance, tab, canWrite, state, setState, notify }: { instance: Instance; tab: WorkspaceTab; canWrite: boolean; state: Configuration; setState: (value: Configuration) => void; notify: (text: string) => void }) {
+function CustomWorkspace({ instance, tab, canWrite, notify }: { instance: Instance; tab: WorkspaceTab; canWrite: boolean; notify: (text: string) => void }) {
   const channel = Boolean(instance.configurationEndpoint) && instance.status === 'ACTIVE'
-  const writable = canWrite && channel
+  const endpoint = `/api/platform/instances/${instance.application}/configuration`
+  const [configuration, setConfiguration] = useState<Configuration | null>(null)
+  const [loading, setLoading] = useState(channel)
+  const [loadError, setLoadError] = useState('')
+  // Every value shown comes from the instance itself, through the Platform backend; there is no fallback.
+  const read = useCallback(async () => fromSnapshot((await call(endpoint, { method: 'POST', body: JSON.stringify({ action: 'getConfiguration' }) })).configuration), [endpoint])
+  const load = useCallback(async () => {
+    setLoading(true); setLoadError('')
+    try { setConfiguration(await read()) } catch (cause) { setConfiguration(null); setLoadError(errorText(cause, 'Configuration indisponible')) } finally { setLoading(false) }
+  }, [read])
+  useEffect(() => { if (channel) void load() }, [channel, load])
+
+  // Writes are confirmed by reading the instance back, never by trusting the local draft.
   const send = async (action: string, payload: Record<string, unknown>) => {
-    const body = await call(`/api/platform/instances/${instance.application}/configuration`, { method: 'POST', body: JSON.stringify({ action, payload }) })
-    return (body.configuration || {}) as Record<string, unknown>
-  }
-  const save: Save = async (kind, payload) => {
-    const body = kind === 'identity' ? Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value])) : payload
-    const configuration = await send(kind === 'identity' ? 'updateIdentity' : kind === 'branding' ? 'updateBranding' : 'updateModules', body)
-    setState({ ...state, ...pickOrganizationConfiguration(configuration), confirmedAt: new Date().toISOString() })
+    try { await call(endpoint, { method: 'POST', body: JSON.stringify({ action, payload }) }) } catch (cause) { throw new Error(`${errorText(cause, 'Modification refusée.')} Aucune modification n’a été confirmée.`) }
+    try { setConfiguration(await read()) } catch (cause) { setConfiguration(null); setLoadError(errorText(cause, 'Configuration indisponible')); throw new Error('Modification envoyée, mais la relecture de l’instance a échoué. Rechargez avant toute autre modification.') }
     notify(`Modification confirmée par ${instance.client}.`)
   }
-  const saveIntegration: SaveIntegration = async (type, change) => {
-    const configuration = change.enabled !== undefined ? await send('updateIntegrationEnabled', { type, enabled: change.enabled }) : await send('updateIntegrationConfig', { type, configJson: change.configJson })
-    setState({ ...state, integrations: { ...state.integrations, [type]: configuration as unknown as Integration }, confirmedAt: new Date().toISOString() })
-    notify(`Modification confirmée par ${instance.client}.`)
-  }
-  const unknownNote = !state.confirmedAt && <Notice tone="info">La plateforme ne lit jamais la base de {instance.client}. Les valeurs actuelles s’afficheront ici dès que l’instance aura confirmé une première modification.</Notice>
-  const readOnlyNote = !canWrite ? <Notice tone="info">Mode support : consultation uniquement.</Notice> : !channel ? <Notice tone="warning">Le canal de configuration de cette instance n’est pas disponible depuis cet environnement. Aucune modification ne peut être envoyée.</Notice> : null
-  // The registry's client name is the only identity known before the instance confirms its own values.
-  const configuration = useMemo(() => ({ ...state, name: state.name ?? instance.client }), [state, instance.client])
-  const shared = { configuration, canWrite: writable, custom: true, save, saveIntegration }
+  const save: Save = (kind, payload) => send(kind === 'identity' ? 'updateIdentity' : kind === 'branding' ? 'updateBranding' : 'updateModules', kind === 'identity' ? Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value])) : payload)
+  const saveIntegration: SaveIntegration = (type, change) => change.enabled !== undefined ? send('updateIntegrationEnabled', { type, enabled: change.enabled }) : send('updateIntegrationConfig', { type, configJson: change.configJson })
+
+  const notes = !channel ? <Notice tone="warning">Le canal de configuration de {instance.client} n’est pas disponible depuis cet environnement : sa configuration ne peut être ni lue ni modifiée.</Notice>
+    : !canWrite ? <Notice tone="info">Mode support : consultation uniquement.</Notice> : null
+  const unavailable = loading ? <div className="space-y-3" aria-busy="true"><p className="text-sm text-black/60">Lecture de la configuration de {instance.client}…</p><div className="h-48 animate-pulse rounded-xl bg-black/[.04]" /></div>
+    : <div className="space-y-3"><Notice tone="error">Configuration de {instance.client} indisponible : {(loadError || 'canal non disponible').replace(/\.$/, '')}. Aucune modification n’est possible tant qu’elle n’a pas été lue.</Notice>{channel && <button onClick={() => void load()} className={buttonClass.secondary}>Réessayer</button>}</div>
+  const shared = configuration && { configuration, canWrite: canWrite && channel, custom: true, save, saveIntegration }
   return <>
     <WorkspaceHeader title={instance.client} type="Custom" status={instance.status} subtitle={instance.domain || instance.application} />
-    <div className="space-y-4">{readOnlyNote}{tab !== 'overview' && tab !== 'instance' && unknownNote}</div>
-    <div className={readOnlyNote || (tab !== 'overview' && tab !== 'instance' && unknownNote) ? 'mt-4' : ''}>
-      {tab === 'overview' && <Overview configuration={state} custom instance={instance} />}
+    {notes && <div className="mb-4">{notes}</div>}
+    {tab === 'overview' && <Overview configuration={configuration} custom instance={instance} unavailable={!configuration ? unavailable : undefined} />}
+    {tab === 'instance' && <InstancePanel instance={instance} />}
+    {tab !== 'overview' && tab !== 'instance' && (!shared ? unavailable : <>
       {tab === 'identity' && <IdentityForm {...shared} />}
       {tab === 'branding' && <BrandingForm {...shared} />}
       {tab === 'modules' && <ModulesForm {...shared} />}
       {tab === 'integrations' && <IntegrationsList {...shared} />}
-      {tab === 'instance' && <InstancePanel instance={instance} />}
-    </div>
+    </>)}
   </>
 }
 
 function StandardWorkspace({ id, instance, tab, canWrite, notify, refreshDirectory }: { id: string; instance?: Instance; tab: WorkspaceTab; canWrite: boolean; notify: (text: string) => void; refreshDirectory: () => Promise<void> }) {
   const [detail, setDetail] = useState<Detail | null>(null)
   const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([])
+  const [configuration, setConfiguration] = useState<Configuration | null>(null)
   const [loadError, setLoadError] = useState('')
   const load = useCallback(async () => {
-    try { const body = await call(`/api/platform/organizations/${id}`, { method: 'GET' }); setDetail(body.organization); setAvailableUsers(body.availableUsers || []) } catch (cause) { setLoadError(errorText(cause, 'Chargement impossible')) }
+    try { const body = await call(`/api/platform/organizations/${id}`, { method: 'GET' }); setDetail(body.organization); setConfiguration(fromSnapshot(body.configuration)); setAvailableUsers(body.availableUsers || []) } catch (cause) { setLoadError(errorText(cause, 'Chargement impossible')) }
   }, [id])
   useEffect(() => { void load() }, [load])
-  const configuration = useMemo<Configuration>(() => detail ? { ...pickOrganizationConfiguration(detail as unknown as Record<string, unknown>), integrations: Object.fromEntries(detail.integrations.map((item) => [item.type, item])), confirmedAt: detail.updatedAt } : emptyConfiguration, [detail])
-  if (!detail) return loadError ? <Notice tone="error">{loadError}</Notice> : <div className="h-64 animate-pulse rounded-xl bg-black/[.04]" />
+  if (!detail || !configuration) return loadError ? <Notice tone="error">{loadError}</Notice> : <div className="h-64 animate-pulse rounded-xl bg-black/[.04]" />
 
   const mutate = async (url: string, init: RequestInit, success: string) => { await call(url, init); await load(); await refreshDirectory(); notify(success) }
   const save: Save = (kind, payload) => mutate(`/api/platform/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }, kind === 'identity' ? 'Identité enregistrée.' : kind === 'branding' ? 'Apparence enregistrée.' : 'Modules enregistrés.')
@@ -242,25 +244,25 @@ function WorkspaceHeader({ title, type, status, subtitle }: { title: string; typ
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
-function Overview({ configuration, instance, detail, custom = false, canWrite = false, availableUsers = [], mutate }: { configuration: Configuration; instance?: Instance; detail?: Detail; custom?: boolean; canWrite?: boolean; availableUsers?: AvailableUser[]; mutate?: (url: string, init: RequestInit, success: string) => Promise<void> }) {
-  const enabledIntegrations = integrationCatalog.filter((item) => configuration.integrations[item.type]?.enabled)
+function Overview({ configuration, instance, detail, custom = false, canWrite = false, availableUsers = [], mutate, unavailable }: { configuration: Configuration | null; unavailable?: ReactNode; instance?: Instance; detail?: Detail; custom?: boolean; canWrite?: boolean; availableUsers?: AvailableUser[]; mutate?: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const enabledIntegrations = integrationCatalog.filter((item) => configuration?.integrations[item.type]?.enabled)
   const facts: [string, ReactNode][] = [
     ['Type', custom ? 'Gerard Custom' : 'Gerard Standard'],
     ['Environnement', instance ? environmentLabels[instance.environment] || instance.environment : '—'],
     ['Version Core', instance ? <span key="core">{instance.coreVersion} <span className="text-black/60">· {instance.lastCompatibilityStatus === 'COMPATIBLE' ? 'compatible' : instance.lastCompatibilityStatus.toLowerCase()}</span></span> : '—'],
     ['Adresse', instance?.publicUrl ? <a key="url" href={instance.publicUrl} target="_blank" rel="noreferrer" className="font-medium text-[#4d6600] underline-offset-2 hover:underline">{instance.domain}</a> : '—'],
   ]
-  const unknown = <span className="text-black/50">Non confirmé</span>
   return <div className="space-y-5">
     <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-black/[.08] bg-white lg:grid-cols-4">{facts.map(([label, value], index) => <div key={label} className={`min-w-0 border-black/[.06] px-4 py-3 ${index % 2 ? 'border-l' : ''} ${index > 1 ? 'border-t lg:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''}`}><p className="text-xs font-medium text-black/60">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p></div>)}</div>
     <div className="grid gap-5 lg:grid-cols-2">
-      <Surface title="Configuration" description={custom ? (configuration.confirmedAt ? `Confirmée par l’instance ${formatRelative(configuration.confirmedAt).toLowerCase()}` : 'Valeurs gérées par l’instance elle-même') : undefined}>
-        <dl className="divide-y divide-black/[.05] text-sm">
-          <Fact label="Nom affiché" value={configuration.displayName ?? (custom && !configuration.confirmedAt ? unknown : '—')} />
-          <Fact label="Titre de l’application" value={configuration.applicationTitle ?? (custom && !configuration.confirmedAt ? unknown : '—')} />
-          <Fact label="Modules actifs" value={configuration.enabledModules ? `${configuration.enabledModules.length} sur ${modules.length}` : unknown} />
-          <Fact label="Intégrations actives" value={custom && !Object.keys(configuration.integrations).length ? unknown : enabledIntegrations.length ? enabledIntegrations.map((item) => item.name).join(', ') : 'Aucune'} />
-        </dl>
+      <Surface title="Configuration" description={custom && configuration ? `Lue sur l’instance ${formatRelative(configuration.readAt).toLowerCase()}` : undefined}>
+        {!configuration ? <div className="p-4">{unavailable}</div> : <dl className="divide-y divide-black/[.05] text-sm">
+          <Fact label="Nom affiché" value={configuration.displayName || '—'} />
+          <Fact label="Titre de l’application" value={configuration.applicationTitle || '—'} />
+          <Fact label="Couleur d’accent" value={configuration.accentColor ? <span className="inline-flex items-center gap-2 font-mono text-xs"><span aria-hidden className="h-3 w-3 rounded-sm border border-black/10" style={{ background: configuration.accentColor }} />{configuration.accentColor}</span> : '—'} />
+          <Fact label="Modules actifs" value={`${configuration.enabledModules.length} sur ${modules.length}`} />
+          <Fact label="Intégrations actives" value={enabledIntegrations.length ? enabledIntegrations.map((item) => item.name).join(', ') : 'Aucune'} />
+        </dl>}
       </Surface>
       {detail ? <Surface title="Activité" description="Données opérationnelles de l’organisation">
         <dl className="grid grid-cols-3 gap-px bg-black/[.05] text-sm sm:grid-cols-5">{Object.entries(detail.metrics).map(([key, value]) => <div key={key} className="bg-white px-3 py-3"><dt className="text-xs text-black/60">{({ missions: 'Missions', drivers: 'Chauffeurs', trucks: 'Camions', trailers: 'Remorques', invoices: 'Factures' } as Record<string, string>)[key]}</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd></div>)}</dl>
@@ -286,16 +288,15 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 
 type FormProps = { configuration: Configuration; canWrite: boolean; custom: boolean; save: Save; saveIntegration: SaveIntegration }
 
-// Custom values may be unknown: then only the fields actually typed are sent, so nothing is overwritten by accident.
-function useDraft<T extends Record<string, string>>(fields: (keyof T)[], configuration: Configuration, custom: boolean) {
+// Drafts start from the last configuration read; only changed fields are sent.
+function useDraft<T extends Record<string, string>>(fields: (keyof T)[], configuration: Configuration) {
   const initial = useMemo(() => Object.fromEntries(fields.map((key) => [key, (configuration[key as keyof Configuration] as string | null) ?? ''])) as T, [configuration]) // eslint-disable-line react-hooks/exhaustive-deps
   const [draft, setDraft] = useState<T>(initial)
   useEffect(() => setDraft(initial), [initial])
-  const known = !custom || Boolean(configuration.confirmedAt)
-  const changed = fields.filter((key) => known ? draft[key] !== initial[key] : draft[key].trim() !== '')
+  const changed = fields.filter((key) => draft[key].trim() !== initial[key])
   // Cleared fields are sent as '' (the Standard API maps it to null); the Custom save maps them to null itself.
   const payload = Object.fromEntries(changed.map((key) => [key, draft[key].trim()]))
-  return { draft, setDraft, reset: () => setDraft(initial), dirty: changed.length > 0, payload, known }
+  return { draft, setDraft, reset: () => setDraft(initial), dirty: changed.length > 0, payload }
 }
 
 function useSubmit(run: () => Promise<void>) {
@@ -307,36 +308,35 @@ function useSubmit(run: () => Promise<void>) {
 
 function IdentityForm({ configuration, canWrite, custom, save }: FormProps) {
   const fields = custom ? ['displayName', 'applicationTitle'] : ['name', 'displayName', 'applicationTitle']
-  const { draft, setDraft, reset, dirty, payload, known } = useDraft<Record<string, string>>(fields, configuration, custom)
+  const { draft, setDraft, reset, dirty, payload } = useDraft<Record<string, string>>(fields, configuration)
   const { busy, error, submit } = useSubmit(() => save('identity', payload))
-  const placeholder = known ? undefined : 'Valeur actuelle non confirmée'
   return <form onSubmit={submit}><Surface title="Identité" description="Nom et titre affichés aux utilisateurs de l’application." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={reset} />}>
     <div className="grid gap-3 p-4 sm:grid-cols-2">
       {!custom && <TextField label="Nom de l’organisation" value={draft.name} set={(name) => setDraft({ ...draft, name })} disabled={!canWrite} required hint="Nom interne, visible dans la plateforme." />}
-      <TextField label="Nom affiché" value={draft.displayName} set={(displayName) => setDraft({ ...draft, displayName })} disabled={!canWrite} placeholder={placeholder || draft.name || 'Gerard'} />
-      <TextField label="Titre de l’application" value={draft.applicationTitle} set={(applicationTitle) => setDraft({ ...draft, applicationTitle })} disabled={!canWrite} placeholder={placeholder || 'Gerard Dispatch'} hint="Affiché dans l’onglet du navigateur." />
+      <TextField label="Nom affiché" value={draft.displayName} set={(displayName) => setDraft({ ...draft, displayName })} disabled={!canWrite} placeholder={configuration.name} />
+      <TextField label="Titre de l’application" value={draft.applicationTitle} set={(applicationTitle) => setDraft({ ...draft, applicationTitle })} disabled={!canWrite} placeholder="Titre par défaut de l’application" hint="Affiché dans l’onglet du navigateur." />
     </div>
     {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
   </Surface></form>
 }
 
-function BrandingForm({ configuration, canWrite, custom, save }: FormProps) {
-  const { draft, setDraft, reset, dirty, payload, known } = useDraft<Record<string, string>>(['accentColor', 'logoUrl', 'faviconUrl'], configuration, custom)
+function BrandingForm({ configuration, canWrite, save }: FormProps) {
+  const { draft, setDraft, reset, dirty, payload } = useDraft<Record<string, string>>(['accentColor', 'logoUrl', 'faviconUrl'], configuration)
   const { busy, error, submit } = useSubmit(() => save('branding', payload))
   const accent = /^#[0-9a-f]{6}$/i.test(draft.accentColor) ? draft.accentColor : '#C8FF00'
-  const name = configuration.displayName || configuration.name || 'Gerard'
-  return <form onSubmit={submit}><Surface title="Apparence" description="Couleur et logos de l’application. Les champs vides reprennent l’apparence Gerard." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={reset} disabled={Boolean(draft.accentColor) && !/^#[0-9a-f]{6}$/i.test(draft.accentColor)} />}>
+  const name = configuration.displayName || configuration.name
+  return <form onSubmit={submit}><Surface title="Apparence" description="Couleur et logos de l’application. Un champ vide reprend l’apparence par défaut de l’application." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={reset} disabled={Boolean(draft.accentColor) && !/^#[0-9a-f]{6}$/i.test(draft.accentColor)} />}>
     <div className="grid gap-6 p-4 lg:grid-cols-[1fr_280px]">
       <div className="space-y-3">
-        <label className="block"><span className="text-xs font-medium text-black/70">Couleur d’accent</span><div className="mt-1 flex gap-2"><input type="color" aria-label="Choisir la couleur d’accent" disabled={!canWrite} value={accent} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value.toUpperCase() })} className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white p-1 disabled:cursor-not-allowed" /><input aria-label="Code couleur" disabled={!canWrite} value={draft.accentColor} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value })} placeholder={known ? '#C8FF00' : 'Non confirmée'} className={`${inputClass} font-mono disabled:bg-black/[.03]`} /></div>{draft.accentColor && !/^#[0-9a-f]{6}$/i.test(draft.accentColor) && <span className="mt-1 block text-xs font-medium text-red-700">Format attendu : #RRGGBB</span>}</label>
-        <TextField label="Logo" value={draft.logoUrl} set={(logoUrl) => setDraft({ ...draft, logoUrl })} disabled={!canWrite} placeholder={known ? 'https://… ou /logo.png' : 'Non confirmé'} />
-        <TextField label="Favicon" value={draft.faviconUrl} set={(faviconUrl) => setDraft({ ...draft, faviconUrl })} disabled={!canWrite} placeholder={known ? 'https://… ou /favicon.ico' : 'Non confirmé'} />
+        <label className="block"><span className="text-xs font-medium text-black/70">Couleur d’accent</span><div className="mt-1 flex gap-2"><input type="color" aria-label="Choisir la couleur d’accent" disabled={!canWrite} value={accent} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value.toUpperCase() })} className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white p-1 disabled:cursor-not-allowed" /><input aria-label="Code couleur" disabled={!canWrite} value={draft.accentColor} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value })} placeholder="Couleur par défaut" className={`${inputClass} font-mono disabled:bg-black/[.03]`} /></div>{draft.accentColor && !/^#[0-9a-f]{6}$/i.test(draft.accentColor) && <span className="mt-1 block text-xs font-medium text-red-700">Format attendu : #RRGGBB</span>}</label>
+        <TextField label="Logo" value={draft.logoUrl} set={(logoUrl) => setDraft({ ...draft, logoUrl })} disabled={!canWrite} placeholder="https://… ou /logo.png" />
+        <TextField label="Favicon" value={draft.faviconUrl} set={(faviconUrl) => setDraft({ ...draft, faviconUrl })} disabled={!canWrite} placeholder="https://… ou /favicon.ico" />
       </div>
       <div><p className="mb-1 text-xs font-medium text-black/70">Aperçu</p>
         <div className="overflow-hidden rounded-lg border border-black/[.08]" aria-hidden>
           <div className="flex items-center gap-2 bg-[#11130f] px-3 py-2.5 text-white">{draft.logoUrl ? <img src={draft.logoUrl} alt="" className="h-6 w-6 rounded bg-white object-contain p-0.5" onError={(e) => { e.currentTarget.style.visibility = 'hidden' }} /> : <span className="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-black text-black" style={{ background: accent }}>{name[0]?.toUpperCase()}</span>}<span className="truncate text-sm font-semibold">{name}</span></div>
           <div className="space-y-2 bg-[#f4f5f1] p-3"><div className="h-2 w-2/3 rounded bg-black/10" /><div className="h-2 w-1/2 rounded bg-black/[.07]" /><span className="mt-1 inline-flex rounded-md px-2.5 py-1 text-xs font-semibold text-black" style={{ background: accent }}>Action principale</span></div>
-          <div className="flex items-center gap-2 border-t border-black/[.06] bg-white px-3 py-2 text-xs text-black/60">{draft.faviconUrl && <img src={draft.faviconUrl} alt="" className="h-3.5 w-3.5" onError={(e) => { e.currentTarget.style.display = 'none' }} />}<span className="truncate">{configuration.applicationTitle || 'Gerard'}</span></div>
+          <div className="flex items-center gap-2 border-t border-black/[.06] bg-white px-3 py-2 text-xs text-black/60">{draft.faviconUrl && <img src={draft.faviconUrl} alt="" className="h-3.5 w-3.5" onError={(e) => { e.currentTarget.style.display = 'none' }} />}<span className="truncate">{configuration.applicationTitle || 'Titre par défaut'}</span></div>
         </div>
       </div>
     </div>
@@ -348,19 +348,17 @@ function BrandingForm({ configuration, canWrite, custom, save }: FormProps) {
 
 function ModulesForm({ configuration, canWrite, save }: FormProps) {
   const initial = configuration.enabledModules
-  const [selected, setSelected] = useState<string[]>(initial || [])
-  useEffect(() => setSelected(initial || []), [initial])
-  const dirty = Boolean(initial) && [...selected].sort().join() !== [...(initial || [])].sort().join()
+  const [selected, setSelected] = useState<string[]>(initial)
+  useEffect(() => setSelected(initial), [initial])
+  const dirty = [...selected].sort().join() !== [...initial].sort().join()
+  // updateModules replaces the whole list; it is always built from the list just read from the organization.
   const { busy, error, submit } = useSubmit(() => save('modules', { enabledModules: selected }))
-  // Module updates replace the whole list, so they stay locked until the current list is known.
-  const locked = !initial
-  return <form onSubmit={submit}><Surface title="Modules" description="Fonctionnalités accessibles aux utilisateurs de l’organisation. Un module désactivé est refusé côté serveur." footer={canWrite && !locked && <SaveBar dirty={dirty} busy={busy} onReset={() => setSelected(initial || [])} disabled={!selected.length} />}>
-    {locked && <div className="px-4 pt-4"><Notice tone="info">La liste actuelle des modules n’est pas encore confirmée par l’instance. Pour éviter d’écraser une configuration inconnue, les modules se modifient après une première modification d’identité ou d’apparence confirmée.</Notice></div>}
+  return <form onSubmit={submit}><Surface title="Modules" description="Fonctionnalités accessibles aux utilisateurs de l’organisation. Un module désactivé est refusé côté serveur." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={() => setSelected(initial)} disabled={!selected.length} />}>
     <ul className="divide-y divide-black/[.05]">{modules.map((module) => { const active = selected.includes(module); return <li key={module} className="flex items-center justify-between gap-4 px-4 py-3">
       <div className="min-w-0"><p className="text-sm font-medium">{moduleInfo[module].label}</p><p className="text-xs text-black/60">{moduleInfo[module].description}</p></div>
-      <div className="flex shrink-0 items-center gap-3">{!locked && <span className={`hidden text-xs font-medium sm:inline ${active ? 'text-[#3d5200]' : 'text-black/50'}`}>{active ? 'Actif' : 'Inactif'}</span>}{locked ? <span className="text-xs text-black/50">Non confirmé</span> : <Switch label={`${moduleInfo[module].label} ${active ? 'actif' : 'inactif'}`} checked={active} disabled={!canWrite || busy} onChange={(on) => setSelected(on ? [...selected, module] : selected.filter((item) => item !== module))} />}</div>
+      <div className="flex shrink-0 items-center gap-3"><span className={`hidden text-xs font-medium sm:inline ${active ? 'text-[#3d5200]' : 'text-black/50'}`}>{active ? 'Actif' : 'Inactif'}</span><Switch label={`${moduleInfo[module].label} ${active ? 'actif' : 'inactif'}`} checked={active} disabled={!canWrite || busy} onChange={(on) => setSelected(on ? [...selected, module] : selected.filter((item) => item !== module))} /></div>
     </li> })}</ul>
-    {!selected.length && !locked && <div className="px-4 pb-3"><Notice tone="warning">Au moins un module doit rester actif.</Notice></div>}
+    {!selected.length && <div className="px-4 pb-3"><Notice tone="warning">Au moins un module doit rester actif.</Notice></div>}
     {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
   </Surface></form>
 }
@@ -378,7 +376,6 @@ function IntegrationsList(props: FormProps) {
 
 function IntegrationCard({ entry, configuration, canWrite, custom, saveIntegration, confirm }: FormProps & { entry: (typeof integrationCatalog)[number]; confirm: (value: Confirmation) => void }) {
   const current = configuration.integrations[entry.type]
-  const known = !custom || Boolean(current)
   const initial = useMemo(() => Object.fromEntries(entry.fields.map((field) => [field.key, current?.configJson?.[field.key] === undefined || current?.configJson?.[field.key] === null ? (field.kind === 'boolean' ? false : '') : field.kind === 'boolean' ? Boolean(current.configJson[field.key]) : String(current.configJson[field.key])])) as Record<string, string | boolean>, [current, entry])
   const [draft, setDraft] = useState(initial)
   const [secretRef, setSecretRef] = useState('')
@@ -387,18 +384,16 @@ function IntegrationCard({ entry, configuration, canWrite, custom, saveIntegrati
   const configJson = Object.fromEntries(entry.fields.map((field) => [field.key, field.kind === 'number' ? (Number(draft[field.key]) || undefined) : draft[field.key]]))
   const { busy, error, submit, setError } = useSubmit(() => saveIntegration(entry.type, { configJson, ...(secretRef.trim() ? { secretRef: secretRef.trim() } : {}) }))
   const setEnabled = (enabled: boolean) => confirm({ title: `${enabled ? 'Activer' : 'Désactiver'} ${entry.name}`, confirm: enabled ? 'Activer' : 'Désactiver', destructive: !enabled, body: enabled ? <>L’intégration sera utilisée par l’organisation dès maintenant, avec la configuration enregistrée.</> : <>Les imports via {entry.name} s’arrêteront. La configuration est conservée.</>, run: async () => { setError(''); try { await saveIntegration(entry.type, { enabled }) } catch (cause) { setError(errorText(cause, 'Modification impossible')) } } })
-  const status = !current ? (custom ? <span className="text-xs text-black/60">État non confirmé</span> : <Badge tone="neutral">Non configurée</Badge>) : current.enabled ? <Badge tone="positive">Activée</Badge> : <Badge tone="neutral">Désactivée</Badge>
-  return <form onSubmit={submit}><Surface title={entry.name} description={entry.purpose} action={<div className="flex items-center gap-3">{status}{canWrite && (custom && !current
-    ? <span className="flex gap-1"><button type="button" onClick={() => setEnabled(true)} className={buttonClass.secondary}>Activer</button><button type="button" onClick={() => setEnabled(false)} className={buttonClass.secondary}>Désactiver</button></span>
-    : <Switch label={`${entry.name} ${current?.enabled ? 'activée' : 'désactivée'}`} checked={Boolean(current?.enabled)} onChange={setEnabled} disabled={busy} />)}</div>}
-    footer={canWrite && known && <SaveBar dirty={dirty} busy={busy} onReset={() => { setDraft(initial); setSecretRef('') }} label="Enregistrer la configuration" />}>
-    {!known ? <p className="px-4 py-4 text-sm text-black/60">Les paramètres s’afficheront après la première réponse de l’instance (activation ou désactivation). Ils remplacent la configuration complète : ils ne sont donc pas modifiables à l’aveugle.</p> : <div className="grid gap-3 p-4 sm:grid-cols-2">
+  const status = !current ? <Badge tone="neutral">Non configurée</Badge> : current.enabled ? <Badge tone="positive">Activée</Badge> : <Badge tone="neutral">Désactivée</Badge>
+  return <form onSubmit={submit}><Surface title={entry.name} description={entry.purpose} action={<div className="flex items-center gap-3">{status}{canWrite && <Switch label={`${entry.name} ${current?.enabled ? 'activée' : 'désactivée'}`} checked={Boolean(current?.enabled)} onChange={setEnabled} disabled={busy} />}</div>}
+    footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={() => { setDraft(initial); setSecretRef('') }} label="Enregistrer la configuration" />}>
+    <div className="grid gap-3 p-4 sm:grid-cols-2">
       {entry.fields.map((field) => field.kind === 'boolean'
         ? <label key={field.key} className="flex items-center justify-between gap-3 rounded-lg border border-black/[.08] px-3 py-2 text-sm"><span>{field.label}</span><Switch label={field.label} checked={Boolean(draft[field.key])} disabled={!canWrite} onChange={(value) => setDraft({ ...draft, [field.key]: value })} /></label>
         : <TextField key={field.key} label={field.label} type={field.kind === 'number' ? 'number' : 'text'} value={String(draft[field.key] ?? '')} set={(value) => setDraft({ ...draft, [field.key]: value })} placeholder={field.placeholder} disabled={!canWrite} />)}
       <div className="flex items-center justify-between gap-3 rounded-lg bg-[#f7f8f4] px-3 py-2 text-sm sm:col-span-2"><span className="text-black/70">Secret d’accès</span>{current?.secretConfigured ? <Badge tone="positive">Configuré</Badge> : <Badge tone="warning">Non configuré</Badge>}</div>
       {!custom && canWrite && <div className="sm:col-span-2"><TextField label="Remplacer la référence du secret" value={secretRef} set={setSecretRef} placeholder="Laisser vide pour conserver le secret actuel" hint="Nom de la variable du gestionnaire de secrets, jamais la valeur elle-même." /></div>}
-    </div>}
+    </div>
     {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
   </Surface></form>
 }

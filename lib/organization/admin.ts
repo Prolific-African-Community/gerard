@@ -76,6 +76,22 @@ export async function updateOrganizationMemberIdentity(input: {
   })
 }
 
+// ORG_ADMIN role change: same protection as the other member operations (platform and multi-organization accounts are
+// administered by the platform), plus the final active ORG_ADMIN rule.
+export async function changeOrganizationMemberRole(input: { actorUserId: string; organizationId: string; membershipId: string; role: OrganizationRole }) {
+  return prisma.$transaction(async (tx) => {
+    const membership = await getMutableMembership(tx, input.organizationId, input.membershipId)
+    if (membership.role === input.role) return membership
+    if (membership.role === OrganizationRole.ORG_ADMIN && membership.user.isActive) {
+      const activeAdmins = await tx.organizationUser.count({ where: { organizationId: input.organizationId, role: OrganizationRole.ORG_ADMIN, user: { isActive: true } } })
+      if (activeAdmins <= 1) throw new Error('LAST_ORG_ADMIN')
+    }
+    const updated = await tx.organizationUser.update({ where: { id: membership.id }, data: { role: input.role } })
+    await tx.platformAuditLog.create({ data: { actorUserId: input.actorUserId, organizationId: input.organizationId, action: PlatformAuditAction.MEMBER_ROLE_CHANGED, metadata: { userId: membership.userId, before: membership.role, after: input.role } } })
+    return updated
+  })
+}
+
 export async function setOrganizationMemberActive(input: { actorUserId: string; organizationId: string; membershipId: string; isActive: boolean }) {
   return prisma.$transaction(async (tx) => {
     const membership = await getMutableMembership(tx, input.organizationId, input.membershipId)

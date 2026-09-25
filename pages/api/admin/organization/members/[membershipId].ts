@@ -4,8 +4,8 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { requireOrganizationAdmin } from '../../../../../lib/auth/organization-admin'
 import { runWithCurrentOrganization } from '../../../../../lib/auth/authorization'
 import { normalizeUsername, usernameError } from '../../../../../lib/auth/validation'
-import { organizationAdminRoles, setOrganizationMemberActive, updateOrganizationMemberIdentity } from '../../../../../lib/organization/admin'
-import { removeOrganizationMember, updateOrganizationMember } from '../../../../../lib/platform/organizations'
+import { changeOrganizationMemberRole, organizationAdminRoles, setOrganizationMemberActive, updateOrganizationMemberIdentity } from '../../../../../lib/organization/admin'
+import { removeOrganizationMember } from '../../../../../lib/platform/organizations'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const actor = await requireOrganizationAdmin(req, res)
@@ -32,7 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
         const role = req.body?.role
         if (!organizationAdminRoles.includes(role)) return res.status(400).json({ error: 'Rôle invalide' })
-        return res.status(200).json({ membership: await updateOrganizationMember({ actorUserId: actor.id, organizationId: actor.organizationId, membershipId, role: role as OrganizationRole }) })
+        return res.status(200).json({ membership: await changeOrganizationMemberRole({ actorUserId: actor.id, organizationId: actor.organizationId, membershipId, role: role as OrganizationRole }) })
       }
       if (req.method === 'DELETE') {
         await removeOrganizationMember({ actorUserId: actor.id, organizationId: actor.organizationId, membershipId })

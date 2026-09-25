@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { requirePlatformAccess, requireSuperAdmin } from '../../../../../lib/auth/platform-authorization'
+import { readPlatformConfiguration } from '../../../../../lib/organization/platform-configuration'
 import { getOrganizationDetail, isOrganizationStatus, listAvailableUsers, normalizeSlug, parseBranding, parseModules, updateOrganization } from '../../../../../lib/platform/organizations'
 
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : ''
@@ -14,7 +15,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!actor) return
     const organization = await getOrganizationDetail(id)
     if (!organization) return res.status(404).json({ error: 'Organisation introuvable' })
-    return res.status(200).json({ organization, availableUsers: await listAvailableUsers(id), platformRole: actor.platformRole })
+    return res.status(200).json({ organization, configuration: await readPlatformConfiguration(id), availableUsers: await listAvailableUsers(id), platformRole: actor.platformRole })
   }
   if (req.method !== 'PATCH') {
     res.setHeader('Allow', 'GET, PATCH')

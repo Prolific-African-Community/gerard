@@ -1,7 +1,7 @@
 import { OrganizationIntegrationType, OrganizationModule, Prisma } from '@prisma/client'
 import { parseBranding, parseModules, updateOrganization, upsertOrganizationIntegration } from '../platform/organizations'
 import { prisma } from '../prisma'
-import type { PlatformConfigurationAction } from '@prolific/gerard-core'
+import type { PlatformConfigurationAction, PlatformConfigurationSnapshot } from '@prolific/gerard-core'
 
 export async function applyPlatformConfiguration(input: { organizationId: string; action: PlatformConfigurationAction; payload: Record<string, unknown>; platformActorId: string }) {
   const organization = await prisma.organization.findUnique({ where: { id: input.organizationId }, select: { id: true } })
@@ -51,4 +51,46 @@ export async function applyPlatformConfiguration(input: { organizationId: string
 
 async function recordPlatformAudit(actorUserId: string, organizationId: string, input: { action: PlatformConfigurationAction; platformActorId: string }) {
   await prisma.platformAuditLog.create({ data: { actorUserId, organizationId, action: 'ORGANIZATION_UPDATED', metadata: { source: 'GERARD_PLATFORM', platformActorId: input.platformActorId, action: input.action } } })
+}
+
+// Non-secret integration settings the platform may read. Anything else stored in configJson is never returned.
+const readableIntegrationFields: Record<OrganizationIntegrationType, readonly string[]> = {
+  MAIL_INTAKE: ['mailboxAddress', 'host', 'port', 'secure', 'folder', 'provider', 'limit'],
+  SL_AUTOMOTIVE: ['apiBaseUrl', 'sourceCompany', 'sourceSystem', 'providerName', 'webhookEnabled'],
+}
+
+function readableValue(value: unknown) {
+  return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? value : null
+}
+
+// Builds the configuration snapshot from explicitly selected columns; no model is serialised whole.
+export async function readPlatformConfiguration(organizationId: string): Promise<PlatformConfigurationSnapshot> {
+  const organization = await prisma.organization.findUnique({
+    where: { id: organizationId },
+    select: { id: true, status: true, name: true, displayName: true, applicationTitle: true, accentColor: true, logoUrl: true, faviconUrl: true, enabledModules: true, updatedAt: true },
+  })
+  if (!organization) throw new Error('ORGANIZATION_NOT_FOUND')
+  const integrations = await prisma.organizationIntegration.findMany({
+    where: { organizationId },
+    orderBy: { type: 'asc' },
+    select: { type: true, enabled: true, configJson: true, secretRef: true, updatedAt: true },
+  })
+  return {
+    organizationId: organization.id,
+    status: organization.status,
+    identity: { name: organization.name, displayName: organization.displayName, applicationTitle: organization.applicationTitle },
+    branding: { accentColor: organization.accentColor, logoUrl: organization.logoUrl, faviconUrl: organization.faviconUrl },
+    enabledModules: [...organization.enabledModules],
+    integrations: integrations.map((integration) => {
+      const stored = integration.configJson && typeof integration.configJson === 'object' && !Array.isArray(integration.configJson) ? integration.configJson as Record<string, unknown> : {}
+      return {
+        type: integration.type,
+        enabled: integration.enabled,
+        configJson: Object.fromEntries(readableIntegrationFields[integration.type].map((key) => [key, readableValue(stored[key])])),
+        secretConfigured: Boolean(integration.secretRef),
+        updatedAt: integration.updatedAt.toISOString(),
+      }
+    }),
+    updatedAt: organization.updatedAt.toISOString(),
+  }
 }

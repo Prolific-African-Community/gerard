@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { isPlatformConfigurationAction } from '@prolific/gerard-core'
+import { isPlatformConfigurationAction, isPlatformConfigurationReadAction } from '@prolific/gerard-core'
 import { verifyPlatformConfigurationRequest } from '../../../../lib/platform/configuration-channel'
-import { applyPlatformConfiguration } from '../../../../lib/organization/platform-configuration'
+import { applyPlatformConfiguration, readPlatformConfiguration } from '../../../../lib/organization/platform-configuration'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Method not allowed' }) }
@@ -14,6 +14,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const verified = verifyPlatformConfigurationRequest(request, Array.isArray(signature) ? signature[0] : signature, expectedApplication, expectedOrganizationId)
   if (!verified.ok) return res.status(401).json({ error: verified.reason })
   const value = request as Record<string, unknown>
+  if (isPlatformConfigurationReadAction(value.action)) {
+    try {
+      return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, configuration: await readPlatformConfiguration(expectedOrganizationId) })
+    } catch (error) {
+      if (error instanceof Error && error.message === 'ORGANIZATION_NOT_FOUND') return res.status(404).json({ error: error.message })
+      console.error('Platform configuration read failed', { application: expectedApplication })
+      return res.status(500).json({ error: 'Configuration unavailable' })
+    }
+  }
   if (!isPlatformConfigurationAction(value.action) || !value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) return res.status(400).json({ error: 'Invalid configuration request' })
   try {
     const result = await applyPlatformConfiguration({ organizationId: expectedOrganizationId, action: value.action, payload: value.payload as Record<string, unknown>, platformActorId: typeof req.headers['x-gerard-platform-actor'] === 'string' ? req.headers['x-gerard-platform-actor'] : 'platform' })
