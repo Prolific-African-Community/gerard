@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { OrganizationRole, PlatformAuditAction, UserRole } from '@prisma/client'
+import { OrganizationIntegrationType, OrganizationRole, PlatformAuditAction, UserRole } from '@prisma/client'
 
 import { createSessionToken, sessionCookieName } from '../lib/auth/session'
 import { requirePermission } from '../lib/auth/authorization'
@@ -85,10 +85,13 @@ async function main() {
     assert.deepEqual(await (platformAdminPageProps as any)({ req: request({ ...adminMembership.user, organizationId, organizationRole: OrganizationRole.ORG_ADMIN }), res: orgAdminPageRes }), { props: { accessDenied: true } }, 'B-page')
     assert.equal(orgAdminPageRes.statusCode, 403, 'B-page-status')
 
+    await prisma.organizationIntegration.create({ data: { organizationId, type: OrganizationIntegrationType.MAIL_INTAKE, enabled: true, secretRef: 'QA_SECRET_REF', configJson: { mailboxAddress: 'qa@example.invalid', provider: 'imap', password: 'must-not-leak' } } })
     const ownWorkspaceRes = response()
     await organizationAdminHandler(request(orgAdminSession), ownWorkspaceRes as any)
     assert.equal(ownWorkspaceRes.statusCode, 200, 'P-org-admin-own-workspace')
     assert.equal(ownWorkspaceRes.payload.organization.id, organizationId, 'P-org-admin-own-tenant')
+    assert.equal(JSON.stringify(ownWorkspaceRes.payload).includes('must-not-leak'), false, 'P-integration-secret-config-redacted')
+    assert.equal(JSON.stringify(ownWorkspaceRes.payload).includes('QA_SECRET_REF'), false, 'P-secret-ref-hidden')
 
     await prisma.organizationUser.create({ data: { organizationId, userId: normalUser.id, role: OrganizationRole.DISPATCHER } })
     const dispatcherSession = { ...normalUser, organizationId, organizationRole: OrganizationRole.DISPATCHER }

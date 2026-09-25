@@ -7,7 +7,7 @@ import { prisma } from '../prisma'
 export const organizationAdminRoles = Object.values(OrganizationRole)
 
 export async function getOrganizationAdminWorkspace(organizationId: string) {
-  return prisma.organization.findUnique({
+  const organization = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: {
       id: true, name: true, slug: true, status: true, enabledModules: true,
@@ -26,6 +26,21 @@ export async function getOrganizationAdminWorkspace(organizationId: string) {
       },
     },
   })
+  if (!organization) return null
+  return {
+    ...organization,
+    integrations: organization.integrations.map(({ configJson, ...integration }) => {
+      const config = typeof configJson === 'object' && configJson !== null && !Array.isArray(configJson) ? configJson as Record<string, unknown> : {}
+      return {
+        ...integration,
+        configJson: {
+          ...(typeof config.mailboxAddress === 'string' ? { mailboxAddress: config.mailboxAddress } : {}),
+          ...(typeof config.provider === 'string' ? { provider: config.provider } : {}),
+          ...(typeof config.providerName === 'string' ? { providerName: config.providerName } : {}),
+        },
+      }
+    }),
+  }
 }
 
 export function generateTemporaryPassword() {
