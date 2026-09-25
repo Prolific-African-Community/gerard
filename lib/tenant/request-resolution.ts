@@ -85,9 +85,10 @@ export function assertDomainSessionCoherence(resolution: RequestOrganizationReso
 
 export function isConfiguredPlatformHostname(hostname: string | null) {
   if (!hostname) return false
-  return (process.env.GERARD_PLATFORM_HOSTNAMES || '')
+  const configured = (process.env.GERARD_PLATFORM_HOSTNAMES || '')
     .split(',')
     .map(normalizeHostname)
     .filter(Boolean)
-    .includes(hostname)
+  if (configured.includes(hostname)) return true
+  return process.env.VERCEL_ENV === 'preview' && normalizeHostname(process.env.VERCEL_URL) === hostname
 }
