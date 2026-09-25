@@ -10,5 +10,6 @@ export const novotraluxInstance: GerardInstanceRegistryEntry = {
   environment: 'production', organizationId: 'org-novotralux', domain: 'www.novotralux.eu',
   status: 'ACTIVE', lastCompatibilityStatus: compatibility.status,
   deploymentReference: 'dpl_7YmfV7zeo5CuzG2q4cyVogLTLn1d',
+  configurationEndpoint: 'https://novotralux-custom.vercel.app/api/internal/platform/configuration',
   cutoverAt: '2026-09-23T15:46:18Z',
 }

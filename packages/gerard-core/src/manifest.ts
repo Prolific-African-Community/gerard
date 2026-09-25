@@ -21,6 +21,7 @@ export type GerardInstanceRegistryEntry = {
   lastCompatibilityStatus: 'COMPATIBLE' | 'CORE_TOO_OLD' | 'INCOMPATIBLE_MAJOR' | 'INCOMPATIBLE_VERSION' | 'INVALID_RANGE' | 'UNKNOWN'
   deploymentReference?: string
   cutoverAt?: string
+  configurationEndpoint?: string
 }
 export type GerardInstanceMigrationState = { coreVersion: string; lastCoreMigration: string | null; customMigrations: readonly string[] }
 export type GerardApplicationConsumer = { manifest: GerardApplicationManifest; application: GerardApplicationDefinition }
