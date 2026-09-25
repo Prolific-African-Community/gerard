@@ -13,6 +13,8 @@
     "novotralux:dev": "npm run dev --workspace=@prolific/gerard-novotralux",
     "novotralux:build": "npm run build --workspace=@prolific/gerard-novotralux",
     "novotralux:test": "npm run test --workspace=@prolific/gerard-novotralux",
+    "novotralux:preview:check": "npm run preview:check --workspace=@prolific/gerard-novotralux",
+    "novotralux:preview:admin-reset": "npm run preview:admin-reset --workspace=@prolific/gerard-novotralux",
     "migrate:legacy": "tsx scripts/migrate-legacy-novotralux.ts",
     "routes:backfill-cache": "tsx scripts/backfill-route-cache.ts",
     "bootstrap:seed": "tsx scripts/seed-gerard.ts",

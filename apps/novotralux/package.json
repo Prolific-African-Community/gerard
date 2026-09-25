@@ -11,6 +11,8 @@
     "configure:staging": "tsx scripts/configure-staging.ts",
     "qa:staging": "tsx ../../scripts/qa-novotralux-custom.ts",
     "preview:seed": "tsx scripts/seed-preview.ts",
+    "preview:check": "tsx scripts/preview-check.ts",
+    "preview:admin-reset": "tsx scripts/preview-admin-reset.ts",
     "dev": "node scripts/run-shared.mjs dev",
     "build": "node scripts/run-shared.mjs build",
     "start": "node scripts/run-shared.mjs start"

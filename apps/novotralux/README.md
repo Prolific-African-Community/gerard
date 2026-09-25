@@ -10,3 +10,4 @@ Cette application est le premier consumer réel de Gerard Custom. Elle consomme 
 - Mettre à jour le Core : modifier la dépendance et le manifest, lancer le check de compatibilité, appliquer les migrations Core puis Custom sur une copie, puis tous les tests/builds.
 
 Une fonctionnalité générique vit dans le Core. Une différence exclusivement Novotralux vit ici et passe uniquement par un point d'extension public.
+- Preview review : `docs/CUSTOM_PREVIEW_WORKFLOW.md` (`npm run novotralux:preview:check`, `npm run novotralux:preview:admin-reset`).
