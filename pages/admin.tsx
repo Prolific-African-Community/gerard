@@ -1,162 +1,537 @@
 import type { GetServerSideProps } from 'next'
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import Head from 'next/head'
+import { useRouter } from 'next/router'
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
-import { getPlatformUser } from '../lib/auth/platform-authorization'
+import { AdminShell, Badge, Modal, Notice, SaveBar, SectionHeader, Surface, Switch, TextField, Toast, auditLabel, buttonClass, formatDate, formatRelative, headerLinkClass, inputClass, roleLabels } from '../components/admin/ui'
 import { LogoutButton } from '../components/site/LogoutButton'
+import { getPlatformUser } from '../lib/auth/platform-authorization'
 
-const modules = ['PLANNING', 'MAP', 'PROFITABILITY', 'INVOICING', 'FLEET', 'INTELLIGENCE', 'ASSISTANT', 'MAINTENANCE'] as const
+const modules = ['PLANNING', 'MAP', 'PROFITABILITY', 'INVOICING', 'FLEET', 'MAINTENANCE', 'INTELLIGENCE', 'ASSISTANT'] as const
+const moduleInfo: Record<string, { label: string; description: string }> = {
+  PLANNING: { label: 'Planning', description: 'Planification des missions et affectations chauffeurs' },
+  MAP: { label: 'Carte', description: 'Suivi cartographique et itinéraires' },
+  PROFITABILITY: { label: 'Rentabilité', description: 'Analyse des marges par mission et par client' },
+  INVOICING: { label: 'Facturation', description: 'Préparation et émission des factures' },
+  FLEET: { label: 'Parc', description: 'Camions, remorques et chauffeurs' },
+  MAINTENANCE: { label: 'Maintenance', description: 'Interventions et entretien des véhicules' },
+  INTELLIGENCE: { label: 'Intelligence', description: 'Analyses et recommandations opérationnelles' },
+  ASSISTANT: { label: 'Assistant', description: 'Assistant conversationnel pour les équipes' },
+}
 const roles = ['ORG_ADMIN', 'MANAGER', 'DISPATCHER', 'SECRETARY', 'ACCOUNTING', 'DRIVER', 'VIEWER'] as const
-const moduleLabels: Record<string, string> = { PLANNING: 'Planning', MAP: 'Carte', PROFITABILITY: 'Rentabilité', INVOICING: 'Facturation', FLEET: 'Parc', INTELLIGENCE: 'Intelligence', ASSISTANT: 'Assistant', MAINTENANCE: 'Maintenance' }
-const roleLabels: Record<string, string> = { ORG_ADMIN: 'Admin organisation', MANAGER: 'Manager', DISPATCHER: 'Dispatcher', SECRETARY: 'Secrétariat', ACCOUNTING: 'Comptabilité', DRIVER: 'Chauffeur', VIEWER: 'Lecture seule' }
-const statusLabels: Record<string, string> = { ACTIVE: 'Active', SUSPENDED: 'Suspendue', ARCHIVED: 'Archivée' }
+const statusInfo: Record<string, { label: string; tone: 'positive' | 'warning' | 'neutral' }> = { ACTIVE: { label: 'Active', tone: 'positive' }, SUSPENDED: { label: 'Suspendue', tone: 'warning' }, ARCHIVED: { label: 'Archivée', tone: 'neutral' } }
+const environmentLabels: Record<string, string> = { production: 'Production', preview: 'Preview', staging: 'Préproduction', development: 'Développement' }
+type IntegrationType = 'MAIL_INTAKE' | 'SL_AUTOMOTIVE'
+type ConfigField = { key: string; label: string; kind: 'text' | 'number' | 'boolean'; placeholder?: string }
+const integrationCatalog: { type: IntegrationType; name: string; purpose: string; fields: ConfigField[] }[] = [
+  { type: 'MAIL_INTAKE', name: 'Réception e-mail', purpose: 'Importe les demandes de transport reçues dans une boîte mail.', fields: [
+    { key: 'mailboxAddress', label: 'Adresse de la boîte', kind: 'text', placeholder: 'dispatch@client.com' },
+    { key: 'host', label: 'Serveur IMAP', kind: 'text', placeholder: 'imap.client.com' },
+    { key: 'port', label: 'Port', kind: 'number', placeholder: '993' },
+    { key: 'folder', label: 'Dossier', kind: 'text', placeholder: 'INBOX' },
+    { key: 'provider', label: 'Protocole', kind: 'text', placeholder: 'imap' },
+    { key: 'limit', label: 'Messages par import', kind: 'number', placeholder: '50' },
+    { key: 'secure', label: 'Connexion chiffrée (TLS)', kind: 'boolean' },
+  ] },
+  { type: 'SL_AUTOMOTIVE', name: 'SL Automotive', purpose: 'Reçoit les ordres de transport du système SL Automotive.', fields: [
+    { key: 'apiBaseUrl', label: 'URL de l’API', kind: 'text', placeholder: 'https://…' },
+    { key: 'providerName', label: 'Nom du fournisseur', kind: 'text', placeholder: 'SL Automotive' },
+    { key: 'sourceCompany', label: 'Société source', kind: 'text' },
+    { key: 'sourceSystem', label: 'Système source', kind: 'text' },
+    { key: 'webhookEnabled', label: 'Réception par webhook', kind: 'boolean' },
+  ] },
+]
+const workspaceTabs = [{ id: 'overview', label: 'Aperçu' }, { id: 'identity', label: 'Identité' }, { id: 'branding', label: 'Apparence' }, { id: 'modules', label: 'Modules' }, { id: 'integrations', label: 'Intégrations' }, { id: 'instance', label: 'Instance' }] as const
+type WorkspaceTab = (typeof workspaceTabs)[number]['id']
 
 type Metrics = { missions: number; drivers: number; trucks: number; trailers: number; invoices: number }
 type Organization = { id: string; name: string; slug: string; status: string; enabledModules: string[]; displayName: string | null; logoUrl: string | null; accentColor: string | null; faviconUrl: string | null; applicationTitle: string | null; createdAt: string; updatedAt: string; memberCount: number; primaryAdmin: { firstName: string; lastName: string; username: string } | null; metrics: Metrics }
 type Domain = { id: string; hostname: string; pathPrefix: string; isPrimary: boolean; isActive: boolean }
 type Member = { id: string; role: string; createdAt: string; user: { id: string; firstName: string; lastName: string; username: string; email: string | null; isActive: boolean; createdAt: string } }
-type Audit = { id: string; action: string; metadata: unknown; createdAt: string; actor: { firstName: string; lastName: string; username: string } }
+type Audit = { id: string; action: string; metadata: Record<string, unknown> | null; createdAt: string; actor: { firstName: string; lastName: string; username: string } }
 type BillingConfig = { legalName: string; legalAddress: string | null; vatNumber: string | null; iban: string | null; bic: string | null; bankName: string | null; beneficiary: string | null; invoicePrefix: string | null; paymentTermsDays: number | null; billingEmail: string | null }
-type Integration = { id: string; type: 'MAIL_INTAKE' | 'SL_AUTOMOTIVE'; enabled: boolean; configJson: Record<string, unknown>; secretConfigured: boolean }
+type Integration = { type: IntegrationType; enabled: boolean; configJson: Record<string, unknown>; secretConfigured: boolean; updatedAt?: string }
 type Detail = Organization & { users: Member[]; platformAuditLogs: Audit[]; domains: Domain[]; billingConfig: BillingConfig | null; integrations: Integration[] }
-type Instance = { client: string; application: string; applicationType: 'STANDARD' | 'CUSTOM'; coreVersion: string; compatibleCore: string; environment: string; organizationId: string; publicUrl: string | null; adminUrl: string | null; status: string; lastCompatibilityStatus: string }
-type Dashboard = { organizations: Organization[]; instances: Instance[]; instanceSummary: { total: number; standard: number; custom: number; active: number }; summary: { organizations: number; active: number; suspended: number; archived: number; users: number; missions: number; drivers: number; vehicles: number }; platformRole: 'SUPER_ADMIN' | 'PLATFORM_SUPPORT' }
-type AvailableUser = { id: string; firstName: string; lastName: string; username: string; email: string | null; isActive: boolean }
+type Instance = { client: string; application: string; applicationType: 'STANDARD' | 'CUSTOM'; coreVersion: string; compatibleCore: string; environment: string; organizationId: string; domain?: string; publicUrl: string | null; adminUrl: string | null; status: string; lastCompatibilityStatus: string; deploymentReference?: string; configurationEndpoint?: string; cutoverAt?: string }
+type Dashboard = { organizations: Organization[]; instances: Instance[]; platformRole: 'SUPER_ADMIN' | 'PLATFORM_SUPPORT' }
+type AvailableUser = { id: string; firstName: string; lastName: string; username: string; email: string | null }
 
-const emptyOrganization = { name: '', slug: '', status: 'ACTIVE', enabledModules: [...modules] as string[], adminFirstName: '', adminLastName: '', adminUsername: '', adminEmail: '', adminPassword: '' }
+// What the workspace knows about an organization's configuration. For a Custom instance the platform never reads the
+// Custom database, so values are only known once the instance has confirmed a change (null = not known yet).
+type Configuration = { name: string | null; displayName: string | null; applicationTitle: string | null; accentColor: string | null; logoUrl: string | null; faviconUrl: string | null; enabledModules: string[] | null; integrations: Partial<Record<IntegrationType, Integration>>; confirmedAt: string | null }
+type Save = (kind: 'identity' | 'branding' | 'modules', payload: Record<string, unknown>) => Promise<void>
+type SaveIntegration = (type: IntegrationType, change: { enabled?: boolean; configJson?: Record<string, unknown>; secretRef?: string }) => Promise<void>
+type Target = { kind: 'standard'; id: string } | { kind: 'custom'; application: string }
+type Confirmation = { title: string; body: ReactNode; confirm: string; destructive?: boolean; run: () => Promise<void> }
+
+const errorText = (cause: unknown, fallback: string) => cause instanceof Error ? cause.message : fallback
+const customErrors: Record<string, string> = {
+  'Platform instance channel unavailable': 'Le canal de configuration n’est pas configuré sur cet environnement.',
+  'Platform preview identity unavailable': 'Identité Preview indisponible : la requête signée n’a pas pu être émise.',
+  'Custom configuration unavailable': 'L’instance n’a pas répondu. Aucune modification n’a été confirmée.',
+  'Custom instance unavailable': 'Cette instance n’accepte pas de configuration depuis cet environnement.',
+}
+const customCodes: Record<string, string> = { FORBIDDEN_CONFIGURATION_FIELD: 'Champ non autorisé par l’instance.', INVALID_BRANDING: 'Apparence refusée : vérifiez la couleur (#RRGGBB) et les URL.', INVALID_MODULES: 'Liste de modules refusée.', INVALID_INTEGRATION: 'Intégration inconnue de l’instance.', SECRET_FIELD_FORBIDDEN: 'Les secrets ne transitent jamais par ce canal.', LOCAL_AUDIT_ACTOR_NOT_FOUND: 'L’instance n’a aucun administrateur actif pour tracer la modification.', ORGANIZATION_NOT_FOUND: 'Organisation introuvable sur l’instance.' }
+
+async function call(url: string, init: RequestInit) {
+  const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json' } })
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(customCodes[body.code] || customErrors[body.error] || body.error || 'Opération impossible')
+  return body
+}
+
+const pickOrganizationConfiguration = (value: Record<string, unknown>) => ({
+  name: typeof value.name === 'string' ? value.name : null,
+  displayName: (value.displayName as string | null) ?? null, applicationTitle: (value.applicationTitle as string | null) ?? null,
+  accentColor: (value.accentColor as string | null) ?? null, logoUrl: (value.logoUrl as string | null) ?? null, faviconUrl: (value.faviconUrl as string | null) ?? null,
+  enabledModules: Array.isArray(value.enabledModules) ? value.enabledModules as string[] : null,
+})
+const emptyConfiguration: Configuration = { name: null, displayName: null, applicationTitle: null, accentColor: null, logoUrl: null, faviconUrl: null, enabledModules: null, integrations: {}, confirmedAt: null }
 
 export default function PlatformAdminPage({ accessDenied = false }: { accessDenied?: boolean }) {
+  const router = useRouter()
   const [data, setData] = useState<Dashboard | null>(null)
-  const [detail, setDetail] = useState<Detail | null>(null)
-  const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const [toast, setToast] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
-  const [form, setForm] = useState(emptyOrganization)
+  const [customState, setCustomState] = useState<Record<string, Configuration>>({})
   const canWrite = data?.platformRole === 'SUPER_ADMIN'
 
-  async function loadDashboard() {
-    setLoading(true); setError('')
-    try {
-      const response = await fetch('/api/platform/organizations')
-      const body = await response.json()
-      if (!response.ok) throw new Error(body.error || 'Chargement impossible')
-      setData(body)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Chargement impossible') }
-    finally { setLoading(false) }
-  }
+  const loadDashboard = useCallback(async () => {
+    try { const response = await fetch('/api/platform/organizations'); const body = await response.json(); if (!response.ok) throw new Error(body.error || 'Chargement impossible'); setData(body) } catch (cause) { setLoadError(errorText(cause, 'Chargement impossible')) }
+  }, [])
+  useEffect(() => { if (!accessDenied) void loadDashboard() }, [accessDenied, loadDashboard])
+  useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 3500); return () => clearTimeout(timer) }, [toast])
 
-  async function openOrganization(id: string) {
-    setError('')
-    const response = await fetch(`/api/platform/organizations/${id}`)
-    const body = await response.json()
-    if (!response.ok) return setError(body.error || 'Chargement impossible')
-    setDetail({ ...body.organization, memberCount: body.organization.users.length, primaryAdmin: null })
-    setAvailableUsers(body.availableUsers)
-  }
+  const query = router.query
+  const target: Target | null = typeof query.org === 'string' ? { kind: 'standard', id: query.org } : typeof query.instance === 'string' ? { kind: 'custom', application: query.instance } : null
+  const tab = (workspaceTabs.some((item) => item.id === query.tab) ? query.tab : 'overview') as WorkspaceTab
+  const go = (next: Record<string, string>) => void router.push({ pathname: '/admin', query: next }, undefined, { shallow: true })
 
-  useEffect(() => { void loadDashboard() }, [])
-  const kpis = useMemo(() => data ? [['Instances', data.instanceSummary.total], ['Standard', data.instanceSummary.standard], ['Custom', data.instanceSummary.custom], ['Actives', data.instanceSummary.active]] : [], [data])
+  if (accessDenied) return <main className="gerard-admin flex min-h-screen items-center justify-center bg-[#f4f5f1] p-6"><section className="w-full max-w-sm rounded-2xl border border-black/[.08] bg-white p-6 text-center"><h1 className="text-lg font-semibold">Accès réservé</h1><p className="mt-2 text-sm text-black/60">Cette zone est réservée aux rôles plateforme Gerard.</p><a className={`${buttonClass.primary} mt-5`} href="/dispatch">Retour au dispatch</a></section></main>
 
-  async function request(url: string, init: RequestInit, success: string) {
-    setError(''); setNotice('')
-    const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...(init.headers || {}) } })
-    const body = await response.json()
-    if (!response.ok) throw new Error(body.error || 'Opération impossible')
-    setNotice(success)
-    await loadDashboard()
-    if (detail) await openOrganization(detail.id)
-    return body
-  }
+  const standardInstance = data?.instances.find((item) => item.applicationType === 'STANDARD')
+  const customInstance = target?.kind === 'custom' ? data?.instances.find((item) => item.application === target.application && item.applicationType === 'CUSTOM') : undefined
+  const standardSummary = target?.kind === 'standard' ? data?.organizations.find((item) => item.id === target.id) : undefined
+  const workspaceName = customInstance?.client || standardSummary?.displayName || standardSummary?.name
+  const mark = <span aria-hidden className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[#C8FF00] text-sm font-black text-black">G</span>
+  const roleBadge = data && <span className={`hidden rounded-full px-2 py-0.5 text-[11px] font-semibold sm:inline-flex ${canWrite ? 'bg-white/20 text-white' : 'bg-amber-300 text-black'}`}>{canWrite ? 'Super admin' : 'Support · lecture seule'}</span>
+  const actions = <><a href="/dispatch" className={headerLinkClass}>Dispatch</a><LogoutButton tone="dark" className="!h-8 !w-8 !rounded-md !shadow-none hover:!translate-y-0" /></>
 
-  async function createOrganization(event: FormEvent) {
-    event.preventDefault()
-    try {
-      const admin = form.adminUsername ? { firstName: form.adminFirstName, lastName: form.adminLastName, username: form.adminUsername, email: form.adminEmail, password: form.adminPassword } : null
-      await request('/api/platform/organizations', { method: 'POST', body: JSON.stringify({ name: form.name, slug: form.slug, status: form.status, enabledModules: form.enabledModules, admin }) }, 'Organisation créée.')
-      setCreateOpen(false); setForm(emptyOrganization)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Création impossible') }
-  }
+  return <>
+    <Head><title>{workspaceName ? `${workspaceName} · Gerard Platform` : 'Gerard Platform'}</title></Head>
+    <AdminShell mark={mark} title="Gerard Platform" context={workspaceName ? `· ${workspaceName}` : 'Organisations et instances'} badge={roleBadge} actions={actions}
+      leading={target ? <button onClick={() => go({})} className="-ml-1 flex shrink-0 items-center gap-1 self-center rounded-md px-1.5 py-1.5 text-sm font-medium text-black/70 hover:bg-black/[.05] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8eb800]" aria-label="Retour aux organisations"><span aria-hidden>←</span><span className="hidden sm:inline">Organisations</span></button> : undefined}
+      tabs={target ? workspaceTabs : undefined} active={tab} onTab={(id) => go({ ...(target?.kind === 'standard' ? { org: target.id } : { instance: (target as { application: string }).application }), tab: id })}>
+      {!data ? (loadError ? <Notice tone="error">{loadError}</Notice> : <div className="space-y-3"><div className="h-8 w-64 animate-pulse rounded bg-black/[.06]" /><div className="h-64 animate-pulse rounded-xl bg-black/[.04]" /></div>)
+        : !target ? <Directory data={data} canWrite={canWrite} standardInstance={standardInstance} open={(next) => go(next.kind === 'standard' ? { org: next.id } : { instance: next.application })} create={() => setCreateOpen(true)} />
+        : target.kind === 'custom' ? (customInstance ? <CustomWorkspace key={customInstance.application} instance={customInstance} tab={tab} canWrite={canWrite} state={customState[customInstance.application] || emptyConfiguration} setState={(next) => setCustomState((all) => ({ ...all, [customInstance.application]: next }))} notify={setToast} /> : <Notice tone="error">Instance introuvable dans le registre.</Notice>)
+        : <StandardWorkspace key={target.id} id={target.id} instance={standardInstance} tab={tab} canWrite={canWrite} notify={setToast} refreshDirectory={loadDashboard} />}
+    </AdminShell>
+    {createOpen && <CreateOrganizationModal close={() => setCreateOpen(false)} created={async (id) => { setCreateOpen(false); await loadDashboard(); setToast('Organisation créée.'); go({ org: id }) }} />}
+    {toast && <Toast text={toast} />}
+  </>
+}
 
-  async function updateDetail(patch: Record<string, unknown>, success: string) {
-    if (!detail) return
-    try { await request(`/api/platform/organizations/${detail.id}`, { method: 'PATCH', body: JSON.stringify(patch) }, success) }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Modification impossible') }
-  }
+// ─── Directory ───────────────────────────────────────────────────────────────
 
-  if (accessDenied) return <main className="flex min-h-screen items-center justify-center bg-[#eef0ea] p-5 text-[#171914]"><section className="w-full max-w-lg rounded-[32px] bg-[#11130f] p-8 text-white shadow-2xl"><p className="text-[10px] font-black uppercase tracking-[.24em] text-[#C8FF00]">GERARD · Plateforme</p><h1 className="mt-3 text-3xl font-semibold">Accès interdit</h1><p className="mt-3 text-sm text-white/60">Cette zone est réservée aux rôles plateforme autorisés.</p><a href="/dispatch" className="mt-6 inline-flex rounded-2xl bg-white px-5 py-3 text-sm font-bold text-black">Retour au dispatch</a></section></main>
-
-  return <main className="min-h-screen bg-[#eef0ea] px-4 py-5 text-[#171914] sm:px-7 lg:px-10">
-    <div className="mx-auto max-w-[1580px]">
-      <header className="rounded-[32px] bg-[#11130f] px-5 py-6 text-white shadow-[0_24px_70px_rgba(15,17,13,.22)] sm:px-8 sm:py-8">
-        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end"><div><p className="text-[10px] font-black uppercase tracking-[.28em] text-[#C8FF00]">GERARD · Plateforme</p><h1 className="mt-2 text-4xl font-semibold tracking-tight sm:text-5xl">Centre d’administration</h1><p className="mt-2 max-w-2xl text-sm text-white/60">Organisations, accès et modules depuis une couche plateforme séparée.</p></div><div className="flex flex-wrap gap-2">{canWrite && <button onClick={() => setCreateOpen(true)} className="h-11 rounded-2xl bg-[#C8FF00] px-5 text-sm font-black text-black">＋ Organisation</button>}<a href="/dispatch" className="inline-flex h-11 items-center rounded-2xl bg-white/10 px-5 text-sm font-bold text-white">Dispatch</a><LogoutButton tone="dark" /></div></div>
-        {data?.platformRole === 'PLATFORM_SUPPORT' && <p className="mt-5 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-xs text-white/70">Mode support : consultation uniquement.</p>}
-      </header>
-      {notice && <Banner tone="success">{notice}</Banner>}{error && <Banner tone="error">{error}</Banner>}
-      <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">{kpis.map(([label, value]) => <article key={String(label)} className="rounded-[24px] border border-black/[.06] bg-white p-4 shadow-sm"><p className="text-3xl font-semibold">{value}</p><p className="mt-4 text-[9px] font-black uppercase tracking-[.14em] text-[#747a6f]">{label}</p></article>)}</section>
-      <section className="mt-5 overflow-hidden rounded-[30px] border border-black/[.06] bg-white shadow-sm"><div className="border-b border-black/[.06] px-5 py-5 sm:px-7"><h2 className="text-xl font-semibold">Instances Gerard</h2><p className="mt-1 text-sm text-[#747a6f]">Registre central uniquement ; aucune base métier Custom n’est interrogée.</p></div><div className="divide-y divide-black/[.06]">{data?.instances.map((instance) => <article key={instance.application} className="grid gap-4 px-5 py-5 sm:grid-cols-[1.3fr_.6fr_.6fr_1fr_auto] sm:items-center sm:px-7"><div><p className="font-semibold">{instance.client}</p><p className="text-xs text-[#7a8075]">{instance.organizationId} · {instance.environment}</p></div><Metric label="Type" value={instance.applicationType} /><Status value={instance.status} /><div><p className="text-xs font-bold">Core {instance.coreVersion}</p><p className="text-[11px] text-[#747a6f]">{instance.compatibleCore} · {instance.lastCompatibilityStatus}</p></div>{instance.publicUrl ? <a href={instance.publicUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-[#668500]">Ouvrir l’application →</a> : <span className="text-xs text-[#747a6f]">Aucune route</span>}</article>)}</div></section>
-      <section className="mt-5 overflow-hidden rounded-[30px] border border-black/[.06] bg-white shadow-sm"><div className="border-b border-black/[.06] px-5 py-5 sm:px-7"><h2 className="text-xl font-semibold">Organisations Standard</h2><p className="mt-1 text-sm text-[#747a6f]">Administration de la base Standard uniquement.</p></div>{loading ? <div className="flex min-h-[160px] items-center justify-center"><span className="h-9 w-9 animate-spin rounded-full border-4 border-black/10 border-t-[#8eb800]" /></div> : data?.organizations.length ? <div className="divide-y divide-black/[.06]">{data.organizations.map((organization) => <button key={organization.id} onClick={() => void openOrganization(organization.id)} className="grid w-full gap-4 px-5 py-5 text-left transition hover:bg-[#f7f8f4] sm:grid-cols-[1.5fr_.7fr_.7fr_.7fr_auto] sm:items-center sm:px-7"><div><p className="font-semibold">{organization.name}</p><p className="text-xs text-[#7a8075]">/{organization.slug} · {organization.primaryAdmin ? `${organization.primaryAdmin.firstName} ${organization.primaryAdmin.lastName}` : 'Aucun admin'}</p></div><Status value={organization.status} /><Metric label="Membres" value={organization.memberCount} /><Metric label="Missions" value={organization.metrics.missions} /><span className="text-sm font-bold text-[#668500]">Administrer →</span></button>)}</div> : <div className="py-16 text-center text-sm text-[#747a6f]">Aucune organisation Standard.</div>}</section>
+function Directory({ data, canWrite, standardInstance, open, create }: { data: Dashboard; canWrite: boolean; standardInstance?: Instance; open: (target: Target) => void; create: () => void }) {
+  const customs = data.instances.filter((item) => item.applicationType === 'CUSTOM')
+  return <>
+    <SectionHeader title="Organisations" description="Choisissez une organisation pour configurer son identité, ses modules et ses intégrations." action={canWrite && <button onClick={create} className={buttonClass.accent}>＋ Nouvelle organisation</button>} />
+    <div className="space-y-5">
+      <Surface title="Gerard Custom" description="Applications dédiées : déploiement, base et identité propres.">
+        <ul className="divide-y divide-black/[.05]">{customs.map((instance) => <li key={instance.application}><RowButton onClick={() => open({ kind: 'custom', application: instance.application })}
+          title={instance.client} subtitle={instance.domain || instance.application} type="Custom" status={instance.status}
+          meta={<><span>{environmentLabels[instance.environment] || instance.environment}</span><span>Core {instance.coreVersion}</span></>} /></li>)}
+          {!customs.length && <li className="px-4 py-6 text-center text-sm text-black/60">Aucune instance Custom enregistrée.</li>}</ul>
+      </Surface>
+      <Surface title="Gerard Standard" description={standardInstance ? `Instance partagée · ${standardInstance.domain || ''} · Core ${standardInstance.coreVersion}` : 'Instance partagée'}>
+        <ul className="divide-y divide-black/[.05]">{data.organizations.map((organization) => <li key={organization.id}><RowButton onClick={() => open({ kind: 'standard', id: organization.id })}
+          title={organization.displayName || organization.name} subtitle={`/${organization.slug}`} type="Standard" status={organization.status}
+          meta={<><span>{organization.memberCount} membre{organization.memberCount > 1 ? 's' : ''}</span><span>{organization.enabledModules.length}/{modules.length} modules</span></>} /></li>)}
+          {!data.organizations.length && <li className="px-4 py-6 text-center text-sm text-black/60">Aucune organisation Standard.</li>}</ul>
+      </Surface>
     </div>
-    {createOpen && <Modal title="Nouvelle organisation" close={() => setCreateOpen(false)}><form onSubmit={createOrganization} className="space-y-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Nom" value={form.name} set={(name) => setForm({ ...form, name })} required /><Field label="Slug" value={form.slug} set={(slug) => setForm({ ...form, slug })} placeholder="généré si vide" /><Select label="Statut" value={form.status} set={(status) => setForm({ ...form, status })} options={Object.entries(statusLabels)} /></div><ModuleGrid selected={form.enabledModules} set={(enabledModules) => setForm({ ...form, enabledModules })} disabled={false} /><div className="rounded-3xl bg-[#f4f6f0] p-4"><h3 className="font-semibold">ORG_ADMIN initial <span className="font-normal text-[#7a8075]">· optionnel</span></h3><div className="mt-4 grid gap-3 sm:grid-cols-2"><Field label="Prénom" value={form.adminFirstName} set={(adminFirstName) => setForm({ ...form, adminFirstName })} /><Field label="Nom" value={form.adminLastName} set={(adminLastName) => setForm({ ...form, adminLastName })} /><Field label="Username" value={form.adminUsername} set={(adminUsername) => setForm({ ...form, adminUsername })} /><Field label="Email" value={form.adminEmail} set={(adminEmail) => setForm({ ...form, adminEmail })} /><Field label="Mot de passe temporaire" type="password" value={form.adminPassword} set={(adminPassword) => setForm({ ...form, adminPassword })} /></div></div><Submit label="Créer l’organisation" /></form></Modal>}
-    {detail && <OrganizationDrawer detail={detail} availableUsers={availableUsers} canWrite={canWrite} close={() => setDetail(null)} update={updateDetail} request={request} />}
-  </main>
+  </>
 }
 
-function OrganizationDrawer({ detail, availableUsers, canWrite, close, update, request }: { detail: Detail; availableUsers: AvailableUser[]; canWrite: boolean; close: () => void; update: (patch: Record<string, unknown>, success: string) => Promise<void>; request: (url: string, init: RequestInit, success: string) => Promise<unknown> }) {
-  const [tab, setTab] = useState<'general' | 'appearance' | 'business' | 'integrations' | 'domains' | 'members' | 'modules' | 'metrics' | 'audit'>('general')
-  const [general, setGeneral] = useState({ name: detail.name, slug: detail.slug, status: detail.status })
-  const [member, setMember] = useState({ existingUserId: '', firstName: '', lastName: '', username: '', email: '', password: '', role: 'VIEWER' })
-  useEffect(() => setGeneral({ name: detail.name, slug: detail.slug, status: detail.status }), [detail])
-  async function addMember(event: FormEvent) { event.preventDefault(); await request(`/api/platform/organizations/${detail.id}/members`, { method: 'POST', body: JSON.stringify(member) }, 'Membre ajouté.'); setMember({ existingUserId: '', firstName: '', lastName: '', username: '', email: '', password: '', role: 'VIEWER' }) }
-  return <div className="fixed inset-0 z-50 flex justify-end bg-black/35 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && close()}><aside className="h-full w-full max-w-[760px] overflow-y-auto bg-[#f2f4ef] p-4 shadow-2xl sm:p-7"><div className="sticky top-0 z-10 rounded-[28px] bg-[#11130f] p-5 text-white"><div className="flex items-start justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[.25em] text-[#C8FF00]">Organisation</p><h2 className="mt-1 text-3xl font-semibold">{detail.name}</h2><p className="text-sm text-white/50">/{detail.slug}</p></div><button onClick={close} className="h-10 w-10 rounded-full bg-white/10 text-xl">×</button></div><div className="mt-5 flex gap-2 overflow-x-auto">{(['general', 'appearance', 'business', 'integrations', 'domains', 'members', 'modules', 'metrics', 'audit'] as const).map((item) => <button key={item} onClick={() => setTab(item)} className={`whitespace-nowrap rounded-full px-4 py-2 text-xs font-bold ${tab === item ? 'bg-[#C8FF00] text-black' : 'bg-white/10'}`}>{({ general: 'Général', appearance: 'Apparence', business: 'Configuration métier', integrations: 'Intégrations', domains: 'Domaines', members: 'Membres', modules: 'Modules', metrics: 'Métriques', audit: 'Audit' })[item]}</button>)}</div></div>
-    <div className="mt-4 rounded-[28px] bg-white p-5 sm:p-6">
-      {tab === 'general' && <div className="space-y-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Nom" value={general.name} set={(name) => setGeneral({ ...general, name })} disabled={!canWrite} /><Field label="Slug" value={general.slug} set={(slug) => setGeneral({ ...general, slug })} disabled={!canWrite} /><Select label="Statut" value={general.status} set={(status) => setGeneral({ ...general, status })} options={Object.entries(statusLabels)} disabled={!canWrite} /></div><p className="text-xs text-[#747a6f]">Créée le {formatDate(detail.createdAt)} · mise à jour le {formatDate(detail.updatedAt)}</p>{canWrite && <button onClick={() => void update(general, 'Organisation mise à jour.')} className="rounded-2xl bg-black px-5 py-3 text-sm font-bold text-white">Enregistrer</button>} {detail.status !== 'ACTIVE' && <p className="rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">Les données sont conservées. Les accès métier de cette organisation sont bloqués.</p>}</div>}
-      {tab === 'appearance' && <AppearancePanel detail={detail} canWrite={canWrite} update={update} />}
-      {tab === 'business' && <BillingPanel detail={detail} canWrite={canWrite} request={request} />}
-      {tab === 'integrations' && <IntegrationsPanel detail={detail} canWrite={canWrite} request={request} />}
-      {tab === 'domains' && <DomainsPanel detail={detail} canWrite={canWrite} request={request} />}
-      {tab === 'members' && <div><div className="space-y-3">{detail.users.map((membership) => <div key={membership.id} className="flex flex-col gap-3 rounded-2xl bg-[#f6f7f3] p-4 sm:flex-row sm:items-center"><div className="min-w-0 flex-1"><p className="font-semibold">{membership.user.firstName} {membership.user.lastName}</p><p className="truncate text-xs text-[#747a6f]">{membership.user.email || membership.user.username} · ajouté le {formatDate(membership.createdAt)}</p></div><select disabled={!canWrite} value={membership.role} onChange={(event) => void request(`/api/platform/organizations/${detail.id}/members/${membership.id}`, { method: 'PATCH', body: JSON.stringify({ role: event.target.value }) }, 'Rôle modifié.')} className="h-10 rounded-xl border border-black/10 bg-white px-3 text-xs font-bold">{roles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select>{canWrite && <button onClick={() => confirm('Retirer ce membre de l’organisation ?') && void request(`/api/platform/organizations/${detail.id}/members/${membership.id}`, { method: 'DELETE' }, 'Membre retiré.')} className="text-xs font-bold text-red-700">Retirer</button>}</div>)}</div>{canWrite && <form onSubmit={addMember} className="mt-6 rounded-3xl border border-black/[.06] p-4"><h3 className="font-semibold">Ajouter un membre</h3>{availableUsers.length > 0 && <Select label="Utilisateur existant" value={member.existingUserId} set={(existingUserId) => setMember({ ...member, existingUserId })} options={[['', 'Créer un nouvel utilisateur'], ...availableUsers.map((user) => [user.id, `${user.firstName} ${user.lastName} · ${user.username}`])]} />} {!member.existingUserId && <div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Prénom" value={member.firstName} set={(firstName) => setMember({ ...member, firstName })} /><Field label="Nom" value={member.lastName} set={(lastName) => setMember({ ...member, lastName })} /><Field label="Username" value={member.username} set={(username) => setMember({ ...member, username })} /><Field label="Email" value={member.email} set={(email) => setMember({ ...member, email })} /><Field type="password" label="Mot de passe temporaire" value={member.password} set={(password) => setMember({ ...member, password })} /></div>}<div className="mt-3"><Select label="Rôle" value={member.role} set={(role) => setMember({ ...member, role })} options={roles.map((role) => [role, roleLabels[role]])} /></div><div className="mt-4"><Submit label="Ajouter" /></div></form>}</div>}
-      {tab === 'modules' && <div><ModuleGrid selected={detail.enabledModules} set={(enabledModules) => void update({ enabledModules }, 'Modules mis à jour.')} disabled={!canWrite} /><p className="mt-4 text-xs text-[#747a6f]">Les modules désactivés sont refusés côté serveur, même si une URL API est appelée directement.</p></div>}
-      {tab === 'metrics' && <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">{Object.entries(detail.metrics).map(([label, value]) => <article key={label} className="rounded-2xl bg-[#f4f6f0] p-4"><p className="text-2xl font-semibold">{value}</p><p className="mt-2 text-[9px] font-black uppercase tracking-wider text-[#747a6f]">{({ missions: 'Missions', drivers: 'Chauffeurs', trucks: 'Camions', trailers: 'Remorques', invoices: 'Factures' } as Record<string, string>)[label]}</p></article>)}</div>}
-      {tab === 'audit' && <div className="space-y-3">{detail.platformAuditLogs.length ? detail.platformAuditLogs.map((audit) => <div key={audit.id} className="rounded-2xl bg-[#f4f6f0] p-4"><div className="flex justify-between gap-3"><p className="text-sm font-bold">{auditLabel(audit.action)}</p><time className="text-[10px] text-[#747a6f]">{formatDate(audit.createdAt)}</time></div><p className="mt-1 text-xs text-[#747a6f]">{audit.actor.firstName} {audit.actor.lastName || audit.actor.username}</p></div>) : <p className="py-10 text-center text-sm text-[#747a6f]">Aucune action administrative enregistrée.</p>}</div>}
-    </div></aside></div>
+function RowButton({ onClick, title, subtitle, type, status, meta }: { onClick: () => void; title: string; subtitle: string; type: 'Standard' | 'Custom'; status: string; meta: ReactNode }) {
+  const info = statusInfo[status] || { label: status, tone: 'neutral' as const }
+  return <button onClick={onClick} className="group grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 text-left transition hover:bg-[#f7f8f4] focus-visible:bg-[#f7f8f4] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#8eb800] md:grid-cols-[minmax(0,1.4fr)_110px_minmax(0,1fr)_auto]">
+    <span className="min-w-0"><span className="block truncate text-sm font-semibold">{title}</span><span className="block truncate text-xs text-black/60">{subtitle}</span></span>
+    <span className="hidden md:block"><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${type === 'Custom' ? 'bg-[#11130f] text-[#C8FF00]' : 'bg-black/[.06] text-black/70'}`}>{type}</span></span>
+    <span className="col-span-2 row-start-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-black/60 md:col-span-1 md:row-start-auto"><span className="md:hidden"><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${type === 'Custom' ? 'bg-[#11130f] text-[#C8FF00]' : 'bg-black/[.06] text-black/70'}`}>{type}</span></span>{meta}</span>
+    <span className="col-start-2 row-start-1 flex items-center gap-3 md:col-start-auto md:row-start-auto"><Badge tone={info.tone}>{info.label}</Badge><span aria-hidden className="text-black/30 transition group-hover:text-black/70">›</span></span>
+  </button>
 }
 
-function BillingPanel({ detail, canWrite, request }: { detail: Detail; canWrite: boolean; request: (url: string, init: RequestInit, success: string) => Promise<unknown> }) {
-  const initial = detail.billingConfig || { legalName: '', legalAddress: '', vatNumber: '', iban: '', bic: '', bankName: '', beneficiary: '', invoicePrefix: '', paymentTermsDays: 30, billingEmail: '' }
-  const [value, setValue] = useState<Record<string, string>>({ ...Object.fromEntries(Object.entries(initial).map(([key, item]) => [key, item === null ? '' : String(item)])) })
-  useEffect(() => setValue({ ...Object.fromEntries(Object.entries(detail.billingConfig || initial).map(([key, item]) => [key, item === null ? '' : String(item)])) }), [detail])
-  const fields = [['legalName', 'Raison sociale'], ['legalAddress', 'Adresse légale'], ['vatNumber', 'TVA'], ['iban', 'IBAN'], ['bic', 'BIC'], ['bankName', 'Banque'], ['beneficiary', 'Bénéficiaire'], ['invoicePrefix', 'Préfixe facture'], ['paymentTermsDays', 'Délai de paiement (jours)'], ['billingEmail', 'Email facturation']]
-  return <div><h3 className="text-xl font-semibold">Configuration métier</h3><p className="mt-1 text-xs text-[#747a6f]">Identité légale distincte du branding. Les factures existantes conservent leur snapshot.</p><div className="mt-5 grid gap-4 sm:grid-cols-2">{fields.map(([key, label]) => <Field key={key} label={label} value={value[key] || ''} set={(next) => setValue({ ...value, [key]: next })} disabled={!canWrite} />)}</div>{canWrite && <button onClick={() => void request(`/api/platform/organizations/${detail.id}/billing`, { method: 'PUT', body: JSON.stringify(value) }, 'Configuration métier enregistrée.')} className="mt-5 rounded-2xl bg-black px-5 py-3 text-sm font-bold text-white">Enregistrer</button>}</div>
+// ─── Workspaces ──────────────────────────────────────────────────────────────
+
+function CustomWorkspace({ instance, tab, canWrite, state, setState, notify }: { instance: Instance; tab: WorkspaceTab; canWrite: boolean; state: Configuration; setState: (value: Configuration) => void; notify: (text: string) => void }) {
+  const channel = Boolean(instance.configurationEndpoint) && instance.status === 'ACTIVE'
+  const writable = canWrite && channel
+  const send = async (action: string, payload: Record<string, unknown>) => {
+    const body = await call(`/api/platform/instances/${instance.application}/configuration`, { method: 'POST', body: JSON.stringify({ action, payload }) })
+    return (body.configuration || {}) as Record<string, unknown>
+  }
+  const save: Save = async (kind, payload) => {
+    const body = kind === 'identity' ? Object.fromEntries(Object.entries(payload).map(([key, value]) => [key, value === '' ? null : value])) : payload
+    const configuration = await send(kind === 'identity' ? 'updateIdentity' : kind === 'branding' ? 'updateBranding' : 'updateModules', body)
+    setState({ ...state, ...pickOrganizationConfiguration(configuration), confirmedAt: new Date().toISOString() })
+    notify(`Modification confirmée par ${instance.client}.`)
+  }
+  const saveIntegration: SaveIntegration = async (type, change) => {
+    const configuration = change.enabled !== undefined ? await send('updateIntegrationEnabled', { type, enabled: change.enabled }) : await send('updateIntegrationConfig', { type, configJson: change.configJson })
+    setState({ ...state, integrations: { ...state.integrations, [type]: configuration as unknown as Integration }, confirmedAt: new Date().toISOString() })
+    notify(`Modification confirmée par ${instance.client}.`)
+  }
+  const unknownNote = !state.confirmedAt && <Notice tone="info">La plateforme ne lit jamais la base de {instance.client}. Les valeurs actuelles s’afficheront ici dès que l’instance aura confirmé une première modification.</Notice>
+  const readOnlyNote = !canWrite ? <Notice tone="info">Mode support : consultation uniquement.</Notice> : !channel ? <Notice tone="warning">Le canal de configuration de cette instance n’est pas disponible depuis cet environnement. Aucune modification ne peut être envoyée.</Notice> : null
+  // The registry's client name is the only identity known before the instance confirms its own values.
+  const configuration = useMemo(() => ({ ...state, name: state.name ?? instance.client }), [state, instance.client])
+  const shared = { configuration, canWrite: writable, custom: true, save, saveIntegration }
+  return <>
+    <WorkspaceHeader title={instance.client} type="Custom" status={instance.status} subtitle={instance.domain || instance.application} />
+    <div className="space-y-4">{readOnlyNote}{tab !== 'overview' && tab !== 'instance' && unknownNote}</div>
+    <div className={readOnlyNote || (tab !== 'overview' && tab !== 'instance' && unknownNote) ? 'mt-4' : ''}>
+      {tab === 'overview' && <Overview configuration={state} custom instance={instance} />}
+      {tab === 'identity' && <IdentityForm {...shared} />}
+      {tab === 'branding' && <BrandingForm {...shared} />}
+      {tab === 'modules' && <ModulesForm {...shared} />}
+      {tab === 'integrations' && <IntegrationsList {...shared} />}
+      {tab === 'instance' && <InstancePanel instance={instance} />}
+    </div>
+  </>
 }
 
-function IntegrationsPanel({ detail, canWrite, request }: { detail: Detail; canWrite: boolean; request: (url: string, init: RequestInit, success: string) => Promise<unknown> }) {
-  const [drafts, setDrafts] = useState<Record<string, { enabled: boolean; secretRef: string; configJson: string }>>({})
-  const getDraft = (type: 'MAIL_INTAKE' | 'SL_AUTOMOTIVE') => drafts[type] || (() => { const current = detail.integrations.find((item) => item.type === type); return { enabled: current?.enabled || false, secretRef: '', configJson: JSON.stringify(current?.configJson || (type === 'MAIL_INTAKE' ? { mailboxAddress: '', host: '', port: 993, secure: true, folder: 'INBOX', provider: 'imap' } : { apiBaseUrl: '', sourceCompany: '', sourceSystem: '', providerName: 'SL Automotive', webhookEnabled: false }), null, 2) } })()
-  return <div><h3 className="text-xl font-semibold">Intégrations</h3><p className="mt-1 text-xs text-[#747a6f]">Les secrets ne sont jamais affichés. Une référence vide conserve le secret existant.</p><div className="mt-5 space-y-4">{(['MAIL_INTAKE', 'SL_AUTOMOTIVE'] as const).map((type) => { const current = detail.integrations.find((item) => item.type === type); const draft = getDraft(type); return <article key={type} className="rounded-3xl bg-[#f4f6f0] p-4"><div className="flex items-center justify-between"><h4 className="font-black">{type}</h4><span className="text-xs font-bold">Secret : {current?.secretConfigured ? 'Configuré' : 'Non configuré'}</span></div><label className="mt-4 flex items-center gap-2 text-xs font-bold"><input type="checkbox" disabled={!canWrite} checked={draft.enabled} onChange={(e) => setDrafts({ ...drafts, [type]: { ...draft, enabled: e.target.checked } })} /> Activée</label><textarea disabled={!canWrite} value={draft.configJson} onChange={(e) => setDrafts({ ...drafts, [type]: { ...draft, configJson: e.target.value } })} className="mt-3 min-h-40 w-full rounded-2xl border border-black/10 bg-white p-3 font-mono text-xs" /><Field label="Nouvelle référence de secret (optionnel)" value={draft.secretRef} set={(secretRef) => setDrafts({ ...drafts, [type]: { ...draft, secretRef } })} disabled={!canWrite} />{canWrite && <button onClick={() => { try { const configJson = JSON.parse(draft.configJson); void request(`/api/platform/organizations/${detail.id}/integrations`, { method: 'PUT', body: JSON.stringify({ type, enabled: draft.enabled, configJson, ...(draft.secretRef ? { secretRef: draft.secretRef } : {}) }) }, `${type} enregistrée.`) } catch { alert('JSON invalide') } }} className="mt-3 rounded-2xl bg-black px-4 py-2 text-xs font-bold text-white">Enregistrer</button>}</article> })}</div></div>
+function StandardWorkspace({ id, instance, tab, canWrite, notify, refreshDirectory }: { id: string; instance?: Instance; tab: WorkspaceTab; canWrite: boolean; notify: (text: string) => void; refreshDirectory: () => Promise<void> }) {
+  const [detail, setDetail] = useState<Detail | null>(null)
+  const [availableUsers, setAvailableUsers] = useState<AvailableUser[]>([])
+  const [loadError, setLoadError] = useState('')
+  const load = useCallback(async () => {
+    try { const body = await call(`/api/platform/organizations/${id}`, { method: 'GET' }); setDetail(body.organization); setAvailableUsers(body.availableUsers || []) } catch (cause) { setLoadError(errorText(cause, 'Chargement impossible')) }
+  }, [id])
+  useEffect(() => { void load() }, [load])
+  const configuration = useMemo<Configuration>(() => detail ? { ...pickOrganizationConfiguration(detail as unknown as Record<string, unknown>), integrations: Object.fromEntries(detail.integrations.map((item) => [item.type, item])), confirmedAt: detail.updatedAt } : emptyConfiguration, [detail])
+  if (!detail) return loadError ? <Notice tone="error">{loadError}</Notice> : <div className="h-64 animate-pulse rounded-xl bg-black/[.04]" />
+
+  const mutate = async (url: string, init: RequestInit, success: string) => { await call(url, init); await load(); await refreshDirectory(); notify(success) }
+  const save: Save = (kind, payload) => mutate(`/api/platform/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }, kind === 'identity' ? 'Identité enregistrée.' : kind === 'branding' ? 'Apparence enregistrée.' : 'Modules enregistrés.')
+  const saveIntegration: SaveIntegration = (type, change) => {
+    const current = configuration.integrations[type]
+    return mutate(`/api/platform/organizations/${id}/integrations`, { method: 'PUT', body: JSON.stringify({ type, enabled: change.enabled ?? current?.enabled ?? false, configJson: change.configJson ?? current?.configJson ?? {}, ...(change.secretRef ? { secretRef: change.secretRef } : {}) }) }, 'Intégration enregistrée.')
+  }
+  const shared = { configuration, canWrite, custom: false, save, saveIntegration }
+  return <>
+    <WorkspaceHeader title={detail.displayName || detail.name} type="Standard" status={detail.status} subtitle={`/${detail.slug}`} />
+    {!canWrite && <div className="mb-4"><Notice tone="info">Mode support : consultation uniquement.</Notice></div>}
+    {tab === 'overview' && <Overview configuration={configuration} instance={instance} detail={detail} canWrite={canWrite} availableUsers={availableUsers} mutate={mutate} />}
+    {tab === 'identity' && <><IdentityForm {...shared} /><BillingForm detail={detail} canWrite={canWrite} mutate={mutate} /></>}
+    {tab === 'branding' && <BrandingForm {...shared} />}
+    {tab === 'modules' && <ModulesForm {...shared} />}
+    {tab === 'integrations' && <IntegrationsList {...shared} />}
+    {tab === 'instance' && <><StandardSettings detail={detail} canWrite={canWrite} mutate={mutate} />{instance && <div className="mt-5"><InstancePanel instance={instance} /></div>}</>}
+  </>
 }
 
-function AppearancePanel({ detail, canWrite, update }: { detail: Detail; canWrite: boolean; update: (patch: Record<string, unknown>, success: string) => Promise<void> }) {
-  const [value, setValue] = useState({ displayName: detail.displayName || '', logoUrl: detail.logoUrl || '', accentColor: detail.accentColor || '#C8FF00', faviconUrl: detail.faviconUrl || '', applicationTitle: detail.applicationTitle || '' })
-  useEffect(() => setValue({ displayName: detail.displayName || '', logoUrl: detail.logoUrl || '', accentColor: detail.accentColor || '#C8FF00', faviconUrl: detail.faviconUrl || '', applicationTitle: detail.applicationTitle || '' }), [detail])
-  return <div className="space-y-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Nom affiché" value={value.displayName} set={(displayName) => setValue({ ...value, displayName })} disabled={!canWrite} placeholder="Gerard" /><Field label="Titre application" value={value.applicationTitle} set={(applicationTitle) => setValue({ ...value, applicationTitle })} disabled={!canWrite} placeholder="Gerard Dispatch" /><Field label="URL du logo" value={value.logoUrl} set={(logoUrl) => setValue({ ...value, logoUrl })} disabled={!canWrite} placeholder="https://… ou /asset.png" /><Field label="URL du favicon" value={value.faviconUrl} set={(faviconUrl) => setValue({ ...value, faviconUrl })} disabled={!canWrite} placeholder="https://… ou /favicon.ico" /><label className="block text-[10px] font-black uppercase tracking-[.14em] text-[#747a6f]">Couleur d’accent<div className="mt-2 flex gap-2"><input type="color" value={/^#[0-9A-Fa-f]{6}$/.test(value.accentColor) ? value.accentColor : '#C8FF00'} disabled={!canWrite} onChange={(event) => setValue({ ...value, accentColor: event.target.value.toUpperCase() })} className="h-11 w-14 rounded-xl border border-black/10 bg-white p-1" /><input value={value.accentColor} disabled={!canWrite} onChange={(event) => setValue({ ...value, accentColor: event.target.value })} className="field" /></div></label></div><div className="rounded-3xl bg-[#f4f6f0] p-5"><p className="text-[10px] font-black uppercase tracking-widest text-[#747a6f]">Aperçu</p><div className="mt-4 flex items-center gap-4"><div className="flex h-16 min-w-32 items-center justify-center rounded-2xl bg-white p-3">{value.logoUrl ? <img src={value.logoUrl} alt="Aperçu" className="max-h-10 max-w-28 object-contain" /> : <span className="font-black">Gerard</span>}</div><div><p className="text-xl font-semibold">{value.displayName || 'Gerard'}</p><span style={{ backgroundColor: value.accentColor }} className="mt-2 inline-block rounded-xl px-4 py-2 text-xs font-black text-black">Action principale</span></div></div></div>{canWrite && <button onClick={() => void update(value, 'Apparence mise à jour.')} className="rounded-2xl bg-black px-5 py-3 text-sm font-bold text-white">Enregistrer l’apparence</button>}<p className="text-xs text-[#747a6f]">Les champs vides utilisent le branding Gerard centralisé.</p></div>
+function WorkspaceHeader({ title, type, status, subtitle }: { title: string; type: 'Standard' | 'Custom'; status: string; subtitle: string }) {
+  const info = statusInfo[status] || { label: status, tone: 'neutral' as const }
+  return <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1"><h1 className="text-xl font-semibold tracking-tight">{title}</h1><span className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${type === 'Custom' ? 'bg-[#11130f] text-[#C8FF00]' : 'bg-black/[.06] text-black/70'}`}>{type}</span><Badge tone={info.tone}>{info.label}</Badge><span className="w-full text-sm text-black/60 sm:w-auto">{subtitle}</span></div>
 }
 
-function DomainsPanel({ detail, canWrite, request }: { detail: Detail; canWrite: boolean; request: (url: string, init: RequestInit, success: string) => Promise<unknown> }) {
-  const [value, setValue] = useState({ hostname: '', pathPrefix: '', isPrimary: false })
-  return <div className="space-y-4"><div className="space-y-3">{detail.domains.map((domain) => <article key={domain.id} className="rounded-2xl bg-[#f4f6f0] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold">{domain.hostname}{domain.pathPrefix}</p><p className="text-xs text-[#747a6f]">{domain.isPrimary ? 'Principal · ' : ''}{domain.isActive ? 'Actif' : 'Inactif'}</p></div>{canWrite && <div className="flex gap-2"><button onClick={() => void request(`/api/platform/organizations/${detail.id}/domains/${domain.id}`, { method: 'PATCH', body: JSON.stringify({ isPrimary: true, isActive: true }) }, 'Domaine principal défini.')} className="text-xs font-bold">Principal</button><button onClick={() => void request(`/api/platform/organizations/${detail.id}/domains/${domain.id}`, { method: 'PATCH', body: JSON.stringify({ isActive: !domain.isActive }) }, 'Domaine mis à jour.')} className="text-xs font-bold">{domain.isActive ? 'Désactiver' : 'Activer'}</button><button onClick={() => confirm('Supprimer ce mapping de domaine ?') && void request(`/api/platform/organizations/${detail.id}/domains/${domain.id}`, { method: 'DELETE' }, 'Domaine supprimé.')} className="text-xs font-bold text-red-700">Supprimer</button></div>}</div></article>)}</div>{canWrite && <form onSubmit={(event) => { event.preventDefault(); void request(`/api/platform/organizations/${detail.id}/domains`, { method: 'POST', body: JSON.stringify(value) }, 'Domaine ajouté.').then(() => setValue({ hostname: '', pathPrefix: '', isPrimary: false })) }} className="rounded-3xl border border-black/[.06] p-4"><h3 className="font-semibold">Ajouter un domaine</h3><div className="mt-3 grid gap-3 sm:grid-cols-2"><Field label="Hostname" value={value.hostname} set={(hostname) => setValue({ ...value, hostname })} placeholder="dispatch.client.com" required /><Field label="Préfixe optionnel" value={value.pathPrefix} set={(pathPrefix) => setValue({ ...value, pathPrefix })} placeholder="/dispatch" /></div><label className="mt-3 flex items-center gap-2 text-xs font-bold"><input type="checkbox" checked={value.isPrimary} onChange={(event) => setValue({ ...value, isPrimary: event.target.checked })} /> Domaine principal</label><div className="mt-4"><Submit label="Ajouter le domaine" /></div></form>}<p className="text-xs text-[#747a6f]">Aucune modification DNS n’est effectuée par Gerard.</p></div>
+// ─── Overview ────────────────────────────────────────────────────────────────
+
+function Overview({ configuration, instance, detail, custom = false, canWrite = false, availableUsers = [], mutate }: { configuration: Configuration; instance?: Instance; detail?: Detail; custom?: boolean; canWrite?: boolean; availableUsers?: AvailableUser[]; mutate?: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const enabledIntegrations = integrationCatalog.filter((item) => configuration.integrations[item.type]?.enabled)
+  const facts: [string, ReactNode][] = [
+    ['Type', custom ? 'Gerard Custom' : 'Gerard Standard'],
+    ['Environnement', instance ? environmentLabels[instance.environment] || instance.environment : '—'],
+    ['Version Core', instance ? <span key="core">{instance.coreVersion} <span className="text-black/60">· {instance.lastCompatibilityStatus === 'COMPATIBLE' ? 'compatible' : instance.lastCompatibilityStatus.toLowerCase()}</span></span> : '—'],
+    ['Adresse', instance?.publicUrl ? <a key="url" href={instance.publicUrl} target="_blank" rel="noreferrer" className="font-medium text-[#4d6600] underline-offset-2 hover:underline">{instance.domain}</a> : '—'],
+  ]
+  const unknown = <span className="text-black/50">Non confirmé</span>
+  return <div className="space-y-5">
+    <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-black/[.08] bg-white lg:grid-cols-4">{facts.map(([label, value], index) => <div key={label} className={`min-w-0 border-black/[.06] px-4 py-3 ${index % 2 ? 'border-l' : ''} ${index > 1 ? 'border-t lg:border-t-0' : ''} ${index === 2 ? 'lg:border-l' : ''}`}><p className="text-xs font-medium text-black/60">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p></div>)}</div>
+    <div className="grid gap-5 lg:grid-cols-2">
+      <Surface title="Configuration" description={custom ? (configuration.confirmedAt ? `Confirmée par l’instance ${formatRelative(configuration.confirmedAt).toLowerCase()}` : 'Valeurs gérées par l’instance elle-même') : undefined}>
+        <dl className="divide-y divide-black/[.05] text-sm">
+          <Fact label="Nom affiché" value={configuration.displayName ?? (custom && !configuration.confirmedAt ? unknown : '—')} />
+          <Fact label="Titre de l’application" value={configuration.applicationTitle ?? (custom && !configuration.confirmedAt ? unknown : '—')} />
+          <Fact label="Modules actifs" value={configuration.enabledModules ? `${configuration.enabledModules.length} sur ${modules.length}` : unknown} />
+          <Fact label="Intégrations actives" value={custom && !Object.keys(configuration.integrations).length ? unknown : enabledIntegrations.length ? enabledIntegrations.map((item) => item.name).join(', ') : 'Aucune'} />
+        </dl>
+      </Surface>
+      {detail ? <Surface title="Activité" description="Données opérationnelles de l’organisation">
+        <dl className="grid grid-cols-3 gap-px bg-black/[.05] text-sm sm:grid-cols-5">{Object.entries(detail.metrics).map(([key, value]) => <div key={key} className="bg-white px-3 py-3"><dt className="text-xs text-black/60">{({ missions: 'Missions', drivers: 'Chauffeurs', trucks: 'Camions', trailers: 'Remorques', invoices: 'Factures' } as Record<string, string>)[key]}</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd></div>)}</dl>
+      </Surface> : <Surface title="Accès et membres"><p className="px-4 py-4 text-sm leading-6 text-black/70">Les membres de {instance?.client} sont gérés par ses administrateurs dans leur propre espace.{instance?.adminUrl && <> <a href={instance.adminUrl} target="_blank" rel="noreferrer" className="font-medium text-[#4d6600] underline-offset-2 hover:underline">Ouvrir l’administration de l’organisation ↗</a></>}</p></Surface>}
+    </div>
+    {detail && mutate && <MembersPanel detail={detail} canWrite={canWrite} availableUsers={availableUsers} mutate={mutate} />}
+    {detail && <Surface title="Historique récent"><ul className="divide-y divide-black/[.05]">{detail.platformAuditLogs.slice(0, 6).map((item) => <li key={item.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm"><div className="min-w-0"><p className="font-medium">{platformAuditLabel(item)}</p><p className="truncate text-xs text-black/60">par {`${item.actor.firstName} ${item.actor.lastName}`.trim() || item.actor.username}</p></div><time className="shrink-0 text-xs text-black/60" title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</time></li>)}{!detail.platformAuditLogs.length && <li className="px-4 py-6 text-center text-sm text-black/60">Aucune action enregistrée.</li>}</ul></Surface>}
+  </div>
 }
 
-function ModuleGrid({ selected, set, disabled }: { selected: readonly string[]; set: (value: string[]) => void; disabled: boolean }) { return <div><p className="mb-3 text-[10px] font-black uppercase tracking-[.16em] text-[#747a6f]">Modules activés</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{modules.map((module) => { const active = selected.includes(module); return <button type="button" disabled={disabled} key={module} onClick={() => set(active ? selected.filter((item) => item !== module) : [...selected, module])} className={`rounded-2xl p-3 text-left text-xs font-bold transition ${active ? 'bg-black text-white' : 'bg-[#eef0ea] text-[#747a6f]'} disabled:cursor-default`}><span className={`mr-2 inline-block h-2 w-2 rounded-full ${active ? 'bg-[#C8FF00]' : 'bg-black/15'}`} />{moduleLabels[module]}</button> })}</div></div> }
-function Field({ label, value, set, type = 'text', required = false, placeholder, disabled = false }: { label: string; value: string; set: (value: string) => void; type?: string; required?: boolean; placeholder?: string; disabled?: boolean }) { return <label className="block text-[10px] font-black uppercase tracking-[.14em] text-[#747a6f]">{label}<input disabled={disabled} required={required} type={type} value={value} placeholder={placeholder} onChange={(event) => set(event.target.value)} className="mt-2 h-11 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-medium normal-case tracking-normal outline-none focus:border-[#8eb800] disabled:bg-black/[.03]" /></label> }
-function Select({ label, value, set, options, disabled = false }: { label: string; value: string; set: (value: string) => void; options: string[][]; disabled?: boolean }) { return <label className="block text-[10px] font-black uppercase tracking-[.14em] text-[#747a6f]">{label}<select disabled={disabled} value={value} onChange={(event) => set(event.target.value)} className="mt-2 h-11 w-full rounded-2xl border border-black/10 bg-white px-4 text-sm font-medium normal-case tracking-normal">{options.map(([value, optionLabel]) => <option key={value || 'empty'} value={value}>{optionLabel}</option>)}</select></label> }
-function Status({ value }: { value: string }) { const color = value === 'ACTIVE' ? 'bg-lime-100 text-lime-900' : value === 'SUSPENDED' ? 'bg-amber-100 text-amber-900' : 'bg-black/10 text-black/60'; return <span className={`w-fit rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider ${color}`}>{statusLabels[value]}</span> }
-function Metric({ label, value }: { label: string; value: ReactNode }) { return <div><p className="text-lg font-semibold">{value}</p><p className="text-[9px] font-black uppercase tracking-wider text-[#747a6f]">{label}</p></div> }
-function Submit({ label }: { label: string }) { return <button className="h-11 rounded-2xl bg-[#C8FF00] px-5 text-sm font-black text-black">{label}</button> }
-function Banner({ tone, children }: { tone: 'success' | 'error'; children: ReactNode }) { return <div className={`mt-4 rounded-2xl px-4 py-3 text-sm font-semibold ${tone === 'success' ? 'bg-lime-100 text-lime-950' : 'bg-red-100 text-red-900'}`}>{children}</div> }
-function Modal({ title, close, children }: { title: string; close: () => void; children: ReactNode }) { return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && close()}><section className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[30px] bg-white p-5 shadow-2xl sm:p-7"><div className="mb-6 flex items-center justify-between"><h2 className="text-2xl font-semibold">{title}</h2><button onClick={close} className="h-10 w-10 rounded-full bg-black/5 text-xl">×</button></div>{children}</section></div> }
-function formatDate(value: string) { return new Intl.DateTimeFormat('fr-LU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) }
-function auditLabel(action: string) { return ({ ORGANIZATION_CREATED: 'Organisation créée', ORGANIZATION_UPDATED: 'Informations modifiées', ORGANIZATION_STATUS_CHANGED: 'Statut modifié', MEMBER_ADDED: 'Membre ajouté', MEMBER_REMOVED: 'Membre retiré', MEMBER_ROLE_CHANGED: 'Rôle modifié', MODULES_CHANGED: 'Modules modifiés', BRANDING_CHANGED: 'Apparence modifiée', DOMAIN_CREATED: 'Domaine ajouté', DOMAIN_UPDATED: 'Domaine modifié', DOMAIN_DELETED: 'Domaine supprimé' } as Record<string, string>)[action] || action }
+function platformAuditLabel(item: Audit) {
+  const meta = item.metadata || {}
+  if (meta.source === 'PLATFORM_INSTANCE_CONFIGURATION') return `Configuration envoyée à ${String(meta.targetApplication)}${meta.success === false ? ' (refusée)' : ''}`
+  if (meta.kind === 'USER_IDENTITY_UPDATED') return 'Identité d’un membre modifiée'
+  return auditLabel(item.action)
+}
+
+function Fact({ label, value }: { label: string; value: ReactNode }) {
+  return <div className="flex items-center justify-between gap-4 px-4 py-2.5"><dt className="text-black/60">{label}</dt><dd className="min-w-0 truncate text-right font-medium">{value}</dd></div>
+}
+
+// ─── Identity & branding ─────────────────────────────────────────────────────
+
+type FormProps = { configuration: Configuration; canWrite: boolean; custom: boolean; save: Save; saveIntegration: SaveIntegration }
+
+// Custom values may be unknown: then only the fields actually typed are sent, so nothing is overwritten by accident.
+function useDraft<T extends Record<string, string>>(fields: (keyof T)[], configuration: Configuration, custom: boolean) {
+  const initial = useMemo(() => Object.fromEntries(fields.map((key) => [key, (configuration[key as keyof Configuration] as string | null) ?? ''])) as T, [configuration]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [draft, setDraft] = useState<T>(initial)
+  useEffect(() => setDraft(initial), [initial])
+  const known = !custom || Boolean(configuration.confirmedAt)
+  const changed = fields.filter((key) => known ? draft[key] !== initial[key] : draft[key].trim() !== '')
+  // Cleared fields are sent as '' (the Standard API maps it to null); the Custom save maps them to null itself.
+  const payload = Object.fromEntries(changed.map((key) => [key, draft[key].trim()]))
+  return { draft, setDraft, reset: () => setDraft(initial), dirty: changed.length > 0, payload, known }
+}
+
+function useSubmit(run: () => Promise<void>) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (event?: FormEvent) => { event?.preventDefault(); setBusy(true); setError(''); try { await run() } catch (cause) { setError(errorText(cause, 'Enregistrement impossible')) } finally { setBusy(false) } }
+  return { busy, error, submit, setError }
+}
+
+function IdentityForm({ configuration, canWrite, custom, save }: FormProps) {
+  const fields = custom ? ['displayName', 'applicationTitle'] : ['name', 'displayName', 'applicationTitle']
+  const { draft, setDraft, reset, dirty, payload, known } = useDraft<Record<string, string>>(fields, configuration, custom)
+  const { busy, error, submit } = useSubmit(() => save('identity', payload))
+  const placeholder = known ? undefined : 'Valeur actuelle non confirmée'
+  return <form onSubmit={submit}><Surface title="Identité" description="Nom et titre affichés aux utilisateurs de l’application." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={reset} />}>
+    <div className="grid gap-3 p-4 sm:grid-cols-2">
+      {!custom && <TextField label="Nom de l’organisation" value={draft.name} set={(name) => setDraft({ ...draft, name })} disabled={!canWrite} required hint="Nom interne, visible dans la plateforme." />}
+      <TextField label="Nom affiché" value={draft.displayName} set={(displayName) => setDraft({ ...draft, displayName })} disabled={!canWrite} placeholder={placeholder || draft.name || 'Gerard'} />
+      <TextField label="Titre de l’application" value={draft.applicationTitle} set={(applicationTitle) => setDraft({ ...draft, applicationTitle })} disabled={!canWrite} placeholder={placeholder || 'Gerard Dispatch'} hint="Affiché dans l’onglet du navigateur." />
+    </div>
+    {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+  </Surface></form>
+}
+
+function BrandingForm({ configuration, canWrite, custom, save }: FormProps) {
+  const { draft, setDraft, reset, dirty, payload, known } = useDraft<Record<string, string>>(['accentColor', 'logoUrl', 'faviconUrl'], configuration, custom)
+  const { busy, error, submit } = useSubmit(() => save('branding', payload))
+  const accent = /^#[0-9a-f]{6}$/i.test(draft.accentColor) ? draft.accentColor : '#C8FF00'
+  const name = configuration.displayName || configuration.name || 'Gerard'
+  return <form onSubmit={submit}><Surface title="Apparence" description="Couleur et logos de l’application. Les champs vides reprennent l’apparence Gerard." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={reset} disabled={Boolean(draft.accentColor) && !/^#[0-9a-f]{6}$/i.test(draft.accentColor)} />}>
+    <div className="grid gap-6 p-4 lg:grid-cols-[1fr_280px]">
+      <div className="space-y-3">
+        <label className="block"><span className="text-xs font-medium text-black/70">Couleur d’accent</span><div className="mt-1 flex gap-2"><input type="color" aria-label="Choisir la couleur d’accent" disabled={!canWrite} value={accent} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value.toUpperCase() })} className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white p-1 disabled:cursor-not-allowed" /><input aria-label="Code couleur" disabled={!canWrite} value={draft.accentColor} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value })} placeholder={known ? '#C8FF00' : 'Non confirmée'} className={`${inputClass} font-mono disabled:bg-black/[.03]`} /></div>{draft.accentColor && !/^#[0-9a-f]{6}$/i.test(draft.accentColor) && <span className="mt-1 block text-xs font-medium text-red-700">Format attendu : #RRGGBB</span>}</label>
+        <TextField label="Logo" value={draft.logoUrl} set={(logoUrl) => setDraft({ ...draft, logoUrl })} disabled={!canWrite} placeholder={known ? 'https://… ou /logo.png' : 'Non confirmé'} />
+        <TextField label="Favicon" value={draft.faviconUrl} set={(faviconUrl) => setDraft({ ...draft, faviconUrl })} disabled={!canWrite} placeholder={known ? 'https://… ou /favicon.ico' : 'Non confirmé'} />
+      </div>
+      <div><p className="mb-1 text-xs font-medium text-black/70">Aperçu</p>
+        <div className="overflow-hidden rounded-lg border border-black/[.08]" aria-hidden>
+          <div className="flex items-center gap-2 bg-[#11130f] px-3 py-2.5 text-white">{draft.logoUrl ? <img src={draft.logoUrl} alt="" className="h-6 w-6 rounded bg-white object-contain p-0.5" onError={(e) => { e.currentTarget.style.visibility = 'hidden' }} /> : <span className="inline-flex h-6 w-6 items-center justify-center rounded text-[10px] font-black text-black" style={{ background: accent }}>{name[0]?.toUpperCase()}</span>}<span className="truncate text-sm font-semibold">{name}</span></div>
+          <div className="space-y-2 bg-[#f4f5f1] p-3"><div className="h-2 w-2/3 rounded bg-black/10" /><div className="h-2 w-1/2 rounded bg-black/[.07]" /><span className="mt-1 inline-flex rounded-md px-2.5 py-1 text-xs font-semibold text-black" style={{ background: accent }}>Action principale</span></div>
+          <div className="flex items-center gap-2 border-t border-black/[.06] bg-white px-3 py-2 text-xs text-black/60">{draft.faviconUrl && <img src={draft.faviconUrl} alt="" className="h-3.5 w-3.5" onError={(e) => { e.currentTarget.style.display = 'none' }} />}<span className="truncate">{configuration.applicationTitle || 'Gerard'}</span></div>
+        </div>
+      </div>
+    </div>
+    {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+  </Surface></form>
+}
+
+// ─── Modules ─────────────────────────────────────────────────────────────────
+
+function ModulesForm({ configuration, canWrite, save }: FormProps) {
+  const initial = configuration.enabledModules
+  const [selected, setSelected] = useState<string[]>(initial || [])
+  useEffect(() => setSelected(initial || []), [initial])
+  const dirty = Boolean(initial) && [...selected].sort().join() !== [...(initial || [])].sort().join()
+  const { busy, error, submit } = useSubmit(() => save('modules', { enabledModules: selected }))
+  // Module updates replace the whole list, so they stay locked until the current list is known.
+  const locked = !initial
+  return <form onSubmit={submit}><Surface title="Modules" description="Fonctionnalités accessibles aux utilisateurs de l’organisation. Un module désactivé est refusé côté serveur." footer={canWrite && !locked && <SaveBar dirty={dirty} busy={busy} onReset={() => setSelected(initial || [])} disabled={!selected.length} />}>
+    {locked && <div className="px-4 pt-4"><Notice tone="info">La liste actuelle des modules n’est pas encore confirmée par l’instance. Pour éviter d’écraser une configuration inconnue, les modules se modifient après une première modification d’identité ou d’apparence confirmée.</Notice></div>}
+    <ul className="divide-y divide-black/[.05]">{modules.map((module) => { const active = selected.includes(module); return <li key={module} className="flex items-center justify-between gap-4 px-4 py-3">
+      <div className="min-w-0"><p className="text-sm font-medium">{moduleInfo[module].label}</p><p className="text-xs text-black/60">{moduleInfo[module].description}</p></div>
+      <div className="flex shrink-0 items-center gap-3">{!locked && <span className={`hidden text-xs font-medium sm:inline ${active ? 'text-[#3d5200]' : 'text-black/50'}`}>{active ? 'Actif' : 'Inactif'}</span>}{locked ? <span className="text-xs text-black/50">Non confirmé</span> : <Switch label={`${moduleInfo[module].label} ${active ? 'actif' : 'inactif'}`} checked={active} disabled={!canWrite || busy} onChange={(on) => setSelected(on ? [...selected, module] : selected.filter((item) => item !== module))} />}</div>
+    </li> })}</ul>
+    {!selected.length && !locked && <div className="px-4 pb-3"><Notice tone="warning">Au moins un module doit rester actif.</Notice></div>}
+    {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+  </Surface></form>
+}
+
+// ─── Integrations ────────────────────────────────────────────────────────────
+
+function IntegrationsList(props: FormProps) {
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  return <div className="space-y-5">
+    {integrationCatalog.map((entry) => <IntegrationCard key={entry.type} entry={entry} {...props} confirm={setConfirmation} />)}
+    <p className="text-xs text-black/60">Mots de passe, clés d’API et références de secret ne sont jamais affichés.{props.custom ? ' Pour une instance Custom, les secrets restent dans son propre gestionnaire et ne transitent pas par la plateforme.' : ''}</p>
+    {confirmation && <ConfirmModal value={confirmation} close={() => setConfirmation(null)} />}
+  </div>
+}
+
+function IntegrationCard({ entry, configuration, canWrite, custom, saveIntegration, confirm }: FormProps & { entry: (typeof integrationCatalog)[number]; confirm: (value: Confirmation) => void }) {
+  const current = configuration.integrations[entry.type]
+  const known = !custom || Boolean(current)
+  const initial = useMemo(() => Object.fromEntries(entry.fields.map((field) => [field.key, current?.configJson?.[field.key] === undefined || current?.configJson?.[field.key] === null ? (field.kind === 'boolean' ? false : '') : field.kind === 'boolean' ? Boolean(current.configJson[field.key]) : String(current.configJson[field.key])])) as Record<string, string | boolean>, [current, entry])
+  const [draft, setDraft] = useState(initial)
+  const [secretRef, setSecretRef] = useState('')
+  useEffect(() => { setDraft(initial); setSecretRef('') }, [initial])
+  const dirty = entry.fields.some((field) => draft[field.key] !== initial[field.key]) || Boolean(secretRef.trim())
+  const configJson = Object.fromEntries(entry.fields.map((field) => [field.key, field.kind === 'number' ? (Number(draft[field.key]) || undefined) : draft[field.key]]))
+  const { busy, error, submit, setError } = useSubmit(() => saveIntegration(entry.type, { configJson, ...(secretRef.trim() ? { secretRef: secretRef.trim() } : {}) }))
+  const setEnabled = (enabled: boolean) => confirm({ title: `${enabled ? 'Activer' : 'Désactiver'} ${entry.name}`, confirm: enabled ? 'Activer' : 'Désactiver', destructive: !enabled, body: enabled ? <>L’intégration sera utilisée par l’organisation dès maintenant, avec la configuration enregistrée.</> : <>Les imports via {entry.name} s’arrêteront. La configuration est conservée.</>, run: async () => { setError(''); try { await saveIntegration(entry.type, { enabled }) } catch (cause) { setError(errorText(cause, 'Modification impossible')) } } })
+  const status = !current ? (custom ? <span className="text-xs text-black/60">État non confirmé</span> : <Badge tone="neutral">Non configurée</Badge>) : current.enabled ? <Badge tone="positive">Activée</Badge> : <Badge tone="neutral">Désactivée</Badge>
+  return <form onSubmit={submit}><Surface title={entry.name} description={entry.purpose} action={<div className="flex items-center gap-3">{status}{canWrite && (custom && !current
+    ? <span className="flex gap-1"><button type="button" onClick={() => setEnabled(true)} className={buttonClass.secondary}>Activer</button><button type="button" onClick={() => setEnabled(false)} className={buttonClass.secondary}>Désactiver</button></span>
+    : <Switch label={`${entry.name} ${current?.enabled ? 'activée' : 'désactivée'}`} checked={Boolean(current?.enabled)} onChange={setEnabled} disabled={busy} />)}</div>}
+    footer={canWrite && known && <SaveBar dirty={dirty} busy={busy} onReset={() => { setDraft(initial); setSecretRef('') }} label="Enregistrer la configuration" />}>
+    {!known ? <p className="px-4 py-4 text-sm text-black/60">Les paramètres s’afficheront après la première réponse de l’instance (activation ou désactivation). Ils remplacent la configuration complète : ils ne sont donc pas modifiables à l’aveugle.</p> : <div className="grid gap-3 p-4 sm:grid-cols-2">
+      {entry.fields.map((field) => field.kind === 'boolean'
+        ? <label key={field.key} className="flex items-center justify-between gap-3 rounded-lg border border-black/[.08] px-3 py-2 text-sm"><span>{field.label}</span><Switch label={field.label} checked={Boolean(draft[field.key])} disabled={!canWrite} onChange={(value) => setDraft({ ...draft, [field.key]: value })} /></label>
+        : <TextField key={field.key} label={field.label} type={field.kind === 'number' ? 'number' : 'text'} value={String(draft[field.key] ?? '')} set={(value) => setDraft({ ...draft, [field.key]: value })} placeholder={field.placeholder} disabled={!canWrite} />)}
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-[#f7f8f4] px-3 py-2 text-sm sm:col-span-2"><span className="text-black/70">Secret d’accès</span>{current?.secretConfigured ? <Badge tone="positive">Configuré</Badge> : <Badge tone="warning">Non configuré</Badge>}</div>
+      {!custom && canWrite && <div className="sm:col-span-2"><TextField label="Remplacer la référence du secret" value={secretRef} set={setSecretRef} placeholder="Laisser vide pour conserver le secret actuel" hint="Nom de la variable du gestionnaire de secrets, jamais la valeur elle-même." /></div>}
+    </div>}
+    {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+  </Surface></form>
+}
+
+// ─── Instance ────────────────────────────────────────────────────────────────
+
+function InstancePanel({ instance }: { instance: Instance }) {
+  const rows: [string, ReactNode][] = [
+    ['Application', instance.application], ['Client', instance.client], ['Type', instance.applicationType === 'CUSTOM' ? 'Gerard Custom' : 'Gerard Standard'],
+    ['Environnement', environmentLabels[instance.environment] || instance.environment], ['Organisation', <code key="org" className="font-mono text-xs">{instance.organizationId}</code>],
+    ['Version Core', instance.coreVersion], ['Compatibilité', `${instance.compatibleCore} · ${instance.lastCompatibilityStatus}`],
+    ['Adresse publique', instance.publicUrl ? <a key="url" href={instance.publicUrl} target="_blank" rel="noreferrer" className="font-medium text-[#4d6600] underline-offset-2 hover:underline">{instance.domain} ↗</a> : '—'],
+    ['Administration', instance.adminUrl ? <a key="admin" href={instance.adminUrl} target="_blank" rel="noreferrer" className="font-medium text-[#4d6600] underline-offset-2 hover:underline">/admin/organization ↗</a> : '—'],
+    ...(instance.deploymentReference ? [['Déploiement de référence', <code key="dpl" className="font-mono text-xs">{instance.deploymentReference}</code>] as [string, ReactNode]] : []),
+    ...(instance.cutoverAt ? [['Mise en service', formatDate(instance.cutoverAt)] as [string, ReactNode]] : []),
+    ...(instance.applicationType === 'CUSTOM' ? [['Canal de configuration', instance.configurationEndpoint ? <Badge key="ch" tone="positive">Disponible</Badge> : <Badge key="ch" tone="warning">Indisponible sur cet environnement</Badge>] as [string, ReactNode]] : []),
+  ]
+  return <Surface title="Instance" description="Métadonnées du registre central Gerard. Lecture seule.">
+    <dl className="divide-y divide-black/[.05] text-sm">{rows.map(([label, value]) => <Fact key={label} label={label} value={value} />)}</dl>
+  </Surface>
+}
+
+function StandardSettings({ detail, canWrite, mutate }: { detail: Detail; canWrite: boolean; mutate: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const [value, setValue] = useState({ slug: detail.slug, status: detail.status })
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [domain, setDomain] = useState({ hostname: '', pathPrefix: '', isPrimary: false })
+  useEffect(() => setValue({ slug: detail.slug, status: detail.status }), [detail])
+  const dirty = value.slug !== detail.slug || value.status !== detail.status
+  const { busy, error, submit } = useSubmit(() => mutate(`/api/platform/organizations/${detail.id}`, { method: 'PATCH', body: JSON.stringify(value) }, 'Organisation mise à jour.'))
+  const confirmSubmit = (event: FormEvent) => { event.preventDefault(); if (value.status !== detail.status && value.status !== 'ACTIVE') setConfirmation({ title: value.status === 'SUSPENDED' ? 'Suspendre l’organisation' : 'Archiver l’organisation', confirm: value.status === 'SUSPENDED' ? 'Suspendre' : 'Archiver', destructive: true, body: <>Les utilisateurs de <strong>{detail.displayName || detail.name}</strong> perdront l’accès à l’application.</>, run: () => submit() }); else void submit() }
+  const domainAction = useSubmit(async () => { await mutate(`/api/platform/organizations/${detail.id}/domains`, { method: 'POST', body: JSON.stringify(domain) }, 'Domaine ajouté.'); setDomain({ hostname: '', pathPrefix: '', isPrimary: false }) })
+  const domainCall = (id: string, init: RequestInit, success: string) => { domainAction.setError(''); void mutate(`/api/platform/organizations/${detail.id}/domains/${id}`, init, success).catch((cause) => domainAction.setError(errorText(cause, 'Modification impossible'))) }
+  return <div className="space-y-5">
+    <form onSubmit={confirmSubmit}><Surface title="Organisation" description={`Créée le ${formatDate(detail.createdAt)}`} footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={() => setValue({ slug: detail.slug, status: detail.status })} />}>
+      <div className="grid gap-3 p-4 sm:grid-cols-2">
+        <TextField label="Identifiant (slug)" value={value.slug} set={(slug) => setValue({ ...value, slug })} disabled={!canWrite} mono required hint="Utilisé dans les URL internes." />
+        <label className="block"><span className="text-xs font-medium text-black/70">Statut</span><select disabled={!canWrite} value={value.status} onChange={(e) => setValue({ ...value, status: e.target.value })} className={`${inputClass} mt-1 disabled:bg-black/[.03]`}>{Object.entries(statusInfo).map(([key, info]) => <option key={key} value={key}>{info.label}</option>)}</select></label>
+      </div>
+      {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+    </Surface></form>
+    <Surface title="Domaines" description="Routage des adresses vers cette organisation. Aucune modification DNS n’est effectuée.">
+      <ul className="divide-y divide-black/[.05]">{detail.domains.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm"><span className="min-w-0"><span className="font-medium">{item.hostname}{item.pathPrefix}</span> <span className="ml-1 inline-flex gap-1">{item.isPrimary && <Badge tone="positive">Principal</Badge>}{!item.isActive && <Badge tone="neutral">Inactif</Badge>}</span></span>
+        {canWrite && <span className="flex gap-1">{!item.isPrimary && <button onClick={() => domainCall(item.id, { method: 'PATCH', body: JSON.stringify({ isPrimary: true, isActive: true }) }, 'Domaine principal défini.')} className={buttonClass.ghost}>Définir principal</button>}<button onClick={() => domainCall(item.id, { method: 'PATCH', body: JSON.stringify({ isActive: !item.isActive }) }, 'Domaine mis à jour.')} className={buttonClass.ghost}>{item.isActive ? 'Désactiver' : 'Activer'}</button><button onClick={() => setConfirmation({ title: 'Supprimer le domaine', confirm: 'Supprimer', destructive: true, body: <><strong>{item.hostname}{item.pathPrefix}</strong> ne pointera plus vers cette organisation.</>, run: async () => domainCall(item.id, { method: 'DELETE' }, 'Domaine supprimé.') })} className={`${buttonClass.ghost} !text-red-700`}>Supprimer</button></span>}</li>)}
+        {!detail.domains.length && <li className="px-4 py-4 text-sm text-black/60">Aucun domaine dédié.</li>}</ul>
+      {canWrite && <form onSubmit={domainAction.submit} className="grid gap-3 border-t border-black/[.06] p-4 sm:grid-cols-[1fr_180px_auto_auto] sm:items-end"><TextField label="Nom d’hôte" value={domain.hostname} set={(hostname) => setDomain({ ...domain, hostname })} placeholder="dispatch.client.com" required /><TextField label="Préfixe (facultatif)" value={domain.pathPrefix} set={(pathPrefix) => setDomain({ ...domain, pathPrefix })} placeholder="/dispatch" /><label className="flex h-9 items-center gap-2 text-sm"><input type="checkbox" checked={domain.isPrimary} onChange={(e) => setDomain({ ...domain, isPrimary: e.target.checked })} className="h-4 w-4 accent-black" />Principal</label><button disabled={domainAction.busy} className={buttonClass.primary}>Ajouter</button></form>}
+      {domainAction.error && <div className="px-4 pb-3"><Notice tone="error">{domainAction.error}</Notice></div>}
+    </Surface>
+    {confirmation && <ConfirmModal value={confirmation} close={() => setConfirmation(null)} />}
+  </div>
+}
+
+function BillingForm({ detail, canWrite, mutate }: { detail: Detail; canWrite: boolean; mutate: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const fields: [keyof BillingConfig, string][] = [['legalName', 'Raison sociale'], ['vatNumber', 'Numéro de TVA'], ['legalAddress', 'Adresse légale'], ['billingEmail', 'E-mail de facturation'], ['iban', 'IBAN'], ['bic', 'BIC'], ['bankName', 'Banque'], ['beneficiary', 'Bénéficiaire'], ['invoicePrefix', 'Préfixe des factures'], ['paymentTermsDays', 'Délai de paiement (jours)']]
+  const initial = useMemo(() => Object.fromEntries(fields.map(([key]) => [key, detail.billingConfig?.[key] == null ? (key === 'paymentTermsDays' ? '30' : '') : String(detail.billingConfig[key])])) as Record<string, string>, [detail]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [value, setValue] = useState(initial)
+  useEffect(() => setValue(initial), [initial])
+  const dirty = fields.some(([key]) => value[key] !== initial[key])
+  const { busy, error, submit } = useSubmit(() => mutate(`/api/platform/organizations/${detail.id}/billing`, { method: 'PUT', body: JSON.stringify(value) }, 'Identité légale enregistrée.'))
+  return <form onSubmit={submit} className="mt-5"><Surface title="Identité légale et facturation" description="Utilisée sur les nouvelles factures ; les factures existantes conservent leurs mentions." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={() => setValue(initial)} />}>
+    <div className="grid gap-3 p-4 sm:grid-cols-2">{fields.map(([key, label]) => <TextField key={key} label={label} value={value[key]} set={(next) => setValue({ ...value, [key]: next })} disabled={!canWrite} type={key === 'paymentTermsDays' ? 'number' : 'text'} mono={key === 'iban' || key === 'bic'} />)}</div>
+    {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+  </Surface></form>
+}
+
+// ─── Standard members ────────────────────────────────────────────────────────
+
+function MembersPanel({ detail, canWrite, availableUsers, mutate }: { detail: Detail; canWrite: boolean; availableUsers: AvailableUser[]; mutate: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const [adding, setAdding] = useState(false)
+  const [error, setError] = useState('')
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const act = (url: string, init: RequestInit, success: string) => { setError(''); return mutate(url, init, success).catch((cause) => { setError(errorText(cause, 'Action impossible')) }) }
+  const admins = detail.users.filter((member) => member.role === 'ORG_ADMIN')
+  return <Surface title="Accès à l’organisation" description={`${detail.users.length} membre${detail.users.length > 1 ? 's' : ''} · ${admins.length} administrateur${admins.length > 1 ? 's' : ''}. La gestion courante revient aux administrateurs de l’organisation.`} action={canWrite && <button onClick={() => setAdding(true)} className={buttonClass.secondary}>＋ Ajouter</button>}>
+    {error && <div className="px-4 pt-3"><Notice tone="error">{error}</Notice></div>}
+    <ul className="max-h-[360px] divide-y divide-black/[.05] overflow-y-auto">{detail.users.map((member) => <li key={member.id} className="flex flex-wrap items-center gap-3 px-4 py-2.5">
+      <div className="min-w-0 flex-1"><p className={`truncate text-sm font-medium ${member.user.isActive ? '' : 'text-black/50'}`}>{member.user.firstName} {member.user.lastName}{!member.user.isActive && <span className="ml-2 text-xs font-normal">(désactivé)</span>}</p><p className="truncate text-xs text-black/60">@{member.user.username}{member.user.email ? ` · ${member.user.email}` : ''}</p></div>
+      <select aria-label={`Rôle de ${member.user.firstName} ${member.user.lastName}`} disabled={!canWrite} value={member.role} onChange={(e) => { const role = e.target.value; setConfirmation({ title: 'Changer le rôle', confirm: 'Appliquer', body: <><strong>{member.user.firstName} {member.user.lastName}</strong> passera de {roleLabels[member.role]} à {roleLabels[role]}.</>, run: () => act(`/api/platform/organizations/${detail.id}/members/${member.id}`, { method: 'PATCH', body: JSON.stringify({ role }) }, 'Rôle modifié.') }) }} className={`${inputClass} w-auto disabled:bg-black/[.03]`}>{roles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select>
+      {canWrite && <button onClick={() => setConfirmation({ title: 'Retirer de l’organisation', confirm: 'Retirer', destructive: true, body: <><strong>{member.user.firstName} {member.user.lastName}</strong> perdra l’accès à cette organisation. Son compte utilisateur est conservé.</>, run: () => act(`/api/platform/organizations/${detail.id}/members/${member.id}`, { method: 'DELETE' }, 'Membre retiré.') })} className={`${buttonClass.ghost} !text-red-700`}>Retirer</button>}
+    </li>)}</ul>
+    {adding && <AddPlatformMemberModal detail={detail} availableUsers={availableUsers} close={() => setAdding(false)} mutate={mutate} />}
+    {confirmation && <ConfirmModal value={confirmation} close={() => setConfirmation(null)} />}
+  </Surface>
+}
+
+function AddPlatformMemberModal({ detail, availableUsers, close, mutate }: { detail: Detail; availableUsers: AvailableUser[]; close: () => void; mutate: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const [form, setForm] = useState({ existingUserId: '', firstName: '', lastName: '', username: '', email: '', password: '', role: 'ORG_ADMIN' })
+  const { busy, error, submit } = useSubmit(async () => { await mutate(`/api/platform/organizations/${detail.id}/members`, { method: 'POST', body: JSON.stringify(form) }, 'Membre ajouté.'); close() })
+  const existing = Boolean(form.existingUserId)
+  return <Modal title={`Ajouter un accès · ${detail.displayName || detail.name}`} close={close}>
+    <form onSubmit={submit} className="space-y-3">
+      <label className="block"><span className="text-xs font-medium text-black/70">Compte</span><select value={form.existingUserId} onChange={(e) => setForm({ ...form, existingUserId: e.target.value })} className={`${inputClass} mt-1`}><option value="">Nouveau compte</option>{availableUsers.map((user) => <option key={user.id} value={user.id}>{user.firstName} {user.lastName} · @{user.username}</option>)}</select></label>
+      {!existing && <><div className="grid gap-3 sm:grid-cols-2"><TextField label="Prénom" value={form.firstName} set={(firstName) => setForm({ ...form, firstName })} required autoFocus /><TextField label="Nom" value={form.lastName} set={(lastName) => setForm({ ...form, lastName })} required /></div>
+        <TextField label="Identifiant de connexion" value={form.username} set={(username) => setForm({ ...form, username })} required />
+        <TextField label="E-mail (facultatif)" type="email" value={form.email} set={(email) => setForm({ ...form, email })} />
+        <TextField label="Mot de passe initial" type="password" value={form.password} set={(password) => setForm({ ...form, password })} required hint="À transmettre par un canal sûr." /></>}
+      <label className="block"><span className="text-xs font-medium text-black/70">Rôle</span><select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={`${inputClass} mt-1`}>{roles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>
+      {error && <Notice tone="error">{error}</Notice>}
+      <div className="flex justify-end gap-2 pt-2"><button type="button" onClick={close} className={buttonClass.secondary}>Annuler</button><button disabled={busy} className={buttonClass.primary}>{busy ? 'Ajout…' : 'Ajouter'}</button></div>
+    </form>
+  </Modal>
+}
+
+// ─── Modals ──────────────────────────────────────────────────────────────────
+
+function CreateOrganizationModal({ close, created }: { close: () => void; created: (id: string) => Promise<void> }) {
+  const [form, setForm] = useState({ name: '', slug: '', firstName: '', lastName: '', username: '', email: '', password: '' })
+  const withAdmin = Boolean(form.username)
+  const { busy, error, submit } = useSubmit(async () => {
+    const admin = withAdmin ? { firstName: form.firstName, lastName: form.lastName, username: form.username, email: form.email, password: form.password } : null
+    const body = await call('/api/platform/organizations', { method: 'POST', body: JSON.stringify({ name: form.name, slug: form.slug, status: 'ACTIVE', enabledModules: [...modules], admin }) })
+    await created(body.organization.id)
+  })
+  return <Modal title="Nouvelle organisation Standard" close={close} width="max-w-lg">
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2"><TextField label="Nom" value={form.name} set={(name) => setForm({ ...form, name })} required autoFocus /><TextField label="Identifiant (slug)" value={form.slug} set={(slug) => setForm({ ...form, slug })} placeholder="Généré si vide" mono /></div>
+      <fieldset className="rounded-lg border border-black/[.08] p-3"><legend className="px-1 text-xs font-medium text-black/70">Premier administrateur (facultatif)</legend>
+        <div className="grid gap-3 sm:grid-cols-2"><TextField label="Prénom" value={form.firstName} set={(firstName) => setForm({ ...form, firstName })} required={withAdmin} /><TextField label="Nom" value={form.lastName} set={(lastName) => setForm({ ...form, lastName })} required={withAdmin} /><TextField label="Identifiant" value={form.username} set={(username) => setForm({ ...form, username })} /><TextField label="E-mail" type="email" value={form.email} set={(email) => setForm({ ...form, email })} /><div className="sm:col-span-2"><TextField label="Mot de passe initial" type="password" value={form.password} set={(password) => setForm({ ...form, password })} required={withAdmin} /></div></div>
+      </fieldset>
+      <p className="text-xs text-black/60">Tous les modules sont activés par défaut ; ajustez-les ensuite dans l’espace de l’organisation.</p>
+      {error && <Notice tone="error">{error}</Notice>}
+      <div className="flex justify-end gap-2"><button type="button" onClick={close} className={buttonClass.secondary}>Annuler</button><button disabled={busy} className={buttonClass.primary}>{busy ? 'Création…' : 'Créer l’organisation'}</button></div>
+    </form>
+  </Modal>
+}
+
+function ConfirmModal({ value, close }: { value: Confirmation; close: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const run = async () => { setBusy(true); try { await value.run() } finally { setBusy(false); close() } }
+  return <Modal title={value.title} close={close}>
+    <p className="text-sm leading-6 text-black/70">{value.body}</p>
+    <div className="mt-5 flex justify-end gap-2"><button onClick={close} className={buttonClass.secondary}>Annuler</button><button autoFocus disabled={busy} onClick={() => void run()} className={value.destructive ? buttonClass.danger : buttonClass.primary}>{busy ? '…' : value.confirm}</button></div>
+  </Modal>
+}
 
 export const getServerSideProps: GetServerSideProps = async ({ req, res }) => {
   const user = await getPlatformUser(req)

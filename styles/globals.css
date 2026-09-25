@@ -95,3 +95,26 @@ button {
     transition: none;
   }
 }
+
+/*
+ * Admin consoles (/admin, /admin/organization). The app does not load Tailwind preflight, so these pages reset
+ * native controls locally. Scoped to .gerard-admin so dispatch and the other screens are unaffected.
+ */
+.gerard-admin *, .gerard-admin *::before, .gerard-admin *::after { box-sizing: border-box; border-width: 0; border-style: solid; }
+.gerard-admin button, .gerard-admin input, .gerard-admin select, .gerard-admin textarea { font: inherit; color: inherit; margin: 0; }
+.gerard-admin button { background: transparent; padding: 0; cursor: pointer; text-align: inherit; }
+.gerard-admin button:disabled { cursor: not-allowed; }
+.gerard-admin a { color: inherit; text-decoration: inherit; }
+.gerard-admin :is(h1, h2, h3, p, dl, dd, ul, ol, fieldset) { margin: 0; }
+.gerard-admin :is(ul, ol) { list-style: none; padding: 0; }
+.gerard-admin fieldset { min-width: 0; }
+.gerard-admin table { border-collapse: collapse; }
+.gerard-admin summary::-webkit-details-marker { display: none; }
+/* The global button rule removes box-shadow rings, so keyboard focus uses an outline instead. */
+.gerard-admin :is(button, a, summary, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid #8eb800 !important; outline-offset: 2px; }
+/* Tailwind base normally initialises these; without it transform, ring and shadow utilities produce invalid values. */
+.gerard-admin, .gerard-admin *, .gerard-admin *::before, .gerard-admin *::after {
+  --tw-translate-x: 0; --tw-translate-y: 0; --tw-rotate: 0; --tw-skew-x: 0; --tw-skew-y: 0; --tw-scale-x: 1; --tw-scale-y: 1;
+  --tw-ring-inset: var(--tw-empty,/*!*/ /*!*/); --tw-ring-offset-width: 0px; --tw-ring-offset-color: #fff; --tw-ring-color: rgb(142 184 0 / 0.5);
+  --tw-ring-offset-shadow: 0 0 #0000; --tw-ring-shadow: 0 0 #0000; --tw-shadow: 0 0 #0000; --tw-shadow-colored: 0 0 #0000;
+}
