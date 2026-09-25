@@ -23,8 +23,32 @@ const registeredInstances: readonly GerardInstanceRegistryEntry[] = Object.freez
   novotraluxInstance,
 ])
 
+function isPreviewRuntime(env: NodeJS.ProcessEnv) {
+  return env.VERCEL_ENV === 'preview' || env.GERARD_INSTANCE_ENVIRONMENT === 'preview' || env.GERARD_INSTANCE_ENVIRONMENT === 'staging'
+}
+
+function previewConfigurationEndpoint(instance: GerardInstanceRegistryEntry, env: NodeJS.ProcessEnv) {
+  const key = `GERARD_PLATFORM_INSTANCE_${instance.application.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_PREVIEW_CONFIGURATION_ENDPOINT`
+  const value = env[key]
+  if (!value) return undefined
+  try {
+    const endpoint = new URL(value)
+    if (endpoint.protocol !== 'https:' || endpoint.pathname !== '/api/internal/platform/configuration') return undefined
+    return endpoint.toString()
+  } catch {
+    return undefined
+  }
+}
+
+function resolveRuntimeInstance(instance: GerardInstanceRegistryEntry, env: NodeJS.ProcessEnv = process.env): GerardInstanceRegistryEntry {
+  if (instance.applicationType !== 'CUSTOM' || !isPreviewRuntime(env)) return instance
+  // Preview must fail closed rather than send signed configuration commands to Production.
+  return { ...instance, configurationEndpoint: previewConfigurationEndpoint(instance, env) }
+}
+
 export function listRegisteredGerardInstances() {
-  return registeredInstances.map((instance) => {
+  return registeredInstances.map((registeredInstance) => {
+    const instance = resolveRuntimeInstance(registeredInstance)
     const publicUrl = instance.domain ? `https://${instance.domain}` : null
     return { ...instance, publicUrl, adminUrl: publicUrl ? `${publicUrl}/admin/organization` : null }
   })
