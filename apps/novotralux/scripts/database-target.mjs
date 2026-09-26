@@ -8,6 +8,7 @@ export function resolveDeploymentEnvironment(env) {
   const vercel = env.VERCEL_ENV?.trim().toLowerCase() || undefined
   const target = env.VERCEL_TARGET_ENV?.trim().toLowerCase() || undefined
   if (vercel === 'production') {
+    if (declared === 'staging') return 'staging'
     if (declared && declared !== 'production') throw new Error('DEPLOYMENT_ENVIRONMENT_CONFLICT')
     return 'production'
   }

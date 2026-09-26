@@ -16,7 +16,10 @@ const cases: [Record<string, string>, string][] = [
   [{ VERCEL_ENV: 'preview', GERARD_INSTANCE_ENVIRONMENT: 'staging' }, 'staging'],
   [{ VERCEL_ENV: 'preview', VERCEL_TARGET_ENV: 'staging' }, 'staging'],
   [{ VERCEL_ENV: 'development' }, 'development'],
-  [{ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging' }, 'DEPLOYMENT_ENVIRONMENT_CONFLICT'],
+  // Staging projects run as Vercel production and declare staging.
+  [{ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging' }, 'staging'],
+  [{ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'preview' }, 'DEPLOYMENT_ENVIRONMENT_CONFLICT'],
+  [{ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'development' }, 'DEPLOYMENT_ENVIRONMENT_CONFLICT'],
   [{ VERCEL_ENV: 'preview', GERARD_INSTANCE_ENVIRONMENT: 'production' }, 'DEPLOYMENT_ENVIRONMENT_CONFLICT'],
   [{ VERCEL_ENV: 'preview', VERCEL_TARGET_ENV: 'staging', GERARD_INSTANCE_ENVIRONMENT: 'preview' }, 'DEPLOYMENT_ENVIRONMENT_CONFLICT'],
   [{ GERARD_INSTANCE_ENVIRONMENT: 'prod' }, 'DEPLOYMENT_ENVIRONMENT_UNKNOWN'],
@@ -54,7 +57,8 @@ for (const host of ['www.novotralux.eu', 'novotralux.eu', 'NOVOTRALUX-CUSTOM.ver
 assert.equal(novotralux({ GERARD_INSTANCE_ENVIRONMENT: 'staging', GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT: 'http://novotralux-staging.example.com/api/internal/platform/configuration' })?.configurationEndpoint, undefined, 'Staging requires HTTPS')
 assert.equal(novotralux({})?.configurationEndpoint, undefined, 'local development no longer defaults to Production Custom')
 assert.equal(novotralux({ GERARD_PLATFORM_INSTANCE_NOVOTRALUX_DEVELOPMENT_CONFIGURATION_ENDPOINT: 'http://localhost:3200/api/internal/platform/configuration' })?.configurationEndpoint, 'http://localhost:3200/api/internal/platform/configuration', 'explicit local endpoint')
-assert.throws(() => novotralux({ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging', ...all }), /DEPLOYMENT_ENVIRONMENT_CONFLICT/, 'ambiguous runtime fails closed')
+assert.equal(novotralux({ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging', ...all })?.configurationEndpoint, STAGING, 'Staging project (Vercel production + staging) → Staging Custom only')
+assert.throws(() => novotralux({ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'preview', ...all }), /DEPLOYMENT_ENVIRONMENT_CONFLICT/, 'ambiguous runtime fails closed')
 for (const [key, value] of Object.entries(saved)) if (value !== undefined) process.env[key] = value
 
 // ─── Databases: each environment reads its own, never another's ─────────────────────────────────────────
@@ -72,6 +76,11 @@ assert.throws(() => assertRuntimeDatabase(urls.preview, { VERCEL_ENV: 'productio
 assert.throws(() => assertRuntimeDatabase(urls.production, {} as never), /DATABASE_ENVIRONMENT_MISMATCH/, 'runtime: undeclared local run cannot open Production DB')
 assert.doesNotThrow(() => assertRuntimeDatabase(urls.production, { VERCEL_ENV: 'production' } as never), 'runtime: Production opens Production DB')
 assert.doesNotThrow(() => assertRuntimeDatabase(urls.staging, { GERARD_INSTANCE_ENVIRONMENT: 'staging' } as never), 'runtime: Staging opens Staging DB')
+// Staging projects run as Vercel production: the declaration decides, and each mislabelling fails closed.
+assert.doesNotThrow(() => assertRuntimeDatabase(urls.staging, { VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging' } as never), 'Staging project opens its Staging DB')
+assert.throws(() => assertRuntimeDatabase(urls.production, { VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging' } as never), /DATABASE_ENVIRONMENT_MISMATCH/, 'a Production project mislabelled staging cannot open the Production DB')
+assert.throws(() => assertRuntimeDatabase(urls.staging, { VERCEL_ENV: 'production' } as never), /DATABASE_ENVIRONMENT_MISMATCH/, 'a Staging project missing its declaration cannot run')
+assert.deepEqual(resolveNovotraluxDatabaseTarget({ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging', NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL: urls.staging }), { target: urls.staging, instanceEnvironment: 'staging' }, 'novotralux-custom-staging reads its Staging DB')
 // Production is an allow-list: a new Staging branch is refused there without any code change; pooled hosts are the same identity.
 assert.throws(() => assertRuntimeDatabase(urls.staging, { VERCEL_ENV: 'production' } as never), /DATABASE_ENVIRONMENT_MISMATCH/, 'runtime: Production refuses an unlisted (Staging) endpoint')
 assert.throws(() => assertRuntimeDatabase('postgresql://u:p@ep-ancient-surf-zav7xo37x.eu.aws.neon.tech/neondb', { VERCEL_ENV: 'production' } as never), /DATABASE_ENVIRONMENT_MISMATCH/, 'runtime: Production refuses a look-alike endpoint')
@@ -86,6 +95,7 @@ const prepare = (env: Record<string, string>) => {
 assert.match(prepare({ VERCEL_ENV: 'production', DATABASE_URL: urls.production }), /skipped \(production\)/, 'prepare is a no-op in Production')
 assert.match(prepare({ VERCEL_ENV: 'production', DATABASE_URL: urls.staging }), /DATABASE_ENVIRONMENT_MISMATCH/, 'Production build fails on a non-Production database')
 assert.match(prepare({ VERCEL_ENV: 'production' }), /PRODUCTION_DATABASE_URL_REQUIRED/, 'Production build fails without a database')
+assert.match(prepare({ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging', DATABASE_URL: urls.production }), /DATABASE_ENVIRONMENT_MISMATCH/, 'a Staging-declared build refuses the Production DB')
 assert.match(prepare({ VERCEL_ENV: 'preview', DATABASE_URL: urls.preview }), /skipped \(preview\)/, 'prepare is a no-op in Preview')
 assert.match(prepare({ GERARD_INSTANCE_ENVIRONMENT: 'staging', DATABASE_URL: urls.production }), /DATABASE_ENVIRONMENT_MISMATCH/, 'prepare refuses Production DB')
 assert.match(prepare({ GERARD_INSTANCE_ENVIRONMENT: 'staging', DATABASE_URL: urls.preview }), /DATABASE_ENVIRONMENT_MISMATCH/, 'prepare refuses Preview DB')

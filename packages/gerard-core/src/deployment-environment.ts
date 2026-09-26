@@ -11,6 +11,9 @@ export function resolveDeploymentEnvironment(env: Record<string, string | undefi
   const vercel = env.VERCEL_ENV?.trim().toLowerCase() || undefined
   const target = env.VERCEL_TARGET_ENV?.trim().toLowerCase() || undefined
   if (vercel === 'production') {
+    // The permanent Staging projects (gerard-staging, novotralux-custom-staging) serve their deployments as Vercel
+    // "production" and declare `staging`; that pair is Staging. Any other declaration contradicts Vercel.
+    if (declared === 'staging') return 'staging'
     if (declared && declared !== 'production') throw new Error('DEPLOYMENT_ENVIRONMENT_CONFLICT')
     return 'production'
   }
