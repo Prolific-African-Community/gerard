@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { getCurrentUser } from '../lib/auth/authorization'
 import { DriverActivityPanel } from '../components/driver/DriverActivityPanel'
+import { OrganizationLogo } from '../components/branding/OrganizationLogo'
 
 type DriverMissionStatus =
   | 'PENDING'
@@ -583,11 +584,7 @@ export default function DriverPage({ username }: DriverPageProps) {
       <div className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col px-4 pb-6 pt-3 sm:py-6">
         <header className="sticky top-0 z-20 -mx-4 rounded-b-[28px] bg-white px-4 py-3 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-4">
-            <img
-              src="/logo_gerard_texte.png"
-              alt="Gerard"
-              className="h-12 w-auto object-contain"
-            />
+            <OrganizationLogo className="h-12 w-auto object-contain" />
 
             <button
               type="button"

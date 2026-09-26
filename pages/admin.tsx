@@ -5,6 +5,7 @@ import type { PlatformConfigurationSnapshot, PlatformOrgAdminSnapshot, PlatformR
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AdminShell, Badge, Modal, Notice, SaveBar, SectionHeader, Surface, Switch, TextField, Toast, auditLabel, buttonClass, formatDate, formatRelative, headerLinkClass, inputClass, roleLabels } from '../components/admin/ui'
+import { brandAssetAcceptAttribute, type BrandAssetKind } from '../lib/tenant/brand-assets'
 import { LogoutButton } from '../components/site/LogoutButton'
 import { getPlatformUser } from '../lib/auth/platform-authorization'
 
@@ -321,6 +322,59 @@ function IdentityForm({ configuration, canWrite, custom, save }: FormProps) {
   </Surface></form>
 }
 
+
+// Logo/favicon: external URL, uploaded file, or empty to inherit the application default. The upload posts to the
+// server, which stores the file and returns only its public URL.
+function brandAssetOrigin(value: string) {
+  if (!value.trim()) return 'Valeur par défaut de l’application'
+  if (/\/branding\/(logo|favicon)-\d+\./.test(value)) return 'Fichier téléversé'
+  return value.trim().startsWith('/') ? 'Fichier du dépôt' : 'URL externe'
+}
+
+function BrandAssetField({ label, kind, value, set, disabled, placeholder, hint }: { label: string; kind: BrandAssetKind; value: string; set: (value: string) => void; disabled: boolean; placeholder?: string; hint?: string }) {
+  const inputId = `brand-asset-${kind}`
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [storageUnavailable, setStorageUnavailable] = useState(false)
+
+  async function upload(file: File) {
+    setBusy(true)
+    setError('')
+    try {
+      const body = new FormData()
+      body.append('kind', kind)
+      body.append('file', file)
+      const response = await fetch('/api/admin/organization/branding-asset', { method: 'POST', body })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (result?.code === 'BRAND_ASSET_STORAGE_UNAVAILABLE') setStorageUnavailable(true)
+        throw new Error(result?.error || 'Téléversement impossible.')
+      }
+      set(result.url as string)
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : 'Téléversement impossible.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="space-y-1.5">
+    <TextField label={label} value={value} set={set} disabled={disabled} placeholder={placeholder} hint={hint} />
+    <div className="flex items-center gap-2">
+      {value.trim() ? <img src={value} alt="" className="h-8 w-8 shrink-0 rounded border border-black/10 bg-white object-contain p-0.5" onError={(e) => { e.currentTarget.style.visibility = 'hidden' }} /> : null}
+      <span className="min-w-0 flex-1 truncate text-xs text-black/50">{brandAssetOrigin(value)}</span>
+      {storageUnavailable
+        ? <span className="text-xs font-medium text-black/50">Téléversement indisponible ici</span>
+        : <>
+            <input id={inputId} type="file" accept={brandAssetAcceptAttribute} disabled={disabled || busy} className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(file) }} />
+            <label htmlFor={inputId} className={`${buttonClass.ghost} ${disabled || busy ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>{busy ? 'Envoi…' : 'Téléverser'}</label>
+          </>}
+      {value.trim() ? <button type="button" onClick={() => set('')} disabled={disabled || busy} className={buttonClass.ghost}>Retirer</button> : null}
+    </div>
+    {error && <span className="block text-xs font-medium text-red-700">{error}</span>}
+  </div>
+}
+
 function BrandingForm({ configuration, canWrite, save }: FormProps) {
   const { draft, setDraft, reset, dirty, payload } = useDraft<Record<string, string>>(['accentColor', 'logoUrl', 'faviconUrl'], configuration)
   const { busy, error, submit } = useSubmit(() => save('branding', payload))
@@ -330,8 +384,8 @@ function BrandingForm({ configuration, canWrite, save }: FormProps) {
     <div className="grid gap-6 p-4 lg:grid-cols-[1fr_280px]">
       <div className="space-y-3">
         <label className="block"><span className="text-xs font-medium text-black/70">Couleur d’accent</span><div className="mt-1 flex gap-2"><input type="color" aria-label="Choisir la couleur d’accent" disabled={!canWrite} value={accent} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value.toUpperCase() })} className="h-9 w-11 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white p-1 disabled:cursor-not-allowed" /><input aria-label="Code couleur" disabled={!canWrite} value={draft.accentColor} onChange={(e) => setDraft({ ...draft, accentColor: e.target.value })} placeholder="Couleur par défaut" className={`${inputClass} font-mono disabled:bg-black/[.03]`} /></div>{draft.accentColor && !/^#[0-9a-f]{6}$/i.test(draft.accentColor) && <span className="mt-1 block text-xs font-medium text-red-700">Format attendu : #RRGGBB</span>}</label>
-        <TextField label="Logo" value={draft.logoUrl} set={(logoUrl) => setDraft({ ...draft, logoUrl })} disabled={!canWrite} placeholder="https://… ou /logo.png" />
-        <TextField label="Favicon" value={draft.faviconUrl} set={(faviconUrl) => setDraft({ ...draft, faviconUrl })} disabled={!canWrite} placeholder="https://… ou /favicon.ico" />
+        <BrandAssetField label="Logo" kind="logo" value={draft.logoUrl} set={(logoUrl) => setDraft({ ...draft, logoUrl })} disabled={!canWrite} placeholder="https://… ou /logo.png" />
+        <BrandAssetField label="Favicon" kind="favicon" value={draft.faviconUrl} set={(faviconUrl) => setDraft({ ...draft, faviconUrl })} disabled={!canWrite} placeholder="https://… ou /favicon.ico" hint="Vide : le logo de l’organisation est utilisé." />
       </div>
       <div><p className="mb-1 text-xs font-medium text-black/70">Aperçu</p>
         <div className="overflow-hidden rounded-lg border border-black/[.08]" aria-hidden>

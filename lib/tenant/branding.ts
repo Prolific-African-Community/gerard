@@ -21,7 +21,8 @@ export function resolveBranding(source?: BrandingSource | null): OrganizationBra
     displayName: source?.displayName?.trim() || DEFAULT_BRANDING.displayName,
     logoUrl: source?.logoUrl?.trim() || DEFAULT_BRANDING.logoUrl,
     accentColor: normalizeAccentColor(source?.accentColor) || DEFAULT_BRANDING.accentColor,
-    faviconUrl: source?.faviconUrl?.trim() || DEFAULT_BRANDING.faviconUrl,
+    // Favicon precedence: the configured favicon, else the organization logo, else the Gerard default.
+    faviconUrl: source?.faviconUrl?.trim() || source?.logoUrl?.trim() || DEFAULT_BRANDING.faviconUrl,
     applicationTitle: source?.applicationTitle?.trim() || source?.displayName?.trim() || DEFAULT_BRANDING.applicationTitle,
   }
 }
