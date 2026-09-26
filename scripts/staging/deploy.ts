@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { APPS, LABEL, SCOPE, STAGING_PROJECTS, VERCEL_CLI, assertStagingProject, fail, flags, log, main, resolveProjects, run, runCli, stableHost, vercelCli, type App } from './lib'
+import { APPS, LABEL, SCOPE, STAGING_PROJECTS, VERCEL_CLI, assertStagingProject, nonInteractive, fail, flags, log, main, resolveProjects, run, runCli, stableHost, vercelCli, type App } from './lib'
 
 // npm run staging:deploy               → gerard-staging + novotralux-custom-staging
 // npm run gerard:staging:deploy        → gerard-staging only
@@ -36,7 +36,7 @@ export async function deployToStaging(apps: App[], options: { allowDirty?: boole
       const remote = await vercelCli.api(`/v9/projects/${target.name}`) as { id: string; name: string; accountId: string }
       if (remote.id !== target.id || remote.name !== target.name) fail(`${target.name}: project identity mismatch: refused.`)
       log(`\n→ ${branch}@${commit.slice(0, 7)} → ${LABEL[target.app]} (${target.name})`)
-      const result = await runCli(VERCEL_CLI, ['deploy', '--prod', '--yes', '--scope', SCOPE], { cwd: worktree, env: { VERCEL_ORG_ID: remote.accountId, VERCEL_PROJECT_ID: remote.id } })
+      const result = await runCli(VERCEL_CLI, [...nonInteractive(['deploy', '--prod']), '--scope', SCOPE], { cwd: worktree, env: { VERCEL_ORG_ID: remote.accountId, VERCEL_PROJECT_ID: remote.id } })
       if (result.code !== 0) fail(`${target.name}: deployment failed (see the Vercel output above).`)
       log(`✔ ${LABEL[target.app]}: https://${(await stableHost(target.name)) ?? `${target.name}.vercel.app`}`)
     }

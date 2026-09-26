@@ -97,8 +97,15 @@ export const runCli = (tool: Cli, args: string[], options: RunOptions = {}) => r
 
 // ─── Vercel CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
 const lastLines = (text: string) => redact(text.trim().split('\n').slice(-3).join(' ')).slice(0, 300)
+// Vercel CLI 60 commands used here that can ask for confirmation: they always get `--yes` (after `vercel login` the
+// tooling never prompts). `project ls`, `project add`, `api` (GET) and `env run` take no confirmation flag.
+export const CONFIRMING_COMMANDS = ['project update', 'project inspect', 'env add', 'deploy']
+export function nonInteractive(args: string[]) {
+  const command = args[0] === 'deploy' ? 'deploy' : `${args[0]} ${args[1]}`
+  return CONFIRMING_COMMANDS.includes(command) && !args.includes('--yes') ? [...args, '--yes'] : args
+}
 export async function vercel(args: string[], options: RunOptions = {}) {
-  const result = await runCli(VERCEL_CLI, [...args, '--scope', SCOPE], { quiet: true, ...options })
+  const result = await runCli(VERCEL_CLI, [...nonInteractive(args), '--scope', SCOPE], { quiet: true, ...options })
   if (result.code !== 0) fail(`vercel ${args.slice(0, 2).join(' ')} failed: ${lastLines(result.output)}`)
   return result.stdout
 }
@@ -117,7 +124,7 @@ export const vercelCli = {
   // Read-only API reads through the CLI session (team id for deployments, project domains for the stable URL).
   api: async (endpoint: string) => parseJson(await vercel(['api', `${endpoint}${endpoint.includes('?') ? '&' : '?'}slug=${SCOPE}`]), `api ${endpoint}`),
   // The value goes through stdin, never through the command line. Staging projects only, Vercel "production" scope.
-  setEnv: (project: string, key: string, value: string) => vercel(['env', 'add', key, 'production', '--project', assertStagingProject(project), '--force', '--yes', '--type', 'config'], { input: value }),
+  setEnv: (project: string, key: string, value: string) => vercel(['env', 'add', key, 'production', '--project', assertStagingProject(project), '--force', '--type', 'config'], { input: value }),
 }
 
 // Stable production host of a project: `<name>.vercel.app` when Vercel assigned it, else its first production

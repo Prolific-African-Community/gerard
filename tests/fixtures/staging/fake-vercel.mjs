@@ -21,6 +21,10 @@ const out = (value) => { process.stdout.write(typeof value === 'string' ? value 
 const die = (message, code = 1) => { process.stderr.write(`Error: ${message}\n`); process.exit(code) }
 const project = (nameOrId) => state.projects.find((item) => item.name === nameOrId || item.id === nameOrId)
 
+// Like Vercel CLI 60 without a TTY: confirming commands fail without --yes; commands without that option reject it.
+const name = command[0] === 'deploy' ? 'deploy' : `${command[0]} ${command[1]}`
+if (['project update', 'project inspect', 'env add', 'deploy'].includes(name) && !command.includes('--yes')) die('Confirmation required. Re-run with --yes or in an interactive terminal.')
+if (['project ls', 'project add', 'env run', 'api ' + command[1], 'whoami undefined'].includes(name) && command.includes('--yes')) die(`unknown or unexpected option: --yes`, 2)
 if (command[0] === 'whoami') process.exit(state.vercelUnauthenticated ? 1 : 0)
 if (command[0] === 'login') process.exit(1)
 if (scope !== state.scope) die(`scope ${scope} not accessible`)
@@ -39,7 +43,6 @@ if (command[0] === 'project') {
     const found = project(name) ?? die('project not found')
     const map = { '--framework': 'framework', '--build-command': 'buildCommand', '--install-command': 'installCommand', '--output-directory': 'outputDirectory', '--root-directory': 'rootDirectory', '--node-version': 'nodeVersion' }
     for (const [flag, key] of Object.entries(map)) if (option(flag) !== undefined) found.settings[key] = option(flag)
-    if (command.includes('--yes')) die('unknown option --yes')
     save(); out('Updated')
   } else die(`unsupported project ${sub}`, 2)
   process.exit(0)

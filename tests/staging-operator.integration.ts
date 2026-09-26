@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import pg from 'pg'
 
 import { meaningfulChanges } from '../scripts/staging/deploy'
+import { CONFIRMING_COMMANDS, nonInteractive } from '../scripts/staging/lib'
 
 // Staging operator commands (npm run staging:setup / staging:deploy / staging:check) against fake `vercel` and `neonctl`
 // CLIs and a disposable local PostgreSQL standing in for the Neon Staging branches. The fakes pin the tooling's contract
@@ -69,6 +70,11 @@ async function main() {
   assert.deepEqual(meaningfulChanges(' M next-env.d.ts\n M tsconfig.tsbuildinfo\n'), [], 'generated files ignored')
   assert.deepEqual(meaningfulChanges(' M next-env.d.ts\n M lib/prisma.ts\n?? scripts/new.ts\n'), ['lib/prisma.ts', 'scripts/new.ts'], 'source changes refused')
 
+  // Non-interactive: every confirming Vercel command carries --yes (the fake CLI fails like Vercel CLI 60 otherwise).
+  assert.deepEqual(CONFIRMING_COMMANDS, ['project update', 'project inspect', 'env add', 'deploy'])
+  assert.deepEqual(nonInteractive(['project', 'update', 'gerard-staging', '--framework', 'nextjs']), ['project', 'update', 'gerard-staging', '--framework', 'nextjs', '--yes'])
+  assert.deepEqual(nonInteractive(['project', 'add', 'gerard-staging']), ['project', 'add', 'gerard-staging'], 'no --yes where the command has no such option')
+
   // A local .env with Production-like values must never reach a Staging deployment (deploys build from a worktree).
   const hadEnv = existsSync(sentinel)
   if (!hadEnv) writeFileSync(sentinel, 'GERARD_TEST_SENTINEL=1\n')
@@ -86,6 +92,19 @@ async function main() {
     assert.ok(!readState().vercelCalls.some((call: any) => call.args[0] === 'env' && call.args[1] === 'add'), `${label}: no variable written`)
     assertProductionUntouched(label)
   }
+
+  // ─── Partial earlier run: both Staging projects exist (bare settings, no variables) → reused, never recreated ──
+  writeState()
+  const partial = readState()
+  partial.projects = [...productionProjects(), ...['gerard-staging', 'novotralux-custom-staging'].map((name) => ({ id: `prj_${name.replace(/-/g, '_')}`, name, accountId: 'team_jonathan', settings: { framework: null, buildCommand: null, installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '22.x' }, env: {}, domains: [] }))]
+  partial.vercelCalls = []
+  writeFileSync(stateFile, JSON.stringify(partial))
+  const resumed = await command('setup', ['--no-deploy'])
+  assert.equal(resumed.code, 0, resumed.output)
+  assert.ok(!readState().vercelCalls.some((call: any) => call.args[0] === 'project' && call.args[1] === 'add'), 'existing Staging projects reused')
+  assert.equal(project('gerard-staging').settings.buildCommand, 'npm run build', 'settings aligned on the reused project (project update --yes)')
+  assertProductionUntouched('resumed setup')
+  for (const url of Object.values(urls)) { const admin = new pg.Client({ connectionString: adminUrl }); await admin.connect(); await admin.query(`drop database if exists "${new URL(url).pathname.slice(1)}" with (force)`); await admin.end() }
 
   // ─── First setup: creates both Staging projects, configures them, deploys HEAD, returns the credential once ─────
   // Vercel gives gerard-staging a suffixed host on first deploy: setup must realign Gerard's variables and redeploy it.
