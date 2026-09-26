@@ -76,6 +76,7 @@ const customCodes: Record<string, string> = { PLATFORM_ACCOUNT_PROTECTED: 'Compt
 async function call(url: string, init: RequestInit) {
   const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json' } })
   const body = await response.json().catch(() => ({}))
+  if (body.code === 'CUSTOM_INSTANCE_OUTDATED') throw new Error(`L’instance Custom jointe (${body.endpointHost}) exécute une version antérieure${body.instanceCoreVersion ? ` (Core ${body.instanceCoreVersion})` : ''} qui ne connaît pas cette action. Redéployez-la ou pointez l’endpoint de configuration Preview vers le déploiement à jour.`)
   if (!response.ok) throw new Error(customCodes[body.code] || customErrors[body.error] || body.error || 'Opération impossible')
   return body
 }

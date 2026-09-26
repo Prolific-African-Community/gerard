@@ -1,5 +1,5 @@
 import { getVercelOidcToken } from '@vercel/oidc'
-import { isPlatformConfigurationReadAction, type PlatformConfigurationCommand } from '@prolific/gerard-core'
+import { isPlatformConfigurationReadAction, isPlatformRecoveryAction, type PlatformConfigurationCommand } from '@prolific/gerard-core'
 
 import { prisma } from '../prisma'
 import { getRegisteredGerardInstance } from '../runtime/instance-registry'
@@ -33,6 +33,11 @@ export async function sendCustomConfigurationCommand(input: { application: strin
     const result = await response.json().catch(() => ({}))
     await audit(response.ok, response.ok ? undefined : String(result?.error || response.status))
     if (response.ok) return { status: 200, body: result }
+    // An instance built before an action existed rejects it: before the shared parser as a generic 'Invalid configuration
+    // request', since then as UNSUPPORTED_CONFIGURATION_ACTION with its Core version. Report that as version skew and name
+    // the endpoint host, so a stale Preview endpoint is visible instead of looking like a bad request.
+    const outdated = response.status === 400 && (result?.error === 'UNSUPPORTED_CONFIGURATION_ACTION' || (result?.error === 'Invalid configuration request' && (isRead || isPlatformRecoveryAction(input.action))))
+    if (outdated) return { status: 409, body: { error: 'Custom instance outdated', code: 'CUSTOM_INSTANCE_OUTDATED', instanceCoreVersion: typeof result?.coreVersion === 'string' ? result.coreVersion : null, endpointHost: new URL(instance.configurationEndpoint).host } }
     return { status: response.status >= 400 && response.status < 500 ? 400 : 502, body: { error: 'Custom configuration rejected', code: result?.error || 'INSTANCE_CONFIGURATION_FAILED' } }
   } catch (error) {
     console.error('Custom configuration request failed', { targetApplication: instance.application, action: input.action, error: error instanceof Error ? error.message : 'unknown' })

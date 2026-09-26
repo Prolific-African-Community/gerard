@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { isPlatformConfigurationAction, isPlatformConfigurationReadAction, isPlatformRecoveryAction } from '@prolific/gerard-core'
+import { GERARD_CORE_VERSION, parsePlatformCommand } from '@prolific/gerard-core'
 import { verifyPlatformConfigurationRequest } from '../../../../lib/platform/configuration-channel'
 import { applyPlatformConfiguration, readPlatformConfiguration } from '../../../../lib/organization/platform-configuration'
 import { listOrganizationAdmins, recoverOrganizationAdmin, recoveryErrorStatus } from '../../../../lib/organization/admin-recovery'
@@ -15,40 +15,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const verified = verifyPlatformConfigurationRequest(request, Array.isArray(signature) ? signature[0] : signature, expectedApplication, expectedOrganizationId)
   if (!verified.ok) return res.status(401).json({ error: verified.reason })
   const value = request as Record<string, unknown>
-  if (isPlatformConfigurationReadAction(value.action)) {
+  // Same Core parser as the Platform route. An unknown action names this instance's Core version, so a Platform talking
+  // to an outdated instance reports version skew instead of a generic rejection.
+  const command = parsePlatformCommand(value.action, value.payload)
+  if (!command.ok) return res.status(400).json({ error: command.error, coreVersion: GERARD_CORE_VERSION })
+  const platformActorId = typeof req.headers['x-gerard-platform-actor'] === 'string' ? req.headers['x-gerard-platform-actor'] : 'platform'
+  const reply = { ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: command.action }
+
+  if (command.kind === 'read') {
     try {
-      if (value.action === 'getOrgAdmins') return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, admins: await listOrganizationAdmins(expectedOrganizationId) })
-      return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, configuration: await readPlatformConfiguration(expectedOrganizationId) })
+      if (command.action === 'getOrgAdmins') return res.status(200).json({ ...reply, admins: await listOrganizationAdmins(expectedOrganizationId) })
+      return res.status(200).json({ ...reply, configuration: await readPlatformConfiguration(expectedOrganizationId) })
     } catch (error) {
       if (error instanceof Error && error.message === 'ORGANIZATION_NOT_FOUND') return res.status(404).json({ error: error.message })
       console.error('Platform configuration read failed', { application: expectedApplication })
       return res.status(500).json({ error: 'Configuration unavailable' })
     }
   }
-  if (isPlatformRecoveryAction(value.action)) {
-    const payload = value.payload && typeof value.payload === 'object' && !Array.isArray(value.payload) ? value.payload as Record<string, unknown> : {}
-    if (typeof payload.userId !== 'string' || Object.keys(payload).length !== 1) return res.status(400).json({ error: 'FORBIDDEN_CONFIGURATION_FIELD' })
-    const platformActorId = typeof req.headers['x-gerard-platform-actor'] === 'string' ? req.headers['x-gerard-platform-actor'] : 'platform'
+
+  if (command.kind === 'recovery') {
     try {
-      const result = await recoverOrganizationAdmin({ organizationId: expectedOrganizationId, userId: payload.userId, action: value.action, platformActorId, auditActorUserId: payload.userId })
+      const result = await recoverOrganizationAdmin({ organizationId: expectedOrganizationId, userId: command.payload.userId, action: command.action, platformActorId, auditActorUserId: command.payload.userId })
       res.setHeader('Cache-Control', 'no-store')
-      return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, userId: payload.userId, ...result })
+      return res.status(200).json({ ...reply, userId: command.payload.userId, ...result })
     } catch (error) {
       const message = error instanceof Error ? error.message : ''
       if (recoveryErrorStatus[message]) return res.status(recoveryErrorStatus[message]).json({ error: message })
-      console.error('Platform recovery failed', { application: expectedApplication, action: value.action })
+      console.error('Platform recovery failed', { application: expectedApplication, action: command.action })
       return res.status(500).json({ error: 'Recovery unavailable' })
     }
   }
-  if (!isPlatformConfigurationAction(value.action) || !value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) return res.status(400).json({ error: 'Invalid configuration request' })
+
   try {
-    const result = await applyPlatformConfiguration({ organizationId: expectedOrganizationId, action: value.action, payload: value.payload as Record<string, unknown>, platformActorId: typeof req.headers['x-gerard-platform-actor'] === 'string' ? req.headers['x-gerard-platform-actor'] : 'platform' })
-    return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, configuration: result })
+    const result = await applyPlatformConfiguration({ organizationId: expectedOrganizationId, action: command.action, payload: command.payload, platformActorId })
+    return res.status(200).json({ ...reply, configuration: result })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Configuration rejected'
     if (['ORGANIZATION_NOT_FOUND', 'LOCAL_AUDIT_ACTOR_NOT_FOUND'].includes(message)) return res.status(404).json({ error: message })
     if (['FORBIDDEN_CONFIGURATION_FIELD', 'INVALID_BRANDING', 'INVALID_MODULES', 'INVALID_INTEGRATION', 'SECRET_FIELD_FORBIDDEN', 'UNSUPPORTED_CONFIGURATION_ACTION'].includes(message)) return res.status(400).json({ error: message })
-    console.error('Platform configuration request failed', { application: expectedApplication, action: value.action, error: message })
+    console.error('Platform configuration request failed', { application: expectedApplication, action: command.action, error: message })
     return res.status(500).json({ error: 'Configuration unavailable' })
   }
 }

@@ -70,3 +70,32 @@ export function isPlatformRecoveryAction(value: unknown): value is PlatformRecov
 export function isPlatformConfigurationReadAction(value: unknown): value is PlatformConfigurationReadAction {
   return typeof value === 'string' && (platformConfigurationReadActions as readonly string[]).includes(value)
 }
+
+// The single parser for Platform-to-Custom commands, used by both the Platform route and the Custom endpoint, so an
+// action added here is accepted by both sides at once. Reads carry no payload; recovery carries exactly `{ userId }`;
+// writes carry an object whose fields the instance validates.
+export type ParsedPlatformCommand =
+  | { ok: true; kind: 'read'; action: PlatformConfigurationReadAction; payload: Record<string, never> }
+  | { ok: true; kind: 'recovery'; action: PlatformRecoveryAction; payload: { userId: string } }
+  | { ok: true; kind: 'write'; action: PlatformConfigurationAction; payload: Record<string, unknown> }
+  | { ok: false; error: 'UNSUPPORTED_CONFIGURATION_ACTION' | 'INVALID_CONFIGURATION_PAYLOAD' }
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+export function parsePlatformCommand(action: unknown, payload: unknown): ParsedPlatformCommand {
+  if (isPlatformConfigurationReadAction(action)) {
+    if (payload !== undefined && payload !== null && !(isPlainObject(payload) && Object.keys(payload).length === 0)) return { ok: false, error: 'INVALID_CONFIGURATION_PAYLOAD' }
+    return { ok: true, kind: 'read', action, payload: {} }
+  }
+  if (isPlatformRecoveryAction(action)) {
+    if (!isPlainObject(payload) || Object.keys(payload).length !== 1 || typeof payload.userId !== 'string' || !payload.userId) return { ok: false, error: 'INVALID_CONFIGURATION_PAYLOAD' }
+    return { ok: true, kind: 'recovery', action, payload: { userId: payload.userId } }
+  }
+  if (isPlatformConfigurationAction(action)) {
+    if (!isPlainObject(payload)) return { ok: false, error: 'INVALID_CONFIGURATION_PAYLOAD' }
+    return { ok: true, kind: 'write', action, payload }
+  }
+  return { ok: false, error: 'UNSUPPORTED_CONFIGURATION_ACTION' }
+}
