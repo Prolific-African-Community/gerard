@@ -1,7 +1,7 @@
 import path from 'node:path'
 import pg from 'pg'
 
-import { QA_ACCOUNTS, fail, run, type App, type NeonBranch } from './lib'
+import { QA_ACCOUNTS, fail, redact, run, type App, type NeonBranch } from './lib'
 
 // Sanitization and verification of the Neon Staging child branches. A child branch starts as a copy of its Production
 // parent; before any Staging project receives its URL, every row is removed except an explicit allow-list, the result is
@@ -115,7 +115,13 @@ export async function bootstrapDatabase(input: { url: string; app: App; branch: 
     GERARD_APPLICATION_ID: app === 'novotralux' ? 'novotralux' : '', GERARD_INSTANCE_ORGANIZATION_ID: app === 'novotralux' ? 'org-novotralux' : '',
     GERARD_PLATFORM_HOSTNAMES: app === 'gerard' ? input.hosts[0] : '', GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD: app === 'gerard' ? input.initialPassword ?? '' : '',
   } })
-  if (prepare.code !== 0) return { fresh, sanitized, prepared: false, superadminCreated: false, problems: ['migrations/QA accounts failed'], log: prepare.output }
+  if (prepare.code !== 0) {
+    // The real (redacted) failure reaches the operator: stage code plus the end of the prepare output.
+    const output = redact(prepare.output)
+    const stage = /STAGING_[A-Z_]+_FAILED/.exec(output)?.[0] ?? 'STAGING_PREPARE_FAILED'
+    const tail = output.trim().split('\n').slice(-30).join('\n')
+    return { fresh, sanitized, prepared: false, superadminCreated: false, problems: [`${stage}\n${tail}`], log: output }
+  }
   const problems = verifyDatabase(await inspectDatabase(url, app), app, branch, { fresh, hosts: input.hosts })
   return { fresh, sanitized, prepared: true, superadminCreated: /gerard\.staging\.superadmin created/.test(prepare.output), problems, log: prepare.output }
 }

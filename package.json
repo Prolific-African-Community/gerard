@@ -20,6 +20,7 @@
     "novotralux:staging:deploy": "tsx scripts/staging/deploy.ts novotralux",
     "staging:check": "tsx scripts/staging/check.ts",
     "test:staging-operator": "tsx tests/staging-operator.integration.ts",
+    "test:staging-prepare": "tsx tests/staging-prepare.integration.ts",
     "novotralux:preview:check": "npm run preview:check --workspace=@prolific/gerard-novotralux",
     "migrate:legacy": "tsx scripts/migrate-legacy-novotralux.ts",
     "routes:backfill-cache": "tsx scripts/backfill-route-cache.ts",

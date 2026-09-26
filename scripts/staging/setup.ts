@@ -90,6 +90,7 @@ main(async () => {
     const result = await bootstrapDatabase({ url, app, branch, hosts: app === 'gerard' ? [hosts.gerard] : [], initialPassword: app === 'gerard' ? candidatePassword : undefined })
     if (result.sanitized) log(`✔ ${branch.name}: inherited data removed (${result.sanitized.emptied} tables emptied, ${result.sanitized.organizations} organizations removed; kept: schema, migration history, ${STAGING_ORGANIZATION[app]})`)
     else log(`✔ ${branch.name}: already sanitized`)
+    if (!result.prepared) fail(`${branch.name}: database bootstrap failed — its URL is NOT exported to Vercel.\n${result.problems.join('\n')}`)
     if (result.problems.length) fail(`${branch.name} failed verification (${result.problems.join('; ')}): its URL is NOT exported to Vercel.`)
     superadminCreated ||= app === 'gerard' && result.superadminCreated
     databases[app] = { branch, endpoint, stagingUrl: url }
