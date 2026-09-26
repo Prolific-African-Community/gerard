@@ -29,6 +29,14 @@ const instanceKey = (instance: GerardInstanceRegistryEntry, environment: Deploym
 // A non-production Platform reaches a Custom instance only through the endpoint declared for its own environment
 // (e.g. GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT). Missing, malformed or pointing at the
 // Production Custom host: no endpoint, so the channel fails closed.
+// Hosts that serve the Production instance: its configuration endpoint and its public domain (with and without www).
+export function productionHostsOf(instance: GerardInstanceRegistryEntry) {
+  const hosts = new Set<string>()
+  if (instance.configurationEndpoint) hosts.add(new URL(instance.configurationEndpoint).host.toLowerCase())
+  if (instance.domain) { const domain = instance.domain.toLowerCase(); hosts.add(domain); hosts.add(domain.replace(/^www\./, '')); hosts.add(`www.${domain.replace(/^www\./, '')}`) }
+  return hosts
+}
+
 function environmentConfigurationEndpoint(instance: GerardInstanceRegistryEntry, environment: DeploymentEnvironment, env: NodeJS.ProcessEnv) {
   const value = env[instanceKey(instance, environment, 'CONFIGURATION_ENDPOINT')]
   if (!value) return undefined
@@ -36,7 +44,7 @@ function environmentConfigurationEndpoint(instance: GerardInstanceRegistryEntry,
     const endpoint = new URL(value)
     const local = environment === 'development' && ['localhost', '127.0.0.1'].includes(endpoint.hostname)
     if ((endpoint.protocol !== 'https:' && !local) || endpoint.pathname !== '/api/internal/platform/configuration') return undefined
-    if (instance.configurationEndpoint && new URL(instance.configurationEndpoint).host === endpoint.host) return undefined
+    if (productionHostsOf(instance).has(endpoint.host.toLowerCase())) return undefined
     return endpoint.toString()
   } catch {
     return undefined

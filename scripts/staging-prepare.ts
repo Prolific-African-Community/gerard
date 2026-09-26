@@ -3,12 +3,21 @@ import { randomBytes } from 'node:crypto'
 import { resolveDeploymentEnvironment } from '@prolific/gerard-core'
 
 import { assertDatabaseForEnvironment } from '../apps/novotralux/scripts/database-target.mjs'
+import { redact } from './staging/redact'
 
 // Idempotent preparation of the permanent Staging environments, run by every build and a no-op outside Staging:
 // applies migrations to the Staging database and makes sure the stable QA accounts exist. It never resets an existing
-// account, never copies data and never touches another environment (docs/CUSTOM_STAGING_ARCHITECTURE.md).
+// account, never copies data and never touches another environment (docs/CUSTOM_STAGING_WORKFLOW.md).
 
 const environment = resolveDeploymentEnvironment(process.env)
+if (environment === 'production') {
+  // Static identity check, no connection: a Production build whose database is not a documented Production endpoint
+  // fails here, before anything is deployed.
+  if (!process.env.DATABASE_URL) throw new Error('PRODUCTION_DATABASE_URL_REQUIRED')
+  assertDatabaseForEnvironment('production', process.env.DATABASE_URL)
+  console.log('staging-prepare: skipped (production); database identity verified')
+  process.exit(0)
+}
 if (environment !== 'staging') {
   console.log(`staging-prepare: skipped (${environment})`)
   process.exit(0)
@@ -20,7 +29,14 @@ assertDatabaseForEnvironment('staging', url)
 const custom = process.env.GERARD_APPLICATION_ID === 'novotralux'
 
 async function main() {
-  execFileSync('npx', ['prisma', 'migrate', 'deploy'], { stdio: 'inherit', env: process.env })
+  // Migration output names the database host: it is redacted before reaching build or operator logs.
+  try {
+    process.stdout.write(redact(execFileSync('npx', ['prisma', 'migrate', 'deploy'], { env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' })))
+  } catch (error) {
+    const failed = error as { stdout?: string; stderr?: string }
+    process.stdout.write(redact(`${failed.stdout ?? ''}${failed.stderr ?? ''}`))
+    throw new Error('STAGING_MIGRATION_FAILED')
+  }
   const { prisma } = await import('../lib/prisma')
   const { hashPassword } = await import('../lib/auth/password')
   try {

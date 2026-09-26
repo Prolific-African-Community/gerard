@@ -21,22 +21,29 @@ export function resolveDeploymentEnvironment(env) {
   return declared ?? 'development'
 }
 
-// Documented Neon endpoints (docs/ENVIRONMENT_ARCHITECTURE.md). Production endpoints are refused outside Production and
-// non-production endpoints are refused in Production, whatever the variable names say.
-// Staging must also stay off the Preview branch. Add the Staging endpoints to NON_PRODUCTION once created.
+// Database identity is the Neon endpoint id (first host label, pooler suffix removed); no environment name is trusted.
+// Production is an allow-list: it opens only a documented Production endpoint (docs/ENVIRONMENT_ARCHITECTURE.md), so any
+// new Staging or Preview branch is refused there without editing this file. Every other environment refuses the
+// Production endpoints, and Staging also stays off the Preview branch. The Production build runs the same check
+// (scripts/staging-prepare.ts), so a wrong Production variable fails the deployment instead of the running site.
 export const PRODUCTION_DATABASE_ENDPOINTS = ['ep-ancient-surf-zav7xo37', 'ep-ancient-block-za26cw6e']
 export const PREVIEW_DATABASE_ENDPOINTS = ['ep-mute-poetry-za1swvwu']
-export const NON_PRODUCTION_DATABASE_ENDPOINTS = [...PREVIEW_DATABASE_ENDPOINTS]
 
-function endpointOf(url) {
-  try { return new URL(url).hostname } catch { throw new Error('DATABASE_URL_INVALID') }
+export function databaseEndpointId(url) {
+  let host
+  try { host = new URL(url).hostname.toLowerCase() } catch { throw new Error('DATABASE_URL_INVALID') }
+  return host.split('.')[0].replace(/-pooler$/, '')
+}
+
+export function isProductionDatabase(url) {
+  return PRODUCTION_DATABASE_ENDPOINTS.includes(databaseEndpointId(url))
 }
 
 export function assertDatabaseForEnvironment(environment, url) {
-  const host = endpointOf(url)
-  if (environment !== 'production' && PRODUCTION_DATABASE_ENDPOINTS.some((endpoint) => host.includes(endpoint))) throw new Error('DATABASE_ENVIRONMENT_MISMATCH')
-  if (environment === 'production' && NON_PRODUCTION_DATABASE_ENDPOINTS.some((endpoint) => host.includes(endpoint))) throw new Error('DATABASE_ENVIRONMENT_MISMATCH')
-  if (environment === 'staging' && PREVIEW_DATABASE_ENDPOINTS.some((endpoint) => host.includes(endpoint))) throw new Error('DATABASE_ENVIRONMENT_MISMATCH')
+  const endpoint = databaseEndpointId(url)
+  const production = PRODUCTION_DATABASE_ENDPOINTS.includes(endpoint)
+  if (environment === 'production' ? !production : production) throw new Error('DATABASE_ENVIRONMENT_MISMATCH')
+  if (environment === 'staging' && PREVIEW_DATABASE_ENDPOINTS.includes(endpoint)) throw new Error('DATABASE_ENVIRONMENT_MISMATCH')
 }
 
 const VARIABLE = { production: 'NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL', staging: 'NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL', preview: 'NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL' }
