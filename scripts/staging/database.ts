@@ -1,8 +1,7 @@
-import { randomBytes } from 'node:crypto'
 import path from 'node:path'
 import pg from 'pg'
 
-import { QA_ACCOUNTS, databaseEndpoint, fail, isProductionOrPreviewEndpoint, run, type App, type NeonBranch } from './lib'
+import { QA_ACCOUNTS, fail, run, type App, type NeonBranch } from './lib'
 
 // Sanitization and verification of the Neon Staging child branches. A child branch starts as a copy of its Production
 // parent; before any Staging project receives its URL, every row is removed except an explicit allow-list, the result is
@@ -32,35 +31,15 @@ async function foreignRows(client: pg.Client) {
   return found
 }
 
-// ─── Credential: the child branch inherits the owner role AND its Production password ───────────────────────────
-// `inherited`: the inherited (Production) password still opens the child → it must be rotated before anything else.
-// `rotated`: it no longer does → the Staging credential stored in the Staging Vercel project is the valid one.
-export async function credentialState(inheritedUrl: string) {
-  const client = new pg.Client({ connectionString: inheritedUrl, connectionTimeoutMillis: 20000 })
-  try { await client.connect(); return 'inherited' as const } catch (error) {
-    if ((error as { code?: string }).code === '28P01') return 'rotated' as const
-    throw error
-  } finally { await client.end().catch(() => undefined) }
+// ─── Credential: a child branch inherits the owner role WITH the Production password ─────────────────────────────
+// Resolved from Neon's own records (official connection strings), never from a locally chosen password: the child still
+// carries the inherited credential while its password equals the parent's (or no longer connects). Only then setup
+// resets it with Neon's branch-scoped reset. The parent is only connected to, read-only, to prove it is unchanged.
+export async function opens(url: string) {
+  const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 20000 })
+  try { await client.connect(); await client.query('select 1'); return true } catch { return false } finally { await client.end().catch(() => undefined) }
 }
-
-// Rotates the owner password on the CHILD branch only (the connection is asserted to be the Staging endpoint, never a
-// Production one), then proves the new credential works and the inherited one no longer opens the child.
-export async function rotateOwnerPassword(inheritedUrl: string, owner: string, expectedEndpoint: string) {
-  if (databaseEndpoint(inheritedUrl) !== expectedEndpoint || isProductionOrPreviewEndpoint(expectedEndpoint)) fail('credential rotation refused: not the Staging endpoint')
-  const password = randomBytes(32).toString('base64url')
-  await withClient(inheritedUrl, async (client) => {
-    const current = (await client.query('select current_user as role')).rows[0].role as string
-    if (current !== owner) fail(`credential rotation refused: connected as ${current}, expected ${owner}`)
-    await client.query(`alter role ${quote(owner)} password ${client.escapeLiteral(password)}`)
-  })
-  const url = new URL(inheritedUrl)
-  url.password = password
-  const stagingUrl = url.toString()
-  if (databaseEndpoint(stagingUrl) !== expectedEndpoint) fail('credential rotation refused: endpoint changed')
-  await withClient(stagingUrl, (client) => client.query('select 1'))
-  if (await credentialState(inheritedUrl) !== 'rotated') fail('credential rotation failed: the inherited password still opens the Staging branch')
-  return stagingUrl
-}
+export const samePassword = (left: string, right: string) => new URL(left).password === new URL(right).password
 
 export type Marker = { branch: string; parent: string; app: App; at: string }
 export const readMarker = (url: string) => withClient(url, async (client) => {
@@ -131,8 +110,7 @@ export function verifyDatabase(state: DatabaseState, app: App, branch: NeonBranc
   return problems
 }
 
-// Sanitize (once) → migrations + QA accounts (same step as every Staging build) → fail-closed verification. Runs either
-// locally right after the rotation, or inside `vercel env run` with the Staging project's stored credential.
+// Sanitize (once) → migrations + QA accounts (same step as every Staging build) → fail-closed verification.
 export async function bootstrapDatabase(input: { url: string; app: App; branch: NeonBranch; hosts: string[]; initialPassword?: string }) {
   const { url, app, branch } = input
   const fresh = !(await readMarker(url))

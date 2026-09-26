@@ -47,14 +47,33 @@ if (group === 'branches' && command === 'create') {
   process.exit(0)
 }
 if (group === 'roles') die('roles are not managed by the Staging tooling (fake guard)', 2)
+// Neon's official API through the CLI session: branch-scoped role password reset (the control plane changes the password
+// on that branch only and records it for connection-string) and operation status.
+if (group === 'api') {
+  const reset = /^\/projects\/([^/]+)\/branches\/([^/]+)\/roles\/([^/]+)\/reset_password$/.exec(command ?? '')
+  if (reset) {
+    if (option('-X') !== 'POST' || reset[1] !== state.neonProject) die('bad reset request', 2)
+    const branch = branchOf(reset[2]) ?? die('branch not found')
+    if (state.parentDatabases[branch.id]) die('fake guard: password reset on a Production branch')
+    const role = decodeURIComponent(reset[3])
+    if (role !== state.owners[branch.id]) die('role not found')
+    const password = `neon-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+    await admin((client) => client.query(`alter role "${role}" password '${password}'`))
+    state.passwords = { ...(state.passwords ?? {}), [branch.id]: password }; save()
+    console.log(JSON.stringify({ role: { name: role, password }, operations: [{ id: `op-${branch.id}`, action: 'apply_config', status: 'running' }] }))
+    process.exit(0)
+  }
+  if (/^\/projects\/[^/]+\/operations\/[^/]+$/.test(command ?? '')) { console.log(JSON.stringify({ operation: { id: command.split('/').pop(), status: 'finished' } })); process.exit(0) }
+  die(`fake neonctl api: unsupported ${command}`, 2)
+}
 if (group === 'databases' && command === 'list') { const branch = branchOf(option('--branch')) ?? die('branch not found'); console.log(JSON.stringify([{ name: 'neondb', owner_name: state.owners[branch.id] }])); process.exit(0) }
 if (group === 'connection-string') {
   const branch = branchOf(command) ?? die('branch not found')
-  const url = new URL(state.urls[branch.name] ?? die('branch has no database'))
+  const url = new URL(state.urls[branch.name] ?? state.parentUrls?.[branch.name] ?? die('branch has no database'))
   const role = option('--role-name')
   if (role !== state.owners[branch.id]) die('role not found')
   url.username = role
-  url.password = state.productionPassword
+  url.password = state.passwords?.[branch.id] ?? state.productionPassword
   console.log(url.toString()); process.exit(0)
 }
 die(`fake neonctl: unsupported ${args.join(' ')}`, 2)

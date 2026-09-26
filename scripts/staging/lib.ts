@@ -34,7 +34,8 @@ export function assertStagingProject(name: string) {
 export const neonConfig = {
   project: process.env.GERARD_STAGING_NEON_PROJECT || 'lucky-wildflower-15424624',
   // Staging branches are CHILD branches of their own Production branch (no root branch is created). A child starts with
-  // the parent's data and the parent's owner password: setup rotates that password on the child, then sanitizes the data
+  // the parent's data and the parent's owner password: setup resets that password on the child through Neon's official
+  // branch-scoped reset, then sanitizes the data
   // (scripts/staging/database.ts) before any Staging project receives its URL.
   parents: { gerard: 'br-patient-wildflower-zarmyqcq', novotralux: 'br-cool-sea-zaufb5ng' } as Record<App, string>,
   productionBranches: ['br-patient-wildflower-zarmyqcq', 'br-cool-sea-zaufb5ng'],
@@ -211,8 +212,8 @@ export async function resolveProjects() {
 // ─── Neon (neonctl) ─────────────────────────────────────────────────────────────────────────────────────────────
 export type NeonBranch = { id: string; name: string; parent_id?: string; default?: boolean; primary?: boolean }
 
-async function neonctl(args: string[]) {
-  const result = await runCli(NEONCTL, [...args, '--project-id', neonConfig.project], { quiet: true })
+async function neonctl(args: string[], options: { projectId?: boolean } = {}) {
+  const result = await runCli(NEONCTL, options.projectId === false ? args : [...args, '--project-id', neonConfig.project], { quiet: true })
   if (result.code !== 0) fail(`neonctl ${args.slice(0, 2).join(' ')} failed: ${lastLines(result.output)}`)
   return result.stdout.trim()
 }
@@ -224,7 +225,21 @@ export const neon = {
   // A child of the given Production branch (copy-on-write; the parent is only read). Never a root branch.
   createChildBranch: async (name: string, parent: string) => { const value = neonJson(await neonctl(['branches', 'create', '--name', name, '--parent', parent, '--no-secrets', '--output', 'json'])); return (value.branch ?? value) as NeonBranch },
   databaseOwner: async (branch: NeonBranch) => (list(neonJson(await neonctl(['databases', 'list', '--branch', branch.id, '--output', 'json'])), 'databases') as { name: string; owner_name: string }[]).find((item) => item.name === neonConfig.database)?.owner_name,
-  // The branch's control-plane connection string (inherited owner credential). It stays in memory, never displayed.
+  // Neon's official, branch-scoped password reset (POST …/branches/{branch}/roles/{role}/reset_password) through the Neon
+  // CLI session, then waits for Neon's operations. Refused for anything that is not a Staging child branch.
+  resetRolePassword: async (branch: NeonBranch, role: string) => {
+    if (neonConfig.productionBranches.includes(branch.id) || neonConfig.previewBranches.includes(branch.id) || !Object.values(neonConfig.parents).includes(branch.parent_id ?? '')) fail(`password reset refused on ${branch.name}: not a Staging child branch`)
+    const response = neonJson(await neonctl(['api', `/projects/${neonConfig.project}/branches/${branch.id}/roles/${encodeURIComponent(role)}/reset_password`, '-X', 'POST'], { projectId: false }))
+    for (const operation of (response.operations ?? []) as { id: string }[]) {
+      for (let attempt = 0; ; attempt++) {
+        const status = neonJson(await neonctl(['api', `/projects/${neonConfig.project}/operations/${operation.id}`], { projectId: false })).operation?.status
+        if (status === 'finished' || status === 'skipped') break
+        if (status === 'failed' || status === 'error' || attempt > 90) fail(`Neon password reset on ${branch.name} did not complete (${status ?? 'unknown'})`)
+        await new Promise((resolve) => setTimeout(resolve, 2000))
+      }
+    }
+  },
+  // The branch's current credential as Neon records it (official connection string). In memory only, never displayed.
   connectionString: (branch: NeonBranch, role: string) => neonctl(['connection-string', branch.id, '--database-name', neonConfig.database, '--role-name', role]).then((value) => value.split('\n').filter((line) => /^postgres(ql)?:\/\//.test(line.trim())).pop()?.trim() || fail('neonctl returned no connection string')),
 }
 
@@ -238,14 +253,21 @@ export function assertStagingBranch(app: App, branch: NeonBranch) {
   return branch
 }
 
-// Resolves an existing Staging branch: its inherited owner role and endpoint (the connection string is used only to
-// read the endpoint and, before the first rotation, to connect).
+// Resolves an existing Staging branch: its inherited owner role, its current official connection string and endpoint.
 export async function stagingDatabase(app: App, branches: NeonBranch[]) {
   const found = branches.find((item) => item.name === neonConfig.branches[app])
   if (!found) return undefined
   const branch = assertStagingBranch(app, found)
   const owner = await neon.databaseOwner(branch) ?? fail(`Neon branch ${branch.name} has no ${neonConfig.database} database`)
-  const inheritedUrl = await neon.connectionString(branch, owner)
-  assertDatabaseForEnvironment('staging', inheritedUrl)
-  return { branch, owner, inheritedUrl, endpoint: databaseEndpoint(inheritedUrl) }
+  const url = await neon.connectionString(branch, owner)
+  assertDatabaseForEnvironment('staging', url)
+  return { branch, owner, url, endpoint: databaseEndpoint(url) }
+}
+
+// The Production parent's own credential, read (never changed) to prove the parent is untouched and distinct.
+export async function parentDatabase(app: App, branches: NeonBranch[]) {
+  const parent = branches.find((item) => item.id === neonConfig.parents[app]) ?? fail(`Production branch ${neonConfig.parents[app]} not found`)
+  const owner = await neon.databaseOwner(parent) ?? fail(`Production branch ${parent.id} has no ${neonConfig.database} database`)
+  const url = await neon.connectionString(parent, owner)
+  return { parent, owner, url, endpoint: databaseEndpoint(url) }
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import pg from 'pg'
@@ -57,6 +57,8 @@ const withPassword = (url: string, user: string, password: string) => { const va
 async function opens(url: string) { const client = new pg.Client({ connectionString: url }); try { await client.connect(); return true } catch { return false } finally { await client.end().catch(() => undefined) } }
 const writeState = (extra: Record<string, unknown> = {}) => writeFileSync(stateFile, JSON.stringify({
   parentDatabases: PRODUCTION_DATABASES, owners: { ...OWNERS }, productionPassword: PRODUCTION_PASSWORD,
+  // Distinct hosts give each fake branch its own endpoint identity, as on Neon.
+  parentUrls: { production: databaseUrl(hostname(), 'op_prod_gerard'), 'novotralux-custom-production': databaseUrl('0.0.0.0', 'op_prod_novotralux') },
   scope: SCOPE, teamId: 'team_jonathan', projects: productionProjects(), vercelCalls: [], deploys: [],
   neonProject: 'lucky-wildflower-15424624', adminUrl, urls, neonCalls: [],
   branches: [{ id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }, { id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-production' }, { id: 'br-still-field-za5dh59a', name: 'novotralux-custom-preview' }],
@@ -132,8 +134,12 @@ async function main() {
   assert.equal(JSON.parse(stdinEcho.stdout), 'value with spaces & symbols', 'stdin preserved')
   for (const file of [...readdirSync('scripts/staging').map((name) => `scripts/staging/${name}`), 'scripts/staging-prepare.ts']) {
     assert.ok(!/shell:\s*(true|windows|process\.platform)/.test(readFileSync(file, 'utf8')), `${file}: no shell for argv execution`)
-    assert.ok(!/\bgrant\b|neondb_owner\s+to|createRole|roles', 'create/i.test(readFileSync(file, 'utf8')), `${file}: no GRANT / role-membership logic`)
+    const source = readFileSync(file, 'utf8')
+    assert.ok(!/\bgrant\b|neondb_owner\s+to|createRole|roles', 'create/i.test(source), `${file}: no GRANT / role-membership logic`)
+    assert.ok(!/alter\s+role[^;\n]*password/i.test(source), `${file}: no ALTER ROLE … PASSWORD`)
   }
+
+  assert.match(readFileSync('scripts/staging/lib.ts', 'utf8'), /\/branches\/\$\{branch\.id\}\/roles\/\$\{encodeURIComponent\(role\)\}\/reset_password`, '-X', 'POST'/, 'official Neon branch-scoped reset is the credential mechanism')
 
   // Non-interactive: every confirming Vercel command carries --yes (the fake CLI fails like Vercel CLI 60 otherwise).
   assert.deepEqual(CONFIRMING_COMMANDS, ['project update', 'project inspect', 'env add', 'deploy'])
@@ -191,6 +197,8 @@ async function main() {
     const expected = new URL(urls[branch])
     assert.deepEqual([url.hostname, url.pathname, url.username], [expected.hostname, expected.pathname, `owner_${branch.replace(/-/g, '_')}`], `${branch}: child endpoint, inherited owner role`)
     assert.ok(url.password && url.password !== PRODUCTION_PASSWORD, `${branch}: Staging-only password`)
+    const childId = readState().branches.find((item: any) => item.name === branch).id
+    assert.equal(url.password, readState().passwords[childId], `${branch}: the password Neon issued (official connection string), not a locally invented one`)
     assert.ok(await opens(project.env.DATABASE_URL), `${branch}: rotated credential opens the child`)
     assert.ok(!(await opens(withPassword(urls[branch], `owner_${branch.replace(/-/g, '_')}`, PRODUCTION_PASSWORD))), `${branch}: the inherited Production password no longer opens the child`)
   }
@@ -216,6 +224,9 @@ async function main() {
   assert.ok(creates.some((call: string) => call.includes('--name novotralux-custom-staging') && call.includes(`--parent ${PARENTS.novotralux}`)), 'novotralux-custom-staging is a child of Novotralux Production')
   for (const [name, parent] of [['gerard-staging', PARENTS.gerard], ['novotralux-custom-staging', PARENTS.novotralux]]) assert.equal(readState().branches.find((item: any) => item.name === name).parent_id, parent)
   assert.ok(!readState().neonCalls.some((call: string) => call.startsWith('roles')), 'no Neon role created or managed')
+  const resets = readState().neonCalls.filter((call: string) => call.includes('reset_password'))
+  assert.deepEqual(resets, [`api /projects/lucky-wildflower-15424624/branches/br-gerard-staging/roles/owner_gerard_staging/reset_password -X POST`, `api /projects/lucky-wildflower-15424624/branches/br-novotralux-custom-staging/roles/owner_novotralux_custom_staging/reset_password -X POST`], 'official branch-scoped reset, on the two child branches only')
+  assert.ok(!resets.some((call: string) => Object.values(PARENTS).some((parent) => call.includes(parent))), 'never on a Production parent')
   assert.ok(readState().sanitizedBeforeWiring >= 3, 'every database URL was sanitized and verified before Vercel received it')
   const credentials = path.join(home, '.gerard-staging-credentials.txt')
   assert.ok(existsSync(credentials), 'first-run credential returned once (private file when not interactive)')
@@ -252,7 +263,8 @@ async function main() {
   const writes = readState().vercelCalls.slice(callsBefore).filter((call: any) => (call.args[0] === 'env' && call.args[1] === 'add') || (call.args[0] === 'project' && ['add', 'update'].includes(call.args[1])))
   assert.deepEqual(writes, [], 'second run writes nothing')
   assert.deepEqual([project('gerard-staging').env.DATABASE_URL, project('novotralux-custom-staging').env.DATABASE_URL], urlsBefore, 'credential not rotated again; the stored one is reused')
-  assert.match(second.output, /Staging credential already initialized/)
+  assert.match(second.output, /Staging credential already distinct from Production — reused/)
+  assert.ok(!readState().neonCalls.slice(neonBefore).some((call: string) => call.includes('reset_password')), 'no password reset on rerun')
   assert.ok(!existsSync(credentials), 'credential not re-issued')
   assert.equal(await passwordHash(), hashBefore, 'existing account never reset')
   assert.ok(!readState().neonCalls.slice(neonBefore).some((call: string) => call.includes('branches create')), 'no branch recreated')
@@ -275,11 +287,10 @@ async function main() {
   const drift = await command('check')
   assert.match(drift.output, /FAIL {2}Gerard Staging DB is not Production — .*(does not point at the Staging branch|Production database)/)
   assert.ok(!drift.output.includes('ep-ancient-block'), 'endpoint not printed')
-  // A drifted Staging project DATABASE_URL is also refused by setup's bootstrap (fail closed), then restored.
-  assert.match((await command('setup', ['--no-deploy'])).output, /DATABASE_ENVIRONMENT_MISMATCH|not this Staging branch/)
-  const restored = readState()
-  restored.projects.find((item: any) => item.name === 'gerard-staging').env.DATABASE_URL = driftBackup
-  writeFileSync(stateFile, JSON.stringify(restored))
+  // setup repairs a drifted Staging DATABASE_URL with the verified official Staging credential (never the drifted value).
+  const repaired = await command('setup', ['--no-deploy'])
+  assert.equal(repaired.code, 0, repaired.output)
+  assert.equal(project('gerard-staging').env.DATABASE_URL, driftBackup, 'Staging DATABASE_URL realigned on the verified Staging credential')
 
   // Deploy refuses source changes unless explicitly acknowledged (and then still deploys HEAD only).
   if (meaningfulChanges((await run('git', ['status', '--porcelain'])).stdout).length) assert.match((await command('deploy', ['novotralux'])).output, /Uncommitted changes/)
