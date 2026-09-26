@@ -76,12 +76,12 @@ changes nothing. In order it:
 2. creates `gerard-staging` / `novotralux-custom-staging` if missing (`vercel project add`) and mirrors the build
    settings of `gerard` / `novotralux-custom` (`vercel project inspect` read-only → `vercel project update` on Staging);
 3. creates each Neon Staging branch as a **child** of its own Production branch (never a root branch; the parent is
-   only read) and, before any Staging project receives its URL: while the child still carries the inherited Production
-   credential (its password equals the parent's, or no longer connects), **resets the owner role's password on the
-   child branch only with Neon's official branch-scoped reset** (`neonctl api
+   only read) and, before any Staging project receives its URL: **reuses unchanged** the `DATABASE_URL` already stored
+   in the Staging project when it is valid for the child (checked inside `vercel env run`: expected child endpoint, not
+   Production, authenticates, resolves as Staging, and is the credential Neon holds for the child); otherwise **resets
+   the owner role's password on the child branch only with Neon's official branch-scoped reset** (`neonctl api
    /projects/{project}/branches/{child}/roles/{owner}/reset_password -X POST`, waiting for Neon's operations) and reads
-   the new credential from `neonctl connection-string` — Neon keeps it durably; nothing is set by SQL. Reruns reuse it
-   (no reset); the parent is only connected to, read-only, to prove its own credential still works; **sanitizes** a branch not yet marked — one `TRUNCATE` of every `public`
+   the new credential from `neonctl connection-string`. Production credentials are never read; **sanitizes** a branch not yet marked — one `TRUNCATE` of every `public`
    table except `_prisma_migrations` and `Organization`, then every `Organization` row deleted except `org-gerard-default`
    / `org-novotralux`, then the schema is marked `gerard-staging-sanitized` (rows outside `public` → refused); applies
    the migrations and creates the QA accounts; and **verifies, fail-closed**: right parent, Staging endpoint, `staging`

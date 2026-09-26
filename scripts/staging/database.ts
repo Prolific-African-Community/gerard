@@ -31,15 +31,10 @@ async function foreignRows(client: pg.Client) {
   return found
 }
 
-// ─── Credential: a child branch inherits the owner role WITH the Production password ─────────────────────────────
-// Resolved from Neon's own records (official connection strings), never from a locally chosen password: the child still
-// carries the inherited credential while its password equals the parent's (or no longer connects). Only then setup
-// resets it with Neon's branch-scoped reset. The parent is only connected to, read-only, to prove it is unchanged.
 export async function opens(url: string) {
   const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 20000 })
   try { await client.connect(); await client.query('select 1'); return true } catch { return false } finally { await client.end().catch(() => undefined) }
 }
-export const samePassword = (left: string, right: string) => new URL(left).password === new URL(right).password
 
 export type Marker = { branch: string; parent: string; app: App; at: string }
 export const readMarker = (url: string) => withClient(url, async (client) => {

@@ -5,11 +5,11 @@ import path from 'node:path'
 import { resolveDeploymentEnvironment } from '@prolific/gerard-core'
 
 import { assertDatabaseForEnvironment } from '../../apps/novotralux/scripts/database-target.mjs'
-import { STAGING_ORGANIZATION, bootstrapDatabase, opens, samePassword } from './database'
+import { STAGING_ORGANIZATION, bootstrapDatabase, opens } from './database'
 import { deployToStaging } from './deploy'
 import {
   APPS, CONFIGURATION_PATH, FORBIDDEN_STAGING_VARIABLES, LABEL, PRODUCTION_HOSTS, PRODUCTION_PROJECTS, QA_ACCOUNTS, SCOPE, STAGING_PROJECTS, authenticate, fail, fingerprint, flags,
-  assertStagingBranch, databaseEndpoint, isProductionOrPreviewEndpoint, log, parentDatabase, main, neon, neonConfig, probe, resolveProjects, stableHost, stagingDatabase, vercelCli, type App, type NeonBranch, type ProjectSettings,
+  assertStagingBranch, databaseEndpoint, isProductionOrPreviewEndpoint, log, main, neon, neonConfig, probe, resolveProjects, stableHost, stagingDatabase, vercelCli, type App, type NeonBranch, type ProjectSettings,
 } from './lib'
 
 // npm run staging:setup — one-time (and repeatable) creation of the permanent Staging projects gerard-staging and
@@ -64,25 +64,29 @@ main(async () => {
     branches = await neon.branches()
   }
 
-  // 7. Per branch, before any Staging project receives a URL: Neon's official branch-scoped password reset of the
-  //    inherited owner role on the CHILD (only while it still carries the parent's credential), sanitization of the
-  //    inherited rows, migrations + QA accounts, fail-closed verification.
+  // 7. Per branch, before any Staging project receives a URL. The Staging project's stored DATABASE_URL is reused
+  //    unchanged when it is valid for the child branch (checked inside `vercel env run`: expected child endpoint, not
+  //    Production, authenticates, resolves as Staging, and is the credential Neon holds for the child). Otherwise Neon's
+  //    official branch-scoped password reset issues a new child credential. Then sanitization (once), migrations + QA
+  //    accounts and the fail-closed verification. Production credentials are never needed.
   const databases = {} as Record<App, { branch: NeonBranch; endpoint: string; stagingUrl: string }>
   const candidatePassword = randomBytes(18).toString('base64url')
   let superadminCreated = false
   for (const app of APPS) {
     let { branch, owner, url, endpoint } = await stagingDatabase(app, branches) ?? fail(`Neon branch ${neonConfig.branches[app]} missing after creation`)
-    const parent = await parentDatabase(app, branches)
-    if (isProductionOrPreviewEndpoint(endpoint) || endpoint === parent.endpoint) fail(`${branch.name}: its endpoint is a Production endpoint: refused.`)
-    if (samePassword(url, parent.url) || !(await opens(url))) {
+    if (isProductionOrPreviewEndpoint(endpoint)) fail(`${branch.name}: its endpoint is a Production endpoint: refused.`)
+    const stored = await probe(STAGING_PROJECTS[app], 'credential', app)
+    const database = stored.database
+    const reusable = Boolean(database && database.variables.DATABASE_URL === endpoint && !database.productionEndpoint && database.reachable && stored.environment === 'staging' && stored.secrets.DATABASE_URL?.fingerprint === fingerprint(url))
+    if (reusable) log(`✔ ${branch.name}: the Staging credential stored in ${STAGING_PROJECTS[app]} is valid — reused unchanged`)
+    else {
       await neon.resetRolePassword(branch, owner)
       url = await neon.connectionString(branch, owner)
       assertDatabaseForEnvironment('staging', url)
-      if (databaseEndpoint(url) !== endpoint || samePassword(url, parent.url)) fail(`${branch.name}: Neon password reset not reflected: refused.`)
-      log(`✔ ${branch.name}: ${owner} password reset by Neon on the Staging branch only`)
-    } else log(`✔ ${branch.name}: Staging credential already distinct from Production — reused`)
+      if (databaseEndpoint(url) !== endpoint) fail(`${branch.name}: the reset credential is not for this child branch: refused.`)
+      log(`✔ ${branch.name}: ${owner} password reset by Neon on the Staging branch only (new Staging credential)`)
+    }
     if (!(await opens(url))) fail(`${branch.name}: the Staging credential does not connect: refused.`)
-    if (!(await opens(parent.url))) fail(`${parent.parent.id}: the Production credential no longer connects — stopping.`)
     const result = await bootstrapDatabase({ url, app, branch, hosts: app === 'gerard' ? [hosts.gerard] : [], initialPassword: app === 'gerard' ? candidatePassword : undefined })
     if (result.sanitized) log(`✔ ${branch.name}: inherited data removed (${result.sanitized.emptied} tables emptied, ${result.sanitized.organizations} organizations removed; kept: schema, migration history, ${STAGING_ORGANIZATION[app]})`)
     else log(`✔ ${branch.name}: already sanitized`)

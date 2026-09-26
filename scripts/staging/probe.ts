@@ -8,7 +8,7 @@ import { DATABASE_VARIABLES, PRODUCTION_HOSTS, QA_ACCOUNTS, databaseEndpoint, fi
 // project's variables exist only in this process. It prints one line of facts for the operator command — variable
 // names, booleans, fingerprints, database endpoint ids, HTTP statuses — and never a secret value or a database URL.
 
-const [mode, app] = process.argv.slice(2) as ['facts' | 'full', App]
+const [mode, app] = process.argv.slice(2) as ['facts' | 'credential' | 'full', App]
 const baseline = new Set([...(process.env.GERARD_PROBE_BASELINE || '').split(','), 'GERARD_PROBE_BASELINE'])
 const projectKeys = Object.keys(process.env).filter((key) => !baseline.has(key) && !/^VERCEL(_|$)/.test(key)).sort()
 const value = (key: string) => process.env[key] || null
@@ -19,7 +19,7 @@ async function database(): Promise<ProbeFacts['database']> {
   const variables = Object.fromEntries(DATABASE_VARIABLES[app].map((key) => { try { return [key, value(key) ? databaseEndpoint(value(key)!) : null] } catch { return [key, 'invalid'] } }))
   const url = value('DATABASE_URL')
   const facts: NonNullable<ProbeFacts['database']> = { variables, productionEndpoint: Boolean(url && isProductionDatabase(url)), reachable: false }
-  if (mode !== 'full' || !url || facts.productionEndpoint) return facts
+  if (mode === 'facts' || !url || facts.productionEndpoint) return facts
   const client = new pg.Client({ connectionString: url, options: '-c default_transaction_read_only=on', connectionTimeoutMillis: 15000 })
   try {
     await client.connect()
