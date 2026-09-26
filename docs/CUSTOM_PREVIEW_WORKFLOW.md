@@ -6,50 +6,28 @@ and never reads or writes Production.
 
 ## Loop
 
-1. Push the branch. The `novotralux-custom` Vercel project builds a Preview deployment for it; the URL appears on the
-   commit/PR checks and in the Vercel dashboard. Preview deployments stay behind Vercel protection.
-2. Log in with the stable QA account `preview.admin` (ORG_ADMIN of `org-novotralux`, synthetic, no platform role).
-   Every Preview deployment shares the persistent Preview database, so the account and its password carry over from
-   one Preview to the next; nothing is reseeded per deployment.
-3. Review, approve, merge to `main`; Production deploys from `main` only.
+1. Push the branch. The `novotralux-custom` Vercel project builds a Preview deployment for it (and the Gerard Platform
+   project builds its own Preview); URLs appear on the commit/PR checks and in the Vercel dashboard. Preview
+   deployments stay behind Vercel protection.
+2. Log in to the Novotralux Preview with the stable synthetic ORG_ADMIN `preview.admin` (`org-novotralux`, no platform
+   role). Every Preview deployment shares the persistent Preview database, so the account and its password carry over.
+3. Password unknown or account locked? Recover it in the product, never in the database:
+   Gerard Platform Preview → `/admin` (SUPER_ADMIN) → Novotralux → Aperçu → **Accès administrateurs** →
+   *Réinitialiser le mot de passe*. The temporary password is generated inside the Custom Preview, shown once, and
+   must be changed at the next login. *Déconnecter les sessions* and *Réactiver* are available there too.
+4. Open `/admin/organization`, review, approve, merge to `main`; Production deploys from `main` only.
+
+No database URL, seed rerun, Vercel secret or reset route is involved.
 
 ## Commands (repository root)
 
-One-time per machine, to fetch the Preview-scoped variables without copying them by hand:
-
-```sh
-npx vercel link --project novotralux-custom
-npx vercel env pull .env.preview.local --environment=preview
-```
-
-`.env.preview.local` is git-ignored and holds Preview values only; no Production secret is needed locally.
-
-| Command | Effect |
-| --- | --- |
-| `npm run novotralux:preview:check` | Read-only: confirms the Preview database, `org-novotralux`, and that `preview.admin` is an active ORG_ADMIN. |
-| `npm run novotralux:preview:admin-reset` | Creates or resets `preview.admin` only: new random password (printed once), active, no forced change, no platform role, old sessions invalidated, audited. |
-
-Both commands refuse to run unless `NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL` points at the Preview endpoint; the
-Production endpoints are rejected explicitly. The database URL is never printed. Passwords are never stored in the
-repository or in docs: reset and share the one printed.
-
-### Lost password: reset inside Vercel
-
-Preview database variables are Vercel *sensitive* values, so `vercel env pull` writes `[SENSITIVE]` and the local
-commands above cannot connect. Reset from the Preview runtime instead, which already holds the Preview database:
-
-1. Generate a single-use token locally and commit only its SHA-256 as `TOKEN_SHA256` in
-   `pages/api/internal/preview/admin-reset.ts` (restore the route from Git history if it was removed).
-2. Push; once the Preview is built, open it in the browser (signed in to Vercel) and run in the console:
-   `fetch('/api/internal/preview/admin-reset', { method: 'POST', headers: { authorization: 'Bearer <token>' } }).then((r) => r.json()).then(console.log)`
-3. The response contains the new password once. Remove the route afterwards.
-
-The route answers 404 unless the app is Novotralux, the runtime is Preview, the database is the Preview branch and the
-token matches; a used token answers 410. It runs the same `resetPreviewAdmin` as the local command
-(`apps/novotralux/preview-admin.ts`).
+`npm run novotralux:preview:check` is a read-only readiness check (Preview database, `org-novotralux`, `preview.admin`
+active ORG_ADMIN). It needs `NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL` locally and refuses any database other than the
+Preview endpoint; the URL is never printed. Because that variable is a Vercel *sensitive* value, `vercel env pull`
+cannot provide it: use the SUPER_ADMIN recovery above for day-to-day access.
 
 `npm run preview:seed --workspace=@prolific/gerard-novotralux` rebuilds all synthetic fixtures and only runs on an
-empty Preview database; use it for a new branch, not for day-to-day access.
+empty Preview database; use it for a brand-new Preview branch, not for access.
 
 ## Guarantees
 

@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
-import { assertPreviewDatabaseUrl } from '../preview-admin'
+import { assertPreviewDatabaseUrl } from '../preview-guard'
 
-export { PREVIEW_ORGANIZATION_ID } from '../preview-admin'
+export { PREVIEW_ORGANIZATION_ID } from '../preview-guard'
 
 // Loads the Preview variables pulled with `vercel env pull .env.preview.local --environment=preview`.
 function loadPreviewEnv() {
@@ -18,7 +18,7 @@ function loadPreviewEnv() {
 export function connectPreviewDatabase() {
   loadPreviewEnv()
   const url = process.env.NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL
-  if (url === '[SENSITIVE]' || url === '') throw new Error('Preview database URL is a Vercel sensitive variable and cannot be pulled locally: use the in-Vercel reset (docs/CUSTOM_PREVIEW_WORKFLOW.md)')
+  if (url === '[SENSITIVE]' || url === '') throw new Error('Preview database URL is a Vercel sensitive variable and cannot be pulled locally: recover access from the SUPER_ADMIN workspace (docs/CUSTOM_PREVIEW_WORKFLOW.md)')
   // The URL itself is never printed; only the endpoint prefix is reported.
   const endpoint = assertPreviewDatabaseUrl(url, { allowLocal: process.env.NOVOTRALUX_PREVIEW_ALLOW_LOCAL_DATABASE === '1', productionUrl: process.env.NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL })
   return { prisma: new PrismaClient({ adapter: new PrismaPg({ connectionString: url! }) }), endpoint }

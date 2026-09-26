@@ -14,7 +14,7 @@ async function main() {
     }
     console.log(JSON.stringify(report, null, 2))
     const ready = organization?.status === 'ACTIVE' && admin?.isActive && !admin.platformRole && admin.organizationMemberships.some((m) => m.organizationId === PREVIEW_ORGANIZATION_ID && m.role === 'ORG_ADMIN')
-    console.log(ready ? 'PREVIEW READY' : 'PREVIEW NOT READY: run npm run novotralux:preview:admin-reset')
+    console.log(ready ? 'PREVIEW READY' : 'PREVIEW NOT READY: recover preview.admin from the SUPER_ADMIN workspace (docs/CUSTOM_PREVIEW_WORKFLOW.md)')
     if (!ready) process.exitCode = 1
   } finally {
     await prisma.$disconnect()

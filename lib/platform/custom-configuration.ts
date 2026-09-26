@@ -19,8 +19,9 @@ export async function sendCustomConfigurationCommand(input: { application: strin
     if (error instanceof Error && error.message === 'PLATFORM_INSTANCE_SECRET_REQUIRED') return { status: 503, body: { error: 'Platform instance channel unavailable' } }
     throw error
   }
-  // Reads are not audited, matching the platform convention of auditing mutations only.
-  const audit = (success: boolean, code?: string) => isRead ? Promise.resolve() : prisma.platformAuditLog.create({ data: { actorUserId: input.actorId, organizationId: 'org-gerard-default', action: 'ORGANIZATION_UPDATED', metadata: { source: 'PLATFORM_INSTANCE_CONFIGURATION', targetApplication: instance.application, targetOrganizationId: instance.organizationId, action: input.action, success, ...(code ? { code } : {}) } } }).then(() => undefined)
+  // Reads are not audited, matching the platform convention of auditing mutations only. The response body (which may
+  // carry a one-time temporary password) is never written to the audit.
+  const audit = (success: boolean, code?: string) => isRead ? Promise.resolve() : prisma.platformAuditLog.create({ data: { actorUserId: input.actorId, organizationId: 'org-gerard-default', action: 'ORGANIZATION_UPDATED', metadata: { source: 'PLATFORM_INSTANCE_CONFIGURATION', targetApplication: instance.application, targetOrganizationId: instance.organizationId, action: input.action, ...(typeof input.payload.userId === 'string' ? { targetUserId: input.payload.userId } : {}), success, ...(code ? { code } : {}) } } }).then(() => undefined)
   try {
     const headers: Record<string, string> = { 'content-type': 'application/json', 'x-gerard-platform-signature': signed.signature, 'x-gerard-platform-actor': input.actorId }
     if (process.env.VERCEL_ENV === 'preview') {

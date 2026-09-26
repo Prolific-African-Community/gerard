@@ -1,7 +1,7 @@
 import type { GetServerSideProps } from 'next'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
-import type { PlatformConfigurationSnapshot } from '@prolific/gerard-core'
+import type { PlatformConfigurationSnapshot, PlatformOrgAdminSnapshot, PlatformRecoveryAction } from '@prolific/gerard-core'
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AdminShell, Badge, Modal, Notice, SaveBar, SectionHeader, Surface, Switch, TextField, Toast, auditLabel, buttonClass, formatDate, formatRelative, headerLinkClass, inputClass, roleLabels } from '../components/admin/ui'
@@ -71,7 +71,7 @@ const customErrors: Record<string, string> = {
   'Custom configuration unavailable': 'L’instance n’a pas répondu.',
   'Custom instance unavailable': 'Cette instance n’accepte pas de configuration depuis cet environnement.',
 }
-const customCodes: Record<string, string> = { FORBIDDEN_CONFIGURATION_FIELD: 'Champ non autorisé par l’instance.', INVALID_BRANDING: 'Apparence refusée : vérifiez la couleur (#RRGGBB) et les URL.', INVALID_MODULES: 'Liste de modules refusée.', INVALID_INTEGRATION: 'Intégration inconnue de l’instance.', SECRET_FIELD_FORBIDDEN: 'Les secrets ne transitent jamais par ce canal.', LOCAL_AUDIT_ACTOR_NOT_FOUND: 'L’instance n’a aucun administrateur actif pour tracer la modification.', ORGANIZATION_NOT_FOUND: 'Organisation introuvable sur l’instance.' }
+const customCodes: Record<string, string> = { PLATFORM_ACCOUNT_PROTECTED: 'Compte plateforme : sa récupération ne se fait pas depuis une organisation.', SHARED_ACCOUNT_PROTECTED: 'Compte partagé entre plusieurs organisations : récupération refusée.', ORG_ADMIN_NOT_FOUND: 'Ce compte n’est plus administrateur de l’organisation.', PASSWORD_AUTH_UNAVAILABLE: 'Ce compte n’utilise pas de mot de passe.', FORBIDDEN_CONFIGURATION_FIELD: 'Champ non autorisé par l’instance.', INVALID_BRANDING: 'Apparence refusée : vérifiez la couleur (#RRGGBB) et les URL.', INVALID_MODULES: 'Liste de modules refusée.', INVALID_INTEGRATION: 'Intégration inconnue de l’instance.', SECRET_FIELD_FORBIDDEN: 'Les secrets ne transitent jamais par ce canal.', LOCAL_AUDIT_ACTOR_NOT_FOUND: 'L’instance n’a aucun administrateur actif pour tracer la modification.', ORGANIZATION_NOT_FOUND: 'Organisation introuvable sur l’instance.' }
 
 async function call(url: string, init: RequestInit) {
   const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json' } })
@@ -196,7 +196,7 @@ function CustomWorkspace({ instance, tab, canWrite, notify }: { instance: Instan
   return <>
     <WorkspaceHeader title={instance.client} type="Custom" status={instance.status} subtitle={instance.domain || instance.application} />
     {notes && <div className="mb-4">{notes}</div>}
-    {tab === 'overview' && <Overview configuration={configuration} custom instance={instance} unavailable={!configuration ? unavailable : undefined} />}
+    {tab === 'overview' && <Overview configuration={configuration} custom instance={instance} unavailable={!configuration ? unavailable : undefined} recovery={channel && <AdminRecoveryPanel key={instance.application} canWrite={canWrite} notify={notify} list={async () => (await call(endpoint, { method: 'POST', body: JSON.stringify({ action: 'getOrgAdmins' }) })).admins} act={(action, userId) => call(endpoint, { method: 'POST', body: JSON.stringify({ action, payload: { userId } }) })} />} />}
     {tab === 'instance' && <InstancePanel instance={instance} />}
     {tab !== 'overview' && tab !== 'instance' && (!shared ? unavailable : <>
       {tab === 'identity' && <IdentityForm {...shared} />}
@@ -228,7 +228,7 @@ function StandardWorkspace({ id, instance, tab, canWrite, notify, refreshDirecto
   return <>
     <WorkspaceHeader title={detail.displayName || detail.name} type="Standard" status={detail.status} subtitle={`/${detail.slug}`} />
     {!canWrite && <div className="mb-4"><Notice tone="info">Mode support : consultation uniquement.</Notice></div>}
-    {tab === 'overview' && <Overview configuration={configuration} instance={instance} detail={detail} canWrite={canWrite} availableUsers={availableUsers} mutate={mutate} />}
+    {tab === 'overview' && <Overview configuration={configuration} instance={instance} detail={detail} canWrite={canWrite} availableUsers={availableUsers} mutate={mutate} recovery={<AdminRecoveryPanel key={id} canWrite={canWrite} notify={notify} list={async () => (await call(`/api/platform/organizations/${id}/admins`, { method: 'GET' })).admins} act={(action, userId) => call(`/api/platform/organizations/${id}/admins`, { method: 'POST', body: JSON.stringify({ action, userId }) })} />} />}
     {tab === 'identity' && <><IdentityForm {...shared} /><BillingForm detail={detail} canWrite={canWrite} mutate={mutate} /></>}
     {tab === 'branding' && <BrandingForm {...shared} />}
     {tab === 'modules' && <ModulesForm {...shared} />}
@@ -244,7 +244,7 @@ function WorkspaceHeader({ title, type, status, subtitle }: { title: string; typ
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
-function Overview({ configuration, instance, detail, custom = false, canWrite = false, availableUsers = [], mutate, unavailable }: { configuration: Configuration | null; unavailable?: ReactNode; instance?: Instance; detail?: Detail; custom?: boolean; canWrite?: boolean; availableUsers?: AvailableUser[]; mutate?: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+function Overview({ configuration, instance, detail, custom = false, canWrite = false, availableUsers = [], mutate, unavailable, recovery }: { configuration: Configuration | null; unavailable?: ReactNode; recovery?: ReactNode; instance?: Instance; detail?: Detail; custom?: boolean; canWrite?: boolean; availableUsers?: AvailableUser[]; mutate?: (url: string, init: RequestInit, success: string) => Promise<void> }) {
   const enabledIntegrations = integrationCatalog.filter((item) => configuration?.integrations[item.type]?.enabled)
   const facts: [string, ReactNode][] = [
     ['Type', custom ? 'Gerard Custom' : 'Gerard Standard'],
@@ -268,6 +268,7 @@ function Overview({ configuration, instance, detail, custom = false, canWrite = 
         <dl className="grid grid-cols-3 gap-px bg-black/[.05] text-sm sm:grid-cols-5">{Object.entries(detail.metrics).map(([key, value]) => <div key={key} className="bg-white px-3 py-3"><dt className="text-xs text-black/60">{({ missions: 'Missions', drivers: 'Chauffeurs', trucks: 'Camions', trailers: 'Remorques', invoices: 'Factures' } as Record<string, string>)[key]}</dt><dd className="mt-0.5 text-lg font-semibold tabular-nums">{value}</dd></div>)}</dl>
       </Surface> : <Surface title="Accès et membres"><p className="px-4 py-4 text-sm leading-6 text-black/70">Les membres de {instance?.client} sont gérés par ses administrateurs dans leur propre espace.{instance?.adminUrl && <> <a href={instance.adminUrl} target="_blank" rel="noreferrer" className="font-medium text-[#4d6600] underline-offset-2 hover:underline">Ouvrir l’administration de l’organisation ↗</a></>}</p></Surface>}
     </div>
+    {recovery}
     {detail && mutate && <MembersPanel detail={detail} canWrite={canWrite} availableUsers={availableUsers} mutate={mutate} />}
     {detail && <Surface title="Historique récent"><ul className="divide-y divide-black/[.05]">{detail.platformAuditLogs.slice(0, 6).map((item) => <li key={item.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm"><div className="min-w-0"><p className="font-medium">{platformAuditLabel(item)}</p><p className="truncate text-xs text-black/60">par {`${item.actor.firstName} ${item.actor.lastName}`.trim() || item.actor.username}</p></div><time className="shrink-0 text-xs text-black/60" title={formatDate(item.createdAt)}>{formatRelative(item.createdAt)}</time></li>)}{!detail.platformAuditLogs.length && <li className="px-4 py-6 text-center text-sm text-black/60">Aucune action enregistrée.</li>}</ul></Surface>}
   </div>
@@ -516,6 +517,62 @@ function CreateOrganizationModal({ close, created }: { close: () => void; create
       {error && <Notice tone="error">{error}</Notice>}
       <div className="flex justify-end gap-2"><button type="button" onClick={close} className={buttonClass.secondary}>Annuler</button><button disabled={busy} className={buttonClass.primary}>{busy ? 'Création…' : 'Créer l’organisation'}</button></div>
     </form>
+  </Modal>
+}
+
+// ─── ORG_ADMIN recovery ──────────────────────────────────────────────────────
+
+// Emergency access recovery for an organization's administrators; everyday member management stays with ORG_ADMIN.
+function AdminRecoveryPanel({ canWrite, notify, list, act }: { canWrite: boolean; notify: (text: string) => void; list: () => Promise<PlatformOrgAdminSnapshot[]>; act: (action: PlatformRecoveryAction, userId: string) => Promise<{ temporaryPassword?: string }> }) {
+  const [admins, setAdmins] = useState<PlatformOrgAdminSnapshot[] | null>(null)
+  const [error, setError] = useState('')
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [credential, setCredential] = useState<{ name: string; username: string; password: string } | null>(null)
+  const load = useCallback(async () => { try { setAdmins(await list()); setError('') } catch (cause) { setError(errorText(cause, 'Administrateurs indisponibles')) } }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load() }, [load])
+  const run = (admin: PlatformOrgAdminSnapshot, action: PlatformRecoveryAction) => async () => {
+    setError('')
+    try {
+      const result = await act(action, admin.userId)
+      if (result.temporaryPassword) setCredential({ name: `${admin.firstName} ${admin.lastName}`.trim(), username: admin.username, password: result.temporaryPassword })
+      else notify(action === 'reactivateOrgAdmin' ? 'Accès réactivé.' : 'Sessions fermées.')
+    } catch (cause) { setError(errorText(cause, 'Action impossible')) }
+    await load()
+  }
+  const ask = (admin: PlatformOrgAdminSnapshot, action: PlatformRecoveryAction) => {
+    const name = <strong>{`${admin.firstName} ${admin.lastName}`.trim() || admin.username}</strong>
+    setConfirmation(action === 'resetOrgAdminPassword'
+      ? { title: 'Réinitialiser le mot de passe', confirm: 'Générer un mot de passe', body: <>Un mot de passe temporaire sera généré pour {name}. Ses sessions seront fermées et il devra choisir un nouveau mot de passe à la connexion.</>, run: run(admin, action) }
+      : action === 'invalidateOrgAdminSessions'
+        ? { title: 'Déconnecter toutes les sessions', confirm: 'Déconnecter', body: <>{name} devra se reconnecter sur chaque appareil. Son mot de passe ne change pas.</>, run: run(admin, action) }
+        : { title: 'Réactiver l’accès', confirm: 'Réactiver', body: <>{name} pourra de nouveau se connecter avec son mot de passe actuel.</>, run: run(admin, action) })
+  }
+  return <Surface title="Accès administrateurs" description="Récupération d’urgence des comptes ORG_ADMIN. La gestion courante des membres reste à l’organisation.">
+    {error && <div className="px-4 pt-3"><Notice tone="error">{error}</Notice></div>}
+    {!admins ? (!error && <p className="px-4 py-4 text-sm text-black/60">Chargement des administrateurs…</p>) : !admins.length ? <p className="px-4 py-4 text-sm text-black/60">Aucun administrateur dans cette organisation.</p> : <ul className="divide-y divide-black/[.05]">{admins.map((admin) => <li key={admin.userId} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-2 text-sm font-medium"><span className="truncate">{`${admin.firstName} ${admin.lastName}`.trim() || admin.username}</span>{admin.isActive ? <Badge tone="positive">Actif</Badge> : <Badge tone="neutral">Désactivé</Badge>}{admin.mustChangePassword && <Badge tone="warning">Mot de passe à changer</Badge>}</p>
+        <p className="truncate text-xs text-black/60">@{admin.username}{admin.email ? ` · ${admin.email}` : ''} · dernière connexion <span title={formatDate(admin.lastLoginAt)}>{formatRelative(admin.lastLoginAt).toLowerCase()}</span></p>
+      </div>
+      {admin.protection ? <span className="text-xs text-black/60">{admin.protection === 'PLATFORM_ACCOUNT' ? 'Compte plateforme · non récupérable ici' : 'Compte partagé · non récupérable ici'}</span>
+        : canWrite && <div className="flex flex-wrap gap-2">
+          {!admin.isActive && <button onClick={() => ask(admin, 'reactivateOrgAdmin')} className={buttonClass.secondary}>Réactiver</button>}
+          <button onClick={() => ask(admin, 'invalidateOrgAdminSessions')} className={buttonClass.secondary}>Déconnecter les sessions</button>
+          <button onClick={() => ask(admin, 'resetOrgAdminPassword')} className={buttonClass.primary}>Réinitialiser le mot de passe</button>
+        </div>}
+    </li>)}</ul>}
+    {confirmation && <ConfirmModal value={confirmation} close={() => setConfirmation(null)} />}
+    {credential && <CredentialModal value={credential} close={() => setCredential(null)} />}
+  </Surface>
+}
+
+function CredentialModal({ value, close }: { value: { name: string; username: string; password: string }; close: () => void }) {
+  const [copied, setCopied] = useState(false)
+  return <Modal title="Mot de passe temporaire" close={close}>
+    <p className="text-sm text-black/70">Transmettez ces identifiants à <strong>{value.name}</strong> par un canal sûr. Un nouveau mot de passe lui sera demandé à la connexion.</p>
+    <p className="mt-2 text-sm font-medium text-amber-800">Ce mot de passe ne sera plus affiché après fermeture.</p>
+    <dl className="mt-4 space-y-2 rounded-lg bg-[#f4f5f1] p-3 text-sm"><div className="flex justify-between gap-3"><dt className="text-black/60">Identifiant</dt><dd className="font-mono">{value.username}</dd></div><div className="flex items-center justify-between gap-3"><dt className="text-black/60">Mot de passe</dt><dd className="break-all font-mono">{value.password}</dd></div></dl>
+    <div className="mt-5 flex justify-end gap-2"><button onClick={() => { void navigator.clipboard.writeText(value.password).then(() => setCopied(true)) }} className={buttonClass.secondary}>{copied ? 'Copié ✓' : 'Copier le mot de passe'}</button><button onClick={close} className={buttonClass.primary}>Terminé</button></div>
   </Modal>
 }
 

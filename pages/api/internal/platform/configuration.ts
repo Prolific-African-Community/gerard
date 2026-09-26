@@ -1,7 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { isPlatformConfigurationAction, isPlatformConfigurationReadAction } from '@prolific/gerard-core'
+import { isPlatformConfigurationAction, isPlatformConfigurationReadAction, isPlatformRecoveryAction } from '@prolific/gerard-core'
 import { verifyPlatformConfigurationRequest } from '../../../../lib/platform/configuration-channel'
 import { applyPlatformConfiguration, readPlatformConfiguration } from '../../../../lib/organization/platform-configuration'
+import { listOrganizationAdmins, recoverOrganizationAdmin, recoveryErrorStatus } from '../../../../lib/organization/admin-recovery'
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') { res.setHeader('Allow', 'POST'); return res.status(405).json({ error: 'Method not allowed' }) }
@@ -16,11 +17,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const value = request as Record<string, unknown>
   if (isPlatformConfigurationReadAction(value.action)) {
     try {
+      if (value.action === 'getOrgAdmins') return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, admins: await listOrganizationAdmins(expectedOrganizationId) })
       return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, configuration: await readPlatformConfiguration(expectedOrganizationId) })
     } catch (error) {
       if (error instanceof Error && error.message === 'ORGANIZATION_NOT_FOUND') return res.status(404).json({ error: error.message })
       console.error('Platform configuration read failed', { application: expectedApplication })
       return res.status(500).json({ error: 'Configuration unavailable' })
+    }
+  }
+  if (isPlatformRecoveryAction(value.action)) {
+    const payload = value.payload && typeof value.payload === 'object' && !Array.isArray(value.payload) ? value.payload as Record<string, unknown> : {}
+    if (typeof payload.userId !== 'string' || Object.keys(payload).length !== 1) return res.status(400).json({ error: 'FORBIDDEN_CONFIGURATION_FIELD' })
+    const platformActorId = typeof req.headers['x-gerard-platform-actor'] === 'string' ? req.headers['x-gerard-platform-actor'] : 'platform'
+    try {
+      const result = await recoverOrganizationAdmin({ organizationId: expectedOrganizationId, userId: payload.userId, action: value.action, platformActorId, auditActorUserId: payload.userId })
+      res.setHeader('Cache-Control', 'no-store')
+      return res.status(200).json({ ok: true, application: expectedApplication, organizationId: expectedOrganizationId, action: value.action, userId: payload.userId, ...result })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      if (recoveryErrorStatus[message]) return res.status(recoveryErrorStatus[message]).json({ error: message })
+      console.error('Platform recovery failed', { application: expectedApplication, action: value.action })
+      return res.status(500).json({ error: 'Recovery unavailable' })
     }
   }
   if (!isPlatformConfigurationAction(value.action) || !value.payload || typeof value.payload !== 'object' || Array.isArray(value.payload)) return res.status(400).json({ error: 'Invalid configuration request' })

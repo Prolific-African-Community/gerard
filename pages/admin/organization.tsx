@@ -318,6 +318,7 @@ function CredentialModal({ value, close }: { value: { name: string; username: st
 function activityLabel(item: Activity) {
   if (item.metadata?.kind === 'USER_IDENTITY_UPDATED') return 'Identité du membre modifiée'
   if (item.metadata?.source === 'GERARD_PLATFORM') return 'Configuration mise à jour par Gerard'
+  if (item.metadata?.source === 'PLATFORM_RECOVERY') return `${auditLabel(item.action)} (récupération)`
   return auditLabel(item.action)
 }
 
@@ -333,7 +334,7 @@ function describe(item: Activity, members: Member[]) {
 
 function ActivityRows({ items, members, compact = false }: { items: Activity[]; members: Member[]; compact?: boolean }) {
   if (!items.length) return <p className="px-4 py-8 text-center text-sm text-black/60">Aucune action administrative pour l’instant.</p>
-  return <ul className="divide-y divide-black/[.05]">{items.map((item) => { const detail = describe(item, members); return <li key={item.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm"><div className="min-w-0"><p className="font-medium">{activityLabel(item)}</p><p className="truncate text-xs text-black/60">{detail ? `${detail} · ` : ''}par {`${item.actor.firstName} ${item.actor.lastName}`.trim() || item.actor.username}</p></div><time className="shrink-0 text-xs text-black/60" title={formatDate(item.createdAt)}>{compact ? formatRelative(item.createdAt) : formatDate(item.createdAt)}</time></li> })}</ul>
+  return <ul className="divide-y divide-black/[.05]">{items.map((item) => { const detail = describe(item, members); return <li key={item.id} className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm"><div className="min-w-0"><p className="font-medium">{activityLabel(item)}</p><p className="truncate text-xs text-black/60">{detail ? `${detail} · ` : ''}par {item.metadata?.source === 'PLATFORM_RECOVERY' || item.metadata?.source === 'GERARD_PLATFORM' ? 'l’équipe Gerard' : `${item.actor.firstName} ${item.actor.lastName}`.trim() || item.actor.username}</p></div><time className="shrink-0 text-xs text-black/60" title={formatDate(item.createdAt)}>{compact ? formatRelative(item.createdAt) : formatDate(item.createdAt)}</time></li> })}</ul>
 }
 
 function ActivityDrawer({ items, members, close }: { items: Activity[]; members: Member[]; close: () => void }) {

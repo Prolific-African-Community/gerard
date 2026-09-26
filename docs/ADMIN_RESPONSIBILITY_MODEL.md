@@ -15,6 +15,7 @@
 | Change an organization role | In tenant context | No | Yes | No |
 | Reset a member password or sessions | In tenant context | No | Yes | No |
 | Disable or reactivate member access | In tenant context | No | Yes | No |
+| Recover an ORG_ADMIN account (reset password, end sessions, reactivate) | Yes, Standard and Custom | Read-only list | No | No |
 | Create a métier Driver resource | By métier permission | No | By métier permission | By métier permission |
 | Create a Driver login account | In tenant context | No | Yes | No |
 
@@ -29,3 +30,14 @@ A Driver is a métier resource. Creating or editing it does not grant login acce
 ## Safeguards and audit
 
 Platform and multi-organization accounts are protected from organization-level identity, password and status changes. The final active ORG_ADMIN cannot be demoted or disabled. User creation, role changes, identity changes, password resets, status changes and session invalidation are audited without secrets or plaintext passwords.
+
+## ORG_ADMIN recovery
+
+A SUPER_ADMIN can recover an organization's administrator accounts from `/admin` (workspace → Aperçu → Accès
+administrateurs): reset the password (temporary, shown once, change required at next login, sessions ended), end all
+sessions, or reactivate a disabled account. It only targets ORG_ADMIN members of that organization and refuses
+platform and multi-organization accounts. Standard organizations are recovered on the local database
+(`/api/platform/organizations/[id]/admins`); Custom instances through the signed channel (`getOrgAdmins`,
+`resetOrgAdminPassword`, `invalidateOrgAdminSessions`, `reactivateOrgAdmin`), executed by the instance on its own
+database. Both sides audit the action with `source: PLATFORM_RECOVERY`, never the password. PLATFORM_SUPPORT can only
+read the list.

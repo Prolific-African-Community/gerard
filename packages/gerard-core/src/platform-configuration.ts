@@ -7,11 +7,15 @@ export const platformConfigurationActions = [
 ] as const
 
 // Read-only actions travel over the same signed channel; the action is covered by the HMAC, so a read can never be replayed as a write.
-export const platformConfigurationReadActions = ['getConfiguration'] as const
+export const platformConfigurationReadActions = ['getConfiguration', 'getOrgAdmins'] as const
+
+// Emergency recovery of an organization's ORG_ADMIN accounts only; never general member management.
+export const platformRecoveryActions = ['resetOrgAdminPassword', 'invalidateOrgAdminSessions', 'reactivateOrgAdmin'] as const
 
 export type PlatformConfigurationAction = (typeof platformConfigurationActions)[number]
 export type PlatformConfigurationReadAction = (typeof platformConfigurationReadActions)[number]
-export type PlatformConfigurationCommand = PlatformConfigurationAction | PlatformConfigurationReadAction
+export type PlatformRecoveryAction = (typeof platformRecoveryActions)[number]
+export type PlatformConfigurationCommand = PlatformConfigurationAction | PlatformConfigurationReadAction | PlatformRecoveryAction
 
 export type PlatformConfigurationRequest = {
   version: 1
@@ -43,6 +47,24 @@ export type PlatformConfigurationSnapshot = {
 
 export function isPlatformConfigurationAction(value: unknown): value is PlatformConfigurationAction {
   return typeof value === 'string' && (platformConfigurationActions as readonly string[]).includes(value)
+}
+
+// Safe view of an ORG_ADMIN account for recovery; `protection` names why the platform may not act on it.
+export type PlatformOrgAdminSnapshot = {
+  userId: string
+  firstName: string
+  lastName: string
+  username: string
+  email: string | null
+  role: 'ORG_ADMIN'
+  isActive: boolean
+  mustChangePassword: boolean
+  lastLoginAt: string | null
+  protection: 'PLATFORM_ACCOUNT' | 'SHARED_ACCOUNT' | null
+}
+
+export function isPlatformRecoveryAction(value: unknown): value is PlatformRecoveryAction {
+  return typeof value === 'string' && (platformRecoveryActions as readonly string[]).includes(value)
 }
 
 export function isPlatformConfigurationReadAction(value: unknown): value is PlatformConfigurationReadAction {
