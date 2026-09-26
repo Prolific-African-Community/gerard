@@ -5,6 +5,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 const file = process.env.FAKE_STAGING_STATE
 const state = JSON.parse(readFileSync(file, 'utf8'))
@@ -72,6 +73,16 @@ if (command[0] === 'env') {
     if (command[3] !== 'production' || !command.includes('--force') || command.includes('--value')) die('unexpected env add usage', 2)
     let value = ''
     for await (const chunk of process.stdin) value += chunk
+    // A database URL may reach a Staging project only once that database is sanitized (marker) and holds no inherited
+    // Production account: the fake refuses otherwise, so the test proves the ordering.
+    if (/DATABASE_URL$/.test(command[2])) {
+      const pg = (await import(pathToFileURL(process.env.FAKE_PG_MODULE).href)).default
+      const client = new pg.Client({ connectionString: value }); await client.connect()
+      const row = (await client.query(`select obj_description('public'::regnamespace, 'pg_namespace') as marker, (select count(*) from "User" where username = 'real.dispatcher')::int as inherited`)).rows[0]
+      await client.end()
+      if (!row.marker?.startsWith('gerard-staging-sanitized:') || row.inherited) die('database URL received before sanitization')
+      state.sanitizedBeforeWiring = (state.sanitizedBeforeWiring ?? 0) + 1
+    }
     found.env[command[2]] = value; save(); out(`Added ${command[2]}`)
     process.exit(0)
   }

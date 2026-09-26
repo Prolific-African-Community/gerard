@@ -36,7 +36,7 @@ const NEON_OVERRIDE = JSON.stringify(['node', path.join(fixtures, 'fake-neonctl.
 type Result = { code: number; output: string }
 async function command(script: string, args: string[] = [], extra: Record<string, string> = {}): Promise<Result> {
   try {
-    const { stdout, stderr } = await run('npx', ['tsx', `scripts/staging/${script}.ts`, ...args], { env: { PATH: process.env.PATH!, HOME: home, GERARD_STAGING_VERCEL_CLI: VERCEL_OVERRIDE, GERARD_STAGING_NEONCTL: NEON_OVERRIDE, FAKE_STAGING_STATE: stateFile, ...extra } as unknown as NodeJS.ProcessEnv, maxBuffer: 32 * 1024 * 1024, timeout: 600000 })
+    const { stdout, stderr } = await run('npx', ['tsx', `scripts/staging/${script}.ts`, ...args], { env: { PATH: process.env.PATH!, HOME: home, GERARD_STAGING_VERCEL_CLI: VERCEL_OVERRIDE, GERARD_STAGING_NEONCTL: NEON_OVERRIDE, FAKE_STAGING_STATE: stateFile, FAKE_PG_MODULE: path.join(process.cwd(), 'node_modules', 'pg', 'lib', 'index.js'), ...extra } as unknown as NodeJS.ProcessEnv, maxBuffer: 32 * 1024 * 1024, timeout: 600000 })
     return { code: 0, output: stdout + stderr }
   } catch (error: any) {
     return { code: error.code ?? 1, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }
@@ -48,7 +48,12 @@ const productionProjects = () => [
   { id: 'prj_novotralux_custom', name: 'novotralux-custom', accountId: 'team_jonathan', settings: { framework: 'nextjs', buildCommand: 'npm run novotralux:build', installCommand: null, outputDirectory: '.next-novotralux', rootDirectory: null, nodeVersion: '22.x' }, env: { NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL: 'postgresql://u:p@ep-ancient-surf-zav7xo37.eu.aws.neon.tech/neondb' }, domains: ['novotralux-custom.vercel.app', 'www.novotralux.eu'] },
   { id: 'prj_legacy', name: 'novotralux', accountId: 'team_jonathan', settings: { framework: 'nextjs', buildCommand: null, installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '20.x' }, env: {}, domains: ['novotralux-legacy.vercel.app'] },
 ]
+const PARENTS = { gerard: 'br-patient-wildflower-zarmyqcq', novotralux: 'br-cool-sea-zaufb5ng' }
+const PRODUCTION_DATABASES = { [PARENTS.gerard]: 'op_prod_gerard', [PARENTS.novotralux]: 'op_prod_novotralux' }
+// Staging URLs use the Staging-only role, never the inherited owner.
+const roleUrl = (branch: keyof typeof urls, role: string) => { const url = new URL(urls[branch]); url.username = role; url.password = 'staging-role-password'; return url.toString() }
 const writeState = (extra: Record<string, unknown> = {}) => writeFileSync(stateFile, JSON.stringify({
+  parentDatabases: PRODUCTION_DATABASES,
   scope: SCOPE, teamId: 'team_jonathan', projects: productionProjects(), vercelCalls: [], deploys: [],
   neonProject: 'lucky-wildflower-15424624', adminUrl, urls, neonCalls: [],
   branches: [{ id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }, { id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-production' }, { id: 'br-still-field-za5dh59a', name: 'novotralux-custom-preview' }],
@@ -71,7 +76,37 @@ function assertProductionUntouched(label: string) {
   assert.deepEqual(state.projects.slice(0, 3), productionProjects(), `${label}: Production and legacy projects unchanged`)
 }
 
+// "Production" parents: migrated databases holding business rows a child branch inherits.
+async function createProductionParents() {
+  for (const [app, database] of [['gerard', 'op_prod_gerard'], ['novotralux', 'op_prod_novotralux']] as const) {
+    const admin = new pg.Client({ connectionString: adminUrl }); await admin.connect()
+    await admin.query(`drop database if exists "${database}" with (force)`); await admin.query(`create database "${database}"`); await admin.end()
+    const url = databaseUrl('localhost', database)
+    await run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url } })
+    const client = new pg.Client({ connectionString: url }); await client.connect()
+    const org = app === 'gerard' ? 'org-gerard-default' : 'org-novotralux'
+    await client.query(`insert into "Organization" (id, name, slug, "updatedAt") values ($1, $1, $1, now()) on conflict (id) do nothing`, [org])
+    await client.query(`insert into "Organization" (id, name, slug, "updatedAt") values ('org-client-acme', 'ACME Transport', 'acme', now())`)
+    await client.query(`insert into "User" (id, name, username, "passwordHash", "updatedAt") values ('u-real', 'Real Dispatcher', 'real.dispatcher', 'production-hash', now())`)
+    await client.query(`insert into "OrganizationUser" (id, "organizationId", "userId", role, "updatedAt") values ('ou-real', $1, 'u-real', 'ORG_ADMIN', now())`, [org])
+    await client.query(`insert into "OrganizationIntegration" (id, "organizationId", type, enabled, "secretRef", "updatedAt") values ('oi-real', $1, 'MAIL_INTAKE', true, 'PRODUCTION_MAIL_SECRET', now())`, [org])
+    await client.query(`insert into "OrganizationDomain" (id, "organizationId", hostname, "updatedAt") values ('od-real', $1, 'www.novotralux.eu', now())`, [org])
+    await client.end()
+  }
+}
+async function productionSnapshot() {
+  const snapshot: Record<string, unknown> = {}
+  for (const database of Object.values(PRODUCTION_DATABASES)) {
+    const client = new pg.Client({ connectionString: databaseUrl('localhost', database) }); await client.connect()
+    snapshot[database] = (await client.query(`select (select count(*) from "User")::int as users, (select count(*) from "Organization")::int as organizations, (select count(*) from "OrganizationIntegration" where enabled)::int as integrations, (select string_agg(username, ',' order by username) from "User") as usernames, obj_description('public'::regnamespace, 'pg_namespace') as marker`)).rows[0]
+    await client.end()
+  }
+  return snapshot
+}
+
 async function main() {
+  await createProductionParents()
+  const parentsBefore = await productionSnapshot()
   // ─── Dirty-tree rule: generated files never block a deploy, source changes do ────────────────────────
   assert.deepEqual(meaningfulChanges(' M next-env.d.ts\n M tsconfig.tsbuildinfo\n'), [], 'generated files ignored')
   assert.deepEqual(meaningfulChanges(' M next-env.d.ts\n M lib/prisma.ts\n?? scripts/new.ts\n'), ['lib/prisma.ts', 'scripts/new.ts'], 'source changes refused')
@@ -104,7 +139,8 @@ async function main() {
   for (const [label, extra, expected] of [
     ['Vercel not authenticated', { vercelUnauthenticated: true }, /Vercel CLI is not authenticated: run .*vercel.* login/],
     ['Neon not authenticated', { neonUnauthenticated: true }, /Neon CLI is not authenticated: run .*neonctl.* auth/],
-    ['staging branch name on a Production branch', { branches: [{ id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-staging' }, { id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }] }, /Production branch: refused/],
+    ['staging branch name on a Production branch', { branches: [{ id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-staging' }, { id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }] }, /Production\/Preview branch: refused/],
+    ['existing Staging branch with the wrong parent', { branches: [{ id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }, { id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-production' }, { id: 'br-gerard-staging-old', name: 'gerard-staging', parent_id: 'br-cool-sea-zaufb5ng' }] }, /gerard-staging is not a child of br-patient-wildflower-zarmyqcq.*refused/],
   ] as const) {
     writeState(extra as Record<string, unknown>)
     const result = await command('setup', ['--no-deploy'])
@@ -141,13 +177,13 @@ async function main() {
   const updates = readState().updates as string[][]
   assert.ok(updates.some((item) => item[item.indexOf('--build-command') + 1] === 'npm run novotralux:build'), 'build command received as one argv item')
   assert.equal(gerard.env.GERARD_INSTANCE_ENVIRONMENT, 'staging')
-  assert.equal(gerard.env.DATABASE_URL, urls['gerard-staging'], 'Gerard Staging DB')
+  assert.equal(gerard.env.DATABASE_URL, roleUrl('gerard-staging', 'gerard_staging'), 'Gerard Staging DB through the Staging-only role')
   assert.equal(gerard.env.GERARD_PLATFORM_HOSTNAMES, 'gerard-staging-jonathan.vercel.app', 'platform host realigned on the host Vercel assigned')
   assert.equal(gerard.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT, 'https://novotralux-custom-staging.vercel.app/api/internal/platform/configuration')
   assert.equal(gerard.env.GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION, '0')
   assert.equal(novotralux.env.GERARD_INSTANCE_ENVIRONMENT, 'staging')
-  assert.equal(novotralux.env.DATABASE_URL, urls['novotralux-custom-staging'], 'Novotralux runtime DB')
-  assert.equal(novotralux.env.NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL, urls['novotralux-custom-staging'], 'Novotralux build DB')
+  assert.equal(novotralux.env.DATABASE_URL, roleUrl('novotralux-custom-staging', 'novotralux_staging'), 'Novotralux runtime DB through the Staging-only role')
+  assert.equal(novotralux.env.NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL, roleUrl('novotralux-custom-staging', 'novotralux_staging'), 'Novotralux build DB')
   assert.deepEqual([novotralux.env.GERARD_APPLICATION_ID, novotralux.env.GERARD_INSTANCE_ORGANIZATION_ID, novotralux.env.NEXT_PUBLIC_GERARD_APPLICATION], ['novotralux', 'org-novotralux', 'novotralux'])
   assert.equal(gerard.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET, novotralux.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET, 'one Staging shared secret')
   assert.ok(gerard.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET.length >= 48)
@@ -158,7 +194,13 @@ async function main() {
   assert.ok(!existsSync(readState().deploys[0].cwd), 'temporary worktree removed')
   const secrets = [gerard.env.JWT_SECRET, novotralux.env.JWT_SECRET, gerard.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET, gerard.env.GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD, ...Object.values(urls)]
   for (const value of secrets) assert.ok(!first.output.includes(value), 'no secret or database URL printed')
-  assert.ok(readState().neonCalls.some((call: string) => call.includes('branches create') && call.includes('--schema-only')), 'branches created schema-only')
+  const creates = readState().neonCalls.filter((call: string) => call.includes('branches create'))
+  assert.ok(creates.every((call: string) => !call.includes('--schema-only')), 'no root (schema-only) branch requested')
+  assert.ok(creates.some((call: string) => call.includes('--name gerard-staging') && call.includes(`--parent ${PARENTS.gerard}`)), 'gerard-staging is a child of Gerard Production')
+  assert.ok(creates.some((call: string) => call.includes('--name novotralux-custom-staging') && call.includes(`--parent ${PARENTS.novotralux}`)), 'novotralux-custom-staging is a child of Novotralux Production')
+  for (const [name, parent] of [['gerard-staging', PARENTS.gerard], ['novotralux-custom-staging', PARENTS.novotralux]]) assert.equal(readState().branches.find((item: any) => item.name === name).parent_id, parent)
+  assert.ok(!readState().neonCalls.some((call: string) => call.startsWith('roles create') && Object.values(PARENTS).some((parent) => call.includes(parent))), 'no role created on a Production branch')
+  assert.ok(readState().sanitizedBeforeWiring >= 3, 'every database URL was sanitized and verified before Vercel received it')
   const credentials = path.join(home, '.gerard-staging-credentials.txt')
   assert.ok(existsSync(credentials), 'first-run credential returned once (private file when not interactive)')
   if (process.platform !== 'win32') assert.equal(statSync(credentials).mode & 0o077, 0, 'credential file is owner-only')
@@ -171,6 +213,17 @@ async function main() {
     if (branch === 'gerard-staging') assert.deepEqual(qa.map((row) => [row.username, row.p, row.r]), [['gerard.staging.superadmin', 'SUPER_ADMIN', 'VIEWER']], 'Gerard QA SUPER_ADMIN')
     else assert.deepEqual(qa.map((row) => [row.username, row.r]), [['novotralux.staging.admin', 'ORG_ADMIN']], 'Novotralux QA ORG_ADMIN')
   }
+
+  for (const [branch, app] of [['gerard-staging', 'gerard'], ['novotralux-custom-staging', 'novotralux']] as const) {
+    const client = new pg.Client({ connectionString: urls[branch] }); await client.connect()
+    const row = (await client.query(`select (select string_agg(id, ',') from "Organization") as orgs, (select count(*) from "OrganizationIntegration")::int as integrations, (select string_agg(hostname, ',') from "OrganizationDomain") as domains, obj_description('public'::regnamespace, 'pg_namespace') as marker`)).rows[0]
+    await client.end()
+    assert.equal(row.orgs, app === 'gerard' ? 'org-gerard-default' : 'org-novotralux', `${branch}: only the Staging organization kept`)
+    assert.equal(row.integrations, 0, `${branch}: inherited integration (and its secret reference) removed`)
+    assert.ok(!String(row.domains ?? '').includes('novotralux.eu'), `${branch}: Production domain removed`)
+    assert.match(row.marker, /^gerard-staging-sanitized:/, `${branch}: sanitization marker`)
+  }
+  assert.deepEqual(await productionSnapshot(), parentsBefore, 'Production parents unchanged (read only)')
 
   // ─── Second setup: idempotent ─────────────────────────────────────────────────────────────────────────
   rmSync(credentials)
@@ -205,6 +258,16 @@ async function main() {
 
   // Deploy refuses source changes unless explicitly acknowledged (and then still deploys HEAD only).
   if (meaningfulChanges((await run('git', ['status', '--porcelain'])).stdout).length) assert.match((await command('deploy', ['novotralux'])).output, /Uncommitted changes/)
+  // Unsafe data on an existing Staging branch (an enabled integration with a secret) fails closed: no URL exported.
+  const unsafe = new pg.Client({ connectionString: urls['gerard-staging'] }); await unsafe.connect()
+  await unsafe.query(`insert into "OrganizationIntegration" (id, "organizationId", type, enabled, "secretRef", "updatedAt") values ('oi-unsafe', 'org-gerard-default', 'MAIL_INTAKE', true, 'SOME_SECRET', now())`)
+  const envAddsBefore = readState().vercelCalls.filter((call: any) => call.args[0] === 'env' && call.args[1] === 'add').length
+  const refused = await command('setup', ['--no-deploy'])
+  assert.notEqual(refused.code, 0, 'unsafe data makes setup fail')
+  assert.match(refused.output, /gerard-staging failed verification \(.*enabled integration.*\): its URL is NOT exported to Vercel/)
+  assert.equal(readState().vercelCalls.filter((call: any) => call.args[0] === 'env' && call.args[1] === 'add').length, envAddsBefore, 'nothing written to Vercel')
+  await unsafe.query(`delete from "OrganizationIntegration" where id = 'oi-unsafe'`); await unsafe.end()
+  assert.deepEqual(await productionSnapshot(), parentsBefore, 'Production parents unchanged after all runs')
   assertProductionUntouched('all commands')
   if (process.env.STAGING_OPERATOR_TEST_VERBOSE) console.log(`${first.output}\n${second.output}\n${check.output}`)
   if (!hadEnv) rmSync(sentinel)

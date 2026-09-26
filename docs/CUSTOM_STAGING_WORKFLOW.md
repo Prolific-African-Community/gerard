@@ -14,7 +14,7 @@ feature/<scope> ──► npm run staging:deploy ──► npm run staging:check
 | Gerard Platform (Standard) | Vercel project `gerard` | Vercel project `gerard-staging` |
 | Novotralux Custom | Vercel project `novotralux-custom` | Vercel project `novotralux-custom-staging` |
 | Stable URLs | `gerard-dispatch.vercel.app`, `www.novotralux.eu` | `https://gerard-staging.vercel.app`, `https://novotralux-custom-staging.vercel.app` (or the production `*.vercel.app` host Vercel assigned to the project; setup reads it) |
-| Databases (Neon project `lucky-wildflower-15424624`) | `br-patient-wildflower-zarmyqcq`, `br-cool-sea-zaufb5ng` | branches `gerard-staging`, `novotralux-custom-staging` (schema-only, persistent) |
+| Databases (Neon project `lucky-wildflower-15424624`) | `br-patient-wildflower-zarmyqcq`, `br-cool-sea-zaufb5ng` | child branches `gerard-staging` (parent `br-patient-wildflower-zarmyqcq`) and `novotralux-custom-staging` (parent `br-cool-sea-zaufb5ng`), sanitized, persistent |
 
 All projects live in the Vercel scope `jonathans-projects-e6d49b10`. The legacy project `novotralux` is never used.
 Project names are fixed in `scripts/staging/lib.ts`; they are never derived from a URL.
@@ -75,14 +75,25 @@ changes nothing. In order it:
 1. checks both logins and the scope (`vercel project ls --scope jonathans-projects-e6d49b10`);
 2. creates `gerard-staging` / `novotralux-custom-staging` if missing (`vercel project add`) and mirrors the build
    settings of `gerard` / `novotralux-custom` (`vercel project inspect` read-only → `vercel project update` on Staging);
-3. creates the Neon branches schema-only (no row copied) and, only while a branch is fresh, rebuilds its schema from this
-   repository's migrations;
+3. creates each Neon Staging branch as a **child** of its own Production branch (never a root branch; the parent is
+   only read) and, before any Staging project receives its URL: creates a login role that exists on the Staging branch
+   only (`gerard_staging` / `novotralux_staging`, own password — the inherited owner role, which shares the Production
+   password, is never put in a Staging URL); **sanitizes** a branch not yet marked — one `TRUNCATE` of every `public`
+   table except `_prisma_migrations` and `Organization`, then every `Organization` row deleted except `org-gerard-default`
+   / `org-novotralux`, then the schema is marked `gerard-staging-sanitized` (rows outside `public` → refused); applies
+   the migrations and creates the QA accounts; and **verifies, fail-closed**: right parent, Staging endpoint, `staging`
+   resolution, marker, no inherited row beyond the allow-list and the QA bootstrap, no enabled integration or integration
+   secret, QA account active. An existing branch with another parent, or failing verification, stops setup;
 4. writes the Staging variables (`vercel env add … production --project <staging project>`, value on stdin);
-5. applies migrations and creates the QA accounts;
-6. deploys both Staging projects and aligns Gerard's variables if Vercel assigned different stable hosts.
+5. deploys both Staging projects and aligns Gerard's variables if Vercel assigned different stable hosts.
 
 It refuses any Production or legacy project, a Neon branch that is (or is served by) Production or Preview, and two
 Staging apps on one database. `--no-deploy` stops before deploying.
+
+Limit of the child-branch model: rows deleted by the sanitization stay reachable through the Staging branch's own
+point-in-time history (Neon restore / time travel) until Neon's history-retention window has passed. The Staging
+applications never see them, but anyone with Neon console access to the project can; keep Neon access limited to the
+people who already have Production access.
 
 ## 3. Daily workflow
 
@@ -144,7 +155,8 @@ Nothing in the Staging tooling writes to `gerard`, `novotralux-custom` or `novot
 | `Vercel CLI is not authenticated` / `Neon CLI is not authenticated` | `npx vercel@latest login` / `npx neonctl@latest auth`, retry |
 | `Production project … not found in scope` | the login lacks access to `jonathans-projects-e6d49b10` |
 | `could not read its Staging variables` | the team enforces *sensitive* variables: allow config variables for the Staging projects, or rerun `staging:setup` after changing that policy |
-| `Neon branch … refused` | a branch with a Staging name points at Production/Preview: rename it in Neon |
+| `Neon branch … refused` / `is not a child of` | a branch with a Staging name has the wrong parent or is Production/Preview: rename it in Neon (setup never deletes branches) |
+| `… failed verification … NOT exported to Vercel` | the Staging database holds an enabled integration, an integration secret or inherited rows: fix it on the Staging branch, rerun |
 | build fails `DATABASE_ENVIRONMENT_MISMATCH` | a project's database variable points at another environment: rerun `staging:setup` |
 | build fails `STAGING_MIGRATION_FAILED` | read the (host-redacted) migration output in the Vercel build log |
 | `getConfiguration` FAIL with `401` | the deployed Novotralux Staging predates the current secret: `npm run staging:deploy` |

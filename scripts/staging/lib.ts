@@ -33,12 +33,15 @@ export function assertStagingProject(name: string) {
 
 export const neonConfig = {
   project: process.env.GERARD_STAGING_NEON_PROJECT || 'lucky-wildflower-15424624',
-  // Staging branches start schema-only from the Standard Production root branch (no row copied); setup then rebuilds the
-  // schema from this repository's migrations.
-  parentBranch: process.env.GERARD_STAGING_NEON_PARENT_BRANCH || 'br-patient-wildflower-zarmyqcq',
+  // Staging branches are CHILD branches of their own Production branch (no root branch is created). A child starts with
+  // the parent's data: setup sanitizes it (scripts/staging/database.ts) before any Staging project receives its URL.
+  parents: { gerard: 'br-patient-wildflower-zarmyqcq', novotralux: 'br-cool-sea-zaufb5ng' } as Record<App, string>,
   productionBranches: ['br-patient-wildflower-zarmyqcq', 'br-cool-sea-zaufb5ng'],
   previewBranches: ['br-still-field-za5dh59a'],
   branches: { gerard: 'gerard-staging', novotralux: 'novotralux-custom-staging' } as Record<App, string>,
+  // Login role created on the Staging branch only, with its own Neon-generated password: a child branch inherits the
+  // parent's roles and passwords, so the inherited owner role is never used in a Staging URL.
+  roles: { gerard: 'gerard_staging', novotralux: 'novotralux_staging' } as Record<App, string>,
   database: 'neondb',
 }
 
@@ -211,11 +214,15 @@ async function neonctl(args: string[]) {
   return result.stdout.trim()
 }
 const neonJson = (text: string) => { try { return JSON.parse(text) } catch { return fail('neonctl returned unexpected output') } }
+const list = (value: any, key: string) => (Array.isArray(value) ? value : value?.[key] ?? [])
 
 export const neon = {
-  branches: async () => { const value = neonJson(await neonctl(['branches', 'list', '--output', 'json'])); return (Array.isArray(value) ? value : value.branches ?? []) as NeonBranch[] },
-  createBranch: async (name: string) => { const value = neonJson(await neonctl(['branches', 'create', '--name', name, '--parent', neonConfig.parentBranch, '--schema-only', '--no-secrets', '--output', 'json'])); return (value.branch ?? value) as NeonBranch },
-  databaseOwner: async (branch: NeonBranch) => { const value = neonJson(await neonctl(['databases', 'list', '--branch', branch.id, '--output', 'json'])); return ((Array.isArray(value) ? value : value.databases ?? []) as { name: string; owner_name: string }[]).find((item) => item.name === neonConfig.database)?.owner_name },
+  branches: async () => list(neonJson(await neonctl(['branches', 'list', '--output', 'json'])), 'branches') as NeonBranch[],
+  // A child of the given Production branch (copy-on-write; the parent is only read). Never a root branch.
+  createChildBranch: async (name: string, parent: string) => { const value = neonJson(await neonctl(['branches', 'create', '--name', name, '--parent', parent, '--no-secrets', '--output', 'json'])); return (value.branch ?? value) as NeonBranch },
+  roles: async (branch: NeonBranch) => (list(neonJson(await neonctl(['roles', 'list', '--branch', branch.id, '--output', 'json'])), 'roles') as { name: string }[]).map((item) => item.name),
+  createRole: (branch: NeonBranch, name: string) => neonctl(['roles', 'create', '--name', name, '--branch', branch.id, '--output', 'json']),
+  databaseOwner: async (branch: NeonBranch) => (list(neonJson(await neonctl(['databases', 'list', '--branch', branch.id, '--output', 'json'])), 'databases') as { name: string; owner_name: string }[]).find((item) => item.name === neonConfig.database)?.owner_name,
   // The URL stays in memory: handed to Vercel through stdin or to a child environment, never displayed.
   connectionString: (branch: NeonBranch, role: string) => neonctl(['connection-string', branch.id, '--database-name', neonConfig.database, '--role-name', role]).then((value) => value.split('\n').filter((line) => /^postgres(ql)?:\/\//.test(line.trim())).pop()?.trim() || fail('neonctl returned no connection string')),
 }
@@ -223,15 +230,20 @@ export const neon = {
 export const isProductionOrPreviewEndpoint = (endpoint: string) => PRODUCTION_DATABASE_ENDPOINTS.includes(endpoint) || PREVIEW_DATABASE_ENDPOINTS.includes(endpoint)
 export const databaseEndpoint = (url: string) => databaseEndpointId(url) as string
 
-// Resolves a Staging branch and its direct connection string, refusing anything that is, or is served by, Production
-// or Preview. Direct (unpooled): every Staging build runs `prisma migrate deploy`, which needs it.
+// A Staging branch must be a child of its own Production branch and must not be (or be served by) Production/Preview.
+export function assertStagingBranch(app: App, branch: NeonBranch) {
+  if (branch.default || branch.primary || neonConfig.productionBranches.includes(branch.id) || neonConfig.previewBranches.includes(branch.id)) fail(`Neon branch ${branch.name} is a Production/Preview branch: refused.`)
+  if (branch.parent_id !== neonConfig.parents[app]) fail(`Neon branch ${branch.name} is not a child of ${neonConfig.parents[app]} (parent ${branch.parent_id ?? 'none'}): refused. Rename or remove it in Neon, then rerun.`)
+  return branch
+}
+
+// Resolves an existing Staging branch and the URL of its Staging-only role (Production endpoints refused).
 export async function stagingDatabase(app: App, branches: NeonBranch[]) {
-  const branch = branches.find((item) => item.name === neonConfig.branches[app])
-  if (!branch) return undefined
-  if (branch.default || branch.primary || neonConfig.productionBranches.includes(branch.id)) fail(`Neon branch ${branch.name} is a Production branch: refused.`)
-  if (neonConfig.previewBranches.includes(branch.id)) fail(`Neon branch ${branch.name} is the Preview branch: refused.`)
-  const role = await neon.databaseOwner(branch) || fail(`Neon branch ${branch.name} has no ${neonConfig.database} database`)
-  const direct = await neon.connectionString(branch, role)
+  const found = branches.find((item) => item.name === neonConfig.branches[app])
+  if (!found) return undefined
+  const branch = assertStagingBranch(app, found)
+  if (!(await neon.roles(branch)).includes(neonConfig.roles[app])) fail(`Neon branch ${branch.name} has no ${neonConfig.roles[app]} role (run npm run staging:setup)`)
+  const direct = await neon.connectionString(branch, neonConfig.roles[app])
   assertDatabaseForEnvironment('staging', direct)
   return { branch, direct, endpoint: databaseEndpoint(direct) }
 }
