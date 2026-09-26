@@ -35,15 +35,15 @@ async function main() {
   const store = storeFixture()
   let calls = 0
   const provider = async () => { calls += 1; return route }
-  const first = await measureRouteOperation('A first', () => getOrComputeRoute(base, { store, provider }), { log: false })
+  const first = await measureRouteOperation('A first', () => getOrComputeRoute(base, { store, provider }), { maxCalls: 10, log: false })
   assert.equal(first.metrics.googleCalls, 1)
   assert.equal(calls, 1)
-  const second = await measureRouteOperation('B second', () => getOrComputeRoute(base, { store, provider }), { log: false })
+  const second = await measureRouteOperation('B second', () => getOrComputeRoute(base, { store, provider }), { maxCalls: 10, log: false })
   assert.equal(second.metrics.googleCalls, 0)
   assert.equal(second.metrics.cacheHits, 1)
 
   assert.equal(normalizeRouteCoordinate(49.611621), normalizeRouteCoordinate(49.611622))
-  const equivalent = await measureRouteOperation('C normalized', () => getOrComputeRoute({ ...base, origin: { latitude: 49.611622, longitude: 6.1319351 } }, { store, provider }), { log: false })
+  const equivalent = await measureRouteOperation('C normalized', () => getOrComputeRoute({ ...base, origin: { latitude: 49.611622, longitude: 6.1319351 } }, { store, provider }), { maxCalls: 10, log: false })
   assert.equal(equivalent.metrics.googleCalls, 0)
 
   await getOrComputeRoute({ ...base, destination: { latitude: 50.9, longitude: 4.35 } }, { store, provider })
@@ -55,10 +55,10 @@ async function main() {
   const crossOperationStore = storeFixture()
   let sharedCalls = 0
   const sharedProvider = async () => { sharedCalls += 1; return route }
-  const analyze1 = await measureRouteOperation('F analyze pass 1', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { log: false })
-  const analyze2 = await measureRouteOperation('F analyze pass 2', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { log: false })
-  const simulate = await measureRouteOperation('G simulate', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { log: false })
-  const assistant = await measureRouteOperation('H assistant', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { log: false })
+  const analyze1 = await measureRouteOperation('F analyze pass 1', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { maxCalls: 10, log: false })
+  const analyze2 = await measureRouteOperation('F analyze pass 2', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { maxCalls: 10, log: false })
+  const simulate = await measureRouteOperation('G simulate', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { maxCalls: 10, log: false })
+  const assistant = await measureRouteOperation('H assistant', () => getOrComputeRoute(base, { store: crossOperationStore, provider: sharedProvider }), { maxCalls: 10, log: false })
   assert.equal(analyze1.metrics.googleCalls, 1)
   assert.equal(analyze2.metrics.googleCalls, 0)
   assert.equal(simulate.metrics.googleCalls, 0)
@@ -70,7 +70,7 @@ async function main() {
   const concurrent = await measureRouteOperation('I concurrent', () => Promise.all([
     getOrComputeRoute(base, { store: concurrentStore, provider: slowProvider }),
     getOrComputeRoute(base, { store: concurrentStore, provider: slowProvider }),
-  ]), { log: false })
+  ]), { maxCalls: 10, log: false })
   assert.equal(concurrentCalls, 1)
   assert.equal(concurrent.metrics.deduplicated, 1)
 
@@ -96,7 +96,7 @@ async function main() {
   let retryCalls = 0
   const retry = await measureRouteOperation('M provider cooldown', async () => {
     await assert.rejects(() => getOrComputeRoute(base, { store: emptyStore, provider: async () => { retryCalls += 1; return route } }), /PROVIDER_COOLDOWN/)
-  }, { log: false })
+  }, { maxCalls: 10, log: false })
   assert.equal(retry.metrics.googleCalls, 0)
   assert.equal(retryCalls, 0)
   console.log('A-M route cache, normalisation, déduplication, limites et résilience: OK')
