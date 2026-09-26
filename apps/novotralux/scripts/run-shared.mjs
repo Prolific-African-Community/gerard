@@ -17,7 +17,7 @@ const env = { ...process.env, DATABASE_URL: target, NEXT_PUBLIC_GERARD_APPLICATI
   GERARD_APPLICATION_ID: 'novotralux', GERARD_INSTANCE_ORGANIZATION_ID: 'org-novotralux',
   GERARD_INSTANCE_ENVIRONMENT: instanceEnvironment,
   GERARD_BUILD_OUTPUT: process.env.GERARD_BUILD_OUTPUT || '.next-novotralux',
-  GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION: instanceEnvironment === 'preview'
+  GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION: instanceEnvironment === 'preview' || instanceEnvironment === 'staging'
     ? '0'
     : process.env.GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION || '0' }
 const npmCli = process.env.npm_execpath

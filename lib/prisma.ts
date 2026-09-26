@@ -3,12 +3,15 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { getActiveOrganizationContext } from "./auth/organization-context";
+import { assertRuntimeDatabase } from "./runtime/database-guard";
 
 const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
   throw new Error("DATABASE_URL is missing");
 }
+
+assertRuntimeDatabase(connectionString);
 
 const tenantModels = new Set([
   'ClientProfile', 'DispatchOptimizationApplication', 'Driver',

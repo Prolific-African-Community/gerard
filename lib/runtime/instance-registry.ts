@@ -1,4 +1,4 @@
-import { GERARD_CORE_VERSION, checkCoreCompatibility, type GerardInstanceRegistryEntry } from '@prolific/gerard-core'
+import { GERARD_CORE_VERSION, checkCoreCompatibility, resolveDeploymentEnvironment, type DeploymentEnvironment, type GerardInstanceRegistryEntry } from '@prolific/gerard-core'
 
 import { novotraluxInstance } from '../../apps/novotralux/instance'
 import { gerardStandardManifest } from '../standard/application'
@@ -23,17 +23,20 @@ const registeredInstances: readonly GerardInstanceRegistryEntry[] = Object.freez
   novotraluxInstance,
 ])
 
-function isPreviewRuntime(env: NodeJS.ProcessEnv) {
-  return env.VERCEL_ENV === 'preview' || env.GERARD_INSTANCE_ENVIRONMENT === 'preview' || env.GERARD_INSTANCE_ENVIRONMENT === 'staging'
-}
+const instanceKey = (instance: GerardInstanceRegistryEntry, environment: DeploymentEnvironment, suffix: string) =>
+  `GERARD_PLATFORM_INSTANCE_${instance.application.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${environment.toUpperCase()}_${suffix}`
 
-function previewConfigurationEndpoint(instance: GerardInstanceRegistryEntry, env: NodeJS.ProcessEnv) {
-  const key = `GERARD_PLATFORM_INSTANCE_${instance.application.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_PREVIEW_CONFIGURATION_ENDPOINT`
-  const value = env[key]
+// A non-production Platform reaches a Custom instance only through the endpoint declared for its own environment
+// (e.g. GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT). Missing, malformed or pointing at the
+// Production Custom host: no endpoint, so the channel fails closed.
+function environmentConfigurationEndpoint(instance: GerardInstanceRegistryEntry, environment: DeploymentEnvironment, env: NodeJS.ProcessEnv) {
+  const value = env[instanceKey(instance, environment, 'CONFIGURATION_ENDPOINT')]
   if (!value) return undefined
   try {
     const endpoint = new URL(value)
-    if (endpoint.protocol !== 'https:' || endpoint.pathname !== '/api/internal/platform/configuration') return undefined
+    const local = environment === 'development' && ['localhost', '127.0.0.1'].includes(endpoint.hostname)
+    if ((endpoint.protocol !== 'https:' && !local) || endpoint.pathname !== '/api/internal/platform/configuration') return undefined
+    if (instance.configurationEndpoint && new URL(instance.configurationEndpoint).host === endpoint.host) return undefined
     return endpoint.toString()
   } catch {
     return undefined
@@ -41,9 +44,14 @@ function previewConfigurationEndpoint(instance: GerardInstanceRegistryEntry, env
 }
 
 function resolveRuntimeInstance(instance: GerardInstanceRegistryEntry, env: NodeJS.ProcessEnv = process.env): GerardInstanceRegistryEntry {
-  if (instance.applicationType !== 'CUSTOM' || !isPreviewRuntime(env)) return instance
-  // Preview must fail closed rather than send signed configuration commands to Production.
-  return { ...instance, configurationEndpoint: previewConfigurationEndpoint(instance, env) }
+  // Throws on an ambiguous runtime rather than guessing which instances it may command.
+  const environment = resolveDeploymentEnvironment(env)
+  if (environment === 'production') return instance
+  const domain = env[instanceKey(instance, environment, 'DOMAIN')] || instance.domain
+  // The deployment reference and cut-over date describe the Production instance only.
+  const { deploymentReference: _deployment, cutoverAt: _cutover, ...shared } = instance
+  if (instance.applicationType !== 'CUSTOM') return { ...shared, environment, domain }
+  return { ...shared, environment, domain, configurationEndpoint: environmentConfigurationEndpoint(instance, environment, env) }
 }
 
 export function listRegisteredGerardInstances() {
