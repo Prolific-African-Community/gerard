@@ -51,6 +51,8 @@ async function main() {
   await refusal('staging domain is a Production host', () => undefined, /Production host: refused/, { GERARD_STAGING_DOMAIN_GERARD: 'gerard-dispatch.vercel.app' })
   await refusal('staging branch name on a Production branch', () => undefined, /Production branch: refused/, {}, { branches: [{ id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-staging' }, { id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }] })
   await refusal('Neon not authenticated', () => undefined, /Neon CLI is not authenticated: run .*neonctl.* auth/, {}, { neonUnauthenticated: true })
+  await refusal('custom environments not in the plan', (fixture) => { fixture.customEnvironmentLimit = 0 }, /allows 0 custom environment\(s\).*Pro\/Enterprise/)
+  await refusal('unknown Vercel scope', () => undefined, /Vercel project gerard-dispatch not found in scope other-team/, { GERARD_STAGING_VERCEL_TEAM: 'other-team' })
   await refusal('Vercel not authenticated', () => undefined, /Vercel CLI is not authenticated: run .*vercel.* login/, {}, { vercelUnauthenticated: true })
 
   // ─── First setup: creates everything in Staging only, deploys to the staging target, returns the credential once ──
@@ -60,6 +62,11 @@ async function main() {
   const env = { GERARD_STAGING_VERCEL_API: api.url }
   const first = await command('setup', env, ['--allow-dirty'])
   assert.equal(first.code, 0, first.output)
+  assert.ok(!api.calls.some((call: string) => call.includes('/v2/teams')), 'teams are never enumerated')
+  const trust = fixture.projects[1].trustedSources as any
+  assert.equal(trust.enableVercelCiSameRepository, true, 'Trusted Sources settings preserved')
+  assert.deepEqual(trust.projects.prj_gerard.customAllow, [{ from: { slugs: ['preview'] }, to: { slugs: ['preview'] } }, { from: { slugs: ['staging'] }, to: { slugs: ['staging'] } }], 'Gerard staging → Novotralux staging added, Preview rule kept')
+  assert.ok(api.writes.filter((write: any) => write.method === 'PATCH' && /^\/v9\/projects\/[^/]+$/.test(write.path)).every((write: any) => write.path === '/v9/projects/prj_novotralux' && Object.keys(write.body).join() === 'trustedSources'), 'only the Novotralux Trusted Sources is updated')
   const stagingIds = fixture.projects.map((project: any) => project.customEnvironments.find((item: any) => item.slug === 'staging')?.id)
   assert.ok(stagingIds.every(Boolean), 'staging environment created in both projects')
   const envWrites = api.writes.filter((write: any) => write.method === 'POST' && write.path.endsWith('/env'))
@@ -118,6 +125,12 @@ async function main() {
   for (const item of ['Gerard Staging DB', 'Novotralux Staging DB', 'Production DB overlap', 'Custom endpoint', 'Production endpoint leakage', 'QA accounts', 'Integration safety']) assert.match(check.output, new RegExp(`PASS  ${item}`), item)
   assert.match(check.output, /FAIL {2}Channel — .*unreachable/)
   assert.ok(!/postgres(ql)?:\/\//.test(check.output) && !check.output.includes(String(created(0, 'GERARD_PLATFORM_INSTANCE_SHARED_SECRET'))), 'check prints no secret or URL')
+
+  // Trusted Sources losing the staging rule is reported.
+  const rules = trust.projects.prj_gerard.customAllow
+  trust.projects.prj_gerard.customAllow = rules.slice(0, 1)
+  assert.match((await command('check', env)).output, /FAIL {2}Channel — .*Trusted Sources does not admit gerard-dispatch staging → staging/)
+  trust.projects.prj_gerard.customAllow = rules
 
   // A Staging variable drifting to the Production database is reported.
   fixture.projects[0].envs.find((item: any) => item.key === 'DATABASE_URL' && item.customEnvironmentIds)!.value = 'postgresql://u@ep-ancient-block-za26cw6e.eu.aws.neon.tech/neondb'

@@ -12,7 +12,7 @@ export async function deployToStaging(apps: App[], options: { allowDirty?: boole
   const commit = (await run('git', ['rev-parse', '--short', 'HEAD'], {}, { quiet: true })).output.trim()
   const token = vercelToken()
   const vercel = vercelClient(token)
-  const { projects } = await vercel.resolveScope()
+  const projects = await vercel.resolveProjects()
   for (const app of apps) {
     const project = projects[app]
     if (!(await stagingEnvironment(vercel, project))) fail(`${project.name}: no staging environment yet. Run npm run staging:setup first.`)
@@ -20,7 +20,7 @@ export async function deployToStaging(apps: App[], options: { allowDirty?: boole
     const args = ['deploy', '--target=staging', '--yes']
     if (args.includes('--prod') || args.some((arg) => arg.startsWith('--target=') && arg !== '--target=staging')) fail('Refusing a non-Staging deployment target.')
     // VERCEL_ORG_ID / VERCEL_PROJECT_ID select the project without writing a .vercel link into the checkout.
-    const result = await runCli(VERCEL_CLI, args, { VERCEL_ORG_ID: vercel.teamId ?? project.accountId, VERCEL_PROJECT_ID: project.id, VERCEL_TOKEN: token })
+    const result = await runCli(VERCEL_CLI, args, { VERCEL_ORG_ID: project.accountId, VERCEL_PROJECT_ID: project.id, VERCEL_TOKEN: token })
     if (result.code !== 0) fail(`${project.name}: Staging deployment failed (see the Vercel output above).`)
     log(`✔ ${LABEL[app]}: https://${config.domains[app]}`)
   }

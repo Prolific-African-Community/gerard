@@ -19,7 +19,8 @@ export const LABEL: Record<App, string> = { gerard: 'Gerard Staging', novotralux
 const env = process.env
 export const config = {
   vercel: {
-    team: env.GERARD_STAGING_VERCEL_TEAM || '',
+    // The Vercel scope owning both projects (team slug, or team id `team_…`). Every Vercel call names it explicitly.
+    team: env.GERARD_STAGING_VERCEL_TEAM || 'jonathans-projects-e6d49b10',
     environment: 'staging',
     projects: { gerard: env.GERARD_STAGING_VERCEL_PROJECT_GERARD || 'gerard-dispatch', novotralux: env.GERARD_STAGING_VERCEL_PROJECT_NOVOTRALUX || 'novotralux-custom' } as Record<App, string>,
   },
@@ -122,37 +123,38 @@ export function vercelToken() {
 
 // ─── Vercel REST ────────────────────────────────────────────────────────────────────────────────────────────────
 export type VercelEnv = { id: string; key: string; type: string; target?: string[] | string; customEnvironmentIds?: string[]; gitBranch?: string | null }
-export type VercelProject = { id: string; name: string; accountId: string; protectionBypass?: Record<string, { scope?: string }> }
+export type EnvironmentRule = { preset?: string; slugs?: string[] }
+export type TrustedProject = { customAllow?: { from: EnvironmentRule; to: EnvironmentRule }[]; label?: string }
+export type TrustedSources = { enableVercelCiSameRepository?: boolean; oidcProviders?: Record<string, unknown>; projects?: Record<string, TrustedProject> }
+export type VercelProject = { id: string; name: string; accountId: string; protectionBypass?: Record<string, { scope?: string }>; trustedSources?: TrustedSources | null }
 export type VercelDomain = { name: string; customEnvironmentId?: string | null; gitBranch?: string | null }
 
 export function vercelClient(token: string, options: { readOnly?: boolean } = {}) {
-  let teamId: string | undefined
+  const scope: Record<string, string> = config.vercel.team.startsWith('team_') ? { teamId: config.vercel.team } : { slug: config.vercel.team }
   async function call(method: string, route: string, body?: unknown) {
     if (options.readOnly && method !== 'GET') fail(`read-only command attempted ${method} ${route}`)
     const url = new URL(`${config.vercelApi}${route}`)
-    if (teamId) url.searchParams.set('teamId', teamId)
+    for (const [key, value] of Object.entries(scope)) url.searchParams.set(key, value)
     const response = await fetch(url, { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000) })
     const json = await response.json().catch(() => ({}))
-    if (!response.ok) fail(`Vercel ${method} ${route.replace(/\?.*/, '')} → ${response.status} ${json?.error?.code ?? ''} ${redact(String(json?.error?.message ?? '')).slice(0, 200)}`.trim())
+    if (response.status === 401 || response.status === 403) fail(`Vercel refused ${method} ${route} for scope ${config.vercel.team} (${response.status} ${json?.error?.code ?? ''}). Check GERARD_STAGING_VERCEL_TEAM, or run \`vercel login\` again with an account of that team.`)
+    if (!response.ok) fail(`Vercel ${method} ${route} → ${response.status} ${json?.error?.code ?? ''} ${redact(String(json?.error?.message ?? '')).slice(0, 200)}`.trim())
     return json
   }
   const client = {
-    get teamId() { return teamId },
-    // Finds the scope (team or personal account) holding both projects, unless GERARD_STAGING_VERCEL_TEAM names it.
-    async resolveScope() {
-      const teams = ((await call('GET', '/v2/teams')).teams ?? []) as { id: string; slug: string }[]
-      const scopes = config.vercel.team ? teams.filter((team) => team.id === config.vercel.team || team.slug === config.vercel.team) : [...teams, undefined]
-      if (config.vercel.team && !scopes.length) fail(`Vercel team ${config.vercel.team} is not visible to this login.`)
-      for (const scope of scopes) {
-        teamId = scope?.id
-        const found = await Promise.all(APPS.map((app) => client.project(config.vercel.projects[app]).catch(() => null)))
-        if (found.every(Boolean)) return { scope: scope?.slug ?? 'personal account', projects: Object.fromEntries(APPS.map((app, index) => [app, found[index]])) as Record<App, VercelProject> }
+    scope: config.vercel.team,
+    // Both projects are looked up in the configured scope only; no team enumeration.
+    async resolveProjects() {
+      const found = {} as Record<App, VercelProject>
+      for (const app of APPS) {
+        const name = config.vercel.projects[app]
+        found[app] = await client.project(name).catch((error: Error) => fail(/→ 404/.test(error.message) ? `Vercel project ${name} not found in scope ${config.vercel.team} (set GERARD_STAGING_VERCEL_TEAM / GERARD_STAGING_VERCEL_PROJECT_${app.toUpperCase()}).` : error.message))
       }
-      teamId = undefined
-      return fail(`Vercel projects ${Object.values(config.vercel.projects).join(' + ')} not found together (scopes: ${teams.map((team) => team.slug).join(', ') || 'personal'}). Set GERARD_STAGING_VERCEL_TEAM / GERARD_STAGING_VERCEL_PROJECT_GERARD / GERARD_STAGING_VERCEL_PROJECT_NOVOTRALUX.`)
+      if (found.gerard.accountId !== found.novotralux.accountId) fail('The Gerard and Novotralux projects belong to different Vercel accounts: refused.')
+      return found
     },
     project: (name: string) => call('GET', `/v9/projects/${encodeURIComponent(name)}`) as Promise<VercelProject>,
-    customEnvironments: (projectId: string) => call('GET', `/v9/projects/${projectId}/custom-environments`).then((json) => (json.environments ?? []) as { id: string; slug: string; type?: string }[]),
+    customEnvironments: (projectId: string) => call('GET', `/v9/projects/${projectId}/custom-environments`).then((json) => ({ environments: (json.environments ?? []) as { id: string; slug: string; type?: string }[], limit: typeof json.accountLimit?.total === 'number' ? json.accountLimit.total as number : undefined })),
     createCustomEnvironment: (projectId: string) => call('POST', `/v9/projects/${projectId}/custom-environments`, { slug: config.vercel.environment, description: 'Permanent Staging (npm run staging:setup)' }) as Promise<{ id: string; slug: string; type?: string }>,
     envs: (projectId: string) => call('GET', `/v10/projects/${projectId}/env`).then((json) => (json.envs ?? []) as VercelEnv[]),
     // Decrypted in memory only, to compare or sign; never printed or written to disk.
@@ -161,6 +163,7 @@ export function vercelClient(token: string, options: { readOnly?: boolean } = {}
     updateEnv: (projectId: string, envId: string, value: string) => call('PATCH', `/v9/projects/${projectId}/env/${envId}`, { value }),
     domains: (projectId: string) => call('GET', `/v9/projects/${projectId}/domains`).then((json) => (json.domains ?? []) as VercelDomain[]),
     addDomain: (projectId: string, name: string, stagingId: string) => call('POST', `/v10/projects/${projectId}/domains`, { name, customEnvironmentId: stagingId }),
+    updateTrustedSources: (projectId: string, trustedSources: TrustedSources) => call('PATCH', `/v9/projects/${projectId}`, { trustedSources }),
     generateBypass: (projectId: string) => call('PATCH', `/v1/projects/${projectId}/protection-bypass`, { generate: { note: 'Gerard Staging readiness checks' } }),
   }
   return client
@@ -168,10 +171,16 @@ export function vercelClient(token: string, options: { readOnly?: boolean } = {}
 export type VercelClient = ReturnType<typeof vercelClient>
 
 export async function stagingEnvironment(vercel: VercelClient, project: VercelProject) {
-  const found = (await vercel.customEnvironments(project.id)).find((item) => item.slug === config.vercel.environment)
+  const found = (await vercel.customEnvironments(project.id)).environments.find((item) => item.slug === config.vercel.environment)
   if (found?.type === 'production') fail(`${project.name}: the "staging" environment is a Production environment: refused.`)
   return found
 }
+
+// Trusted Sources (Deployment Protection) matches source and target environments by slug unless `customAllow` rules
+// narrow it: Gerard `staging` may call Novotralux `staging` when the Gerard project is trusted and a rule (or the default)
+// admits staging → staging.
+const admits = (rule: EnvironmentRule) => rule.preset === 'all-custom' || (rule.slugs ?? []).includes(config.vercel.environment)
+export const trustsStaging = (entry: TrustedProject | undefined) => Boolean(entry) && (!entry!.customAllow?.length || entry!.customAllow.some((rule) => admits(rule.from) && admits(rule.to)))
 
 export const automationBypass = (project: VercelProject) => Object.entries(project.protectionBypass ?? {}).find(([, value]) => value?.scope === 'automation-bypass')?.[0]
 export const targetsOf = (item: VercelEnv) => (Array.isArray(item.target) ? item.target : item.target ? [item.target] : [])
@@ -192,7 +201,7 @@ const json = (text: string) => { try { return JSON.parse(text) } catch { return 
 
 export const neon = {
   branches: async () => { const value = json(await neonctl(['branches', 'list', '--output', 'json'])); return (Array.isArray(value) ? value : value.branches ?? []) as NeonBranch[] },
-  createBranch: async (name: string) => { const value = json(await neonctl(['branches', 'create', '--name', name, '--parent', config.neon.parentBranch, '--schema-only', '--output', 'json'])); return (value.branch ?? value) as NeonBranch },
+  createBranch: async (name: string) => { const value = json(await neonctl(['branches', 'create', '--name', name, '--parent', config.neon.parentBranch, '--schema-only', '--no-secrets', '--output', 'json'])); return (value.branch ?? value) as NeonBranch },
   databaseOwner: async (branch: NeonBranch) => { const value = json(await neonctl(['databases', 'list', '--branch', branch.id, '--output', 'json'])); return ((Array.isArray(value) ? value : value.databases ?? []) as { name: string; owner_name: string }[]).find((item) => item.name === config.neon.database)?.owner_name },
   // The URL stays in memory: it is handed to Vercel or to a child process environment, never displayed.
   connectionString: (branch: NeonBranch, role: string) => neonctl(['connection-string', branch.id, '--database-name', config.neon.database, '--role-name', role]).then((value) => value.split('\n').filter((line) => /^postgres(ql)?:\/\//.test(line.trim())).pop()?.trim() || fail('neonctl returned no connection string')),

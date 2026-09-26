@@ -3,7 +3,7 @@ import pg from 'pg'
 import { createPlatformConfigurationRequest } from '../../lib/platform/configuration-channel'
 import {
   APPS, DATABASE_VARIABLE, FORBIDDEN_STAGING_VARIABLES, LABEL, QA_ACCOUNTS, appliesTo, authenticate, automationBypass, config, databaseEndpoint, isProductionOrPreviewEndpoint,
-  log, main, neon, productionDomain, stagingDatabase, stagingEndpoint, stagingEnvironment, stagingOnly, targetsOf, vercelClient, type App, type VercelEnv, type VercelProject,
+  log, main, neon, productionDomain, stagingDatabase, stagingEndpoint, stagingEnvironment, stagingOnly, targetsOf, trustsStaging, vercelClient, type App, type VercelEnv, type VercelProject,
 } from './lib'
 
 // npm run staging:check — read-only readiness report of the permanent Staging environments. It only reads Vercel
@@ -37,7 +37,7 @@ main(async () => {
     return report()
   }
   const vercel = vercelClient(token, { readOnly: true })
-  const { projects } = await vercel.resolveScope()
+  const projects = await vercel.resolveProjects()
   const staging = {} as Record<App, string>
   const envs = {} as Record<App, VercelEnv[]>
   for (const app of APPS) {
@@ -116,6 +116,7 @@ main(async () => {
     } catch { problem('Channel', 'Novotralux Staging unreachable') }
     delete process.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET
   }
+  if (!trustsStaging(projects.novotralux.trustedSources?.projects?.[projects.gerard.id])) problem('Channel', `${projects.novotralux.name} Trusted Sources does not admit ${projects.gerard.name} staging → staging (run npm run staging:setup)`)
   try {
     const bypass = automationBypass(projects.gerard)
     const response = await fetch(`https://${config.domains.gerard}/login`, { headers: bypass ? { 'x-vercel-protection-bypass': bypass } : {}, redirect: 'manual', signal: AbortSignal.timeout(20000) })

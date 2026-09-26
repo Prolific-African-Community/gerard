@@ -67,12 +67,15 @@ npm run staging:check     # PASS/FAIL readiness report
 `staging:setup` is idempotent (a second run changes nothing) and does, in order:
 
 1. checks `vercel whoami` and `neonctl me`; if either is not authenticated it opens `vercel login` / `neonctl auth`;
-2. finds both Vercel projects (all teams of your login) and creates the `staging` custom environment if missing;
+2. looks both Vercel projects up in the configured scope `jonathans-projects-e6d49b10` only (every Vercel call names
+   it; teams are never enumerated) and creates the `staging` custom environment if missing (plan limit checked first);
 3. creates the Neon branches `gerard-staging` and `novotralux-custom-staging` **schema-only** (no row copied) and, only
    while a branch is fresh (no migration history, no user), rebuilds its schema from this repository's migrations;
 4. writes the Staging variables above (creates missing ones, aligns setup-owned values, keeps existing secrets);
 5. attaches the two stable domains to the `staging` environment;
-6. generates a Deployment Protection *automation bypass* if the project has none (protection itself is unchanged);
+6. generates a Deployment Protection *automation bypass* if the project has none (protection itself is unchanged), and
+   makes sure Novotralux **Trusted Sources** admits the Gerard project for `staging → staging` (the OIDC path Gerard
+   Staging uses); it appends that one rule and keeps every existing rule and setting;
 7. applies migrations and creates the QA accounts (`scripts/staging-prepare.ts`);
 8. deploys both apps with `vercel deploy --target=staging`.
 
@@ -121,7 +124,7 @@ Read-only (Vercel metadata, read-only database transactions, and the existing si
 | Production DB overlap | no Staging database is a Production/Preview endpoint, variables are Staging-only, the two apps use distinct databases |
 | Custom endpoint | Gerard Staging targets `https://<Novotralux Staging domain>/api/internal/platform/configuration`; both domains attached to `staging`; platform hostnames set |
 | Production endpoint leakage | no Staging value points at a Production host; `GERARD_INSTANCE_ENVIRONMENT=staging` on both; no Staging variable in Production/Preview |
-| Channel | identical Staging secret on both sides; Novotralux Staging answers a signed `getConfiguration`; Gerard Staging answers |
+| Channel | identical Staging secret on both sides; Novotralux Trusted Sources admits Gerard `staging → staging`; Novotralux Staging answers a signed `getConfiguration`; Gerard Staging answers |
 | QA accounts | both accounts exist, are active, with the expected roles |
 | Integration safety | no enabled integration in either Staging database; no Production/integration credential in Staging; Google Routes capped to 0 |
 
@@ -151,7 +154,7 @@ Nothing in this workflow writes Production variables, domains, branches or data.
 | --- | --- |
 | `Vercel CLI is not authenticated` / `Neon CLI is not authenticated` | run `npx vercel login` / `npx neonctl auth`, retry |
 | `credentials file was not found` | set `VERCEL_TOKEN` in the current shell (vercel.com/account/tokens), retry |
-| `projects … not found together` | set `GERARD_STAGING_VERCEL_TEAM` and/or the project-name overrides |
+| `project … not found in scope …` / `Vercel refused … (403)` | the scope is wrong for your login: set `GERARD_STAGING_VERCEL_TEAM` (team slug or `team_…` id) and/or the project-name overrides |
 | domain attach fails (`domain_taken`) | choose another `*.vercel.app` name via `GERARD_STAGING_DOMAIN_*`, rerun setup |
 | `Neon branch … refused` | a branch with the Staging name points at Production/Preview: rename that branch in Neon |
 | build fails `DATABASE_ENVIRONMENT_MISMATCH` | the environment's database variable points at another environment's database; rerun `staging:setup` |

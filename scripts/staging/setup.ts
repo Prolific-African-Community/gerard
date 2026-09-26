@@ -7,7 +7,7 @@ import pg from 'pg'
 import { deployToStaging } from './deploy'
 import {
   APPS, CONFIGURATION_PATH, FORBIDDEN_STAGING_VARIABLES, LABEL, appliesTo, authenticate, automationBypass, config, fail, flags, log, main, neon,
-  productionDomain, run, stagingDatabase, stagingEndpoint, stagingEnvironment, stagingOnly, vercelClient, type App, type VercelEnv,
+  productionDomain, run, stagingDatabase, stagingEndpoint, stagingEnvironment, stagingOnly, trustsStaging, vercelClient, type App, type TrustedProject, type VercelEnv,
 } from './lib'
 
 // npm run staging:setup — one-time (and repeatable) creation of the permanent Staging environments from the operator's
@@ -27,20 +27,28 @@ main(async () => {
 
   // 2. Projects.
   const vercel = vercelClient(token)
-  const { scope, projects } = await vercel.resolveScope()
-  log(`✔ Vercel scope ${scope}: ${APPS.map((app) => projects[app].name).join(' + ')}`)
+  const projects = await vercel.resolveProjects()
+  log(`✔ Vercel scope ${vercel.scope}: ${APPS.map((app) => projects[app].name).join(' + ')}`)
   for (const app of APPS) if (config.productionHosts.includes(config.domains[app].toLowerCase())) fail(`Staging domain ${config.domains[app]} is a Production host: refused.`)
 
   // 3. Vercel `staging` custom environments.
   const staging = {} as Record<App, string>
   for (const app of APPS) {
     const existing = await stagingEnvironment(vercel, projects[app])
+    if (!existing) {
+      // Custom environments depend on the Vercel plan: say so instead of failing on the create call.
+      const { environments, limit } = await vercel.customEnvironments(projects[app].id)
+      const custom = environments.filter((item) => !['production', 'preview', 'development'].includes(item.slug)).length
+      if (limit !== undefined && custom >= limit) fail(`${projects[app].name}: the Vercel plan of scope ${vercel.scope} allows ${limit} custom environment(s) and ${custom} exist; a "staging" custom environment needs a Pro/Enterprise slot.`)
+    }
     staging[app] = existing?.id ?? (await vercel.createCustomEnvironment(projects[app].id)).id
     log(`✔ ${projects[app].name}: staging environment ${existing ? 'present' : 'created'}`)
   }
 
   // 4. Neon Staging branches (schema-only, never a data copy).
   let branches = await neon.branches()
+  // Existing Staging-named branches are validated before anything is created.
+  for (const app of APPS) await stagingDatabase(app, branches)
   for (const app of APPS) {
     if (branches.some((item) => item.name === config.neon.branches[app])) { log(`✔ Neon branch ${config.neon.branches[app]} present`); continue }
     await neon.createBranch(config.neon.branches[app])
@@ -131,6 +139,18 @@ main(async () => {
     if (automationBypass(projects[app])) continue
     await vercel.generateBypass(projects[app].id)
     log(`✔ ${projects[app].name}: automation bypass generated for readiness checks (protection unchanged)`)
+  }
+
+  // 8b. Trusted Sources: Gerard Staging calls Novotralux Staging with its Vercel OIDC token. Ensure the Novotralux project
+  //     trusts the Gerard project for staging → staging; existing rules and every other environment are left as they are.
+  const trusted = projects.novotralux.trustedSources ?? {}
+  const entry = trusted.projects?.[projects.gerard.id]
+  if (trustsStaging(entry)) log(`✔ ${projects.novotralux.name} trusts ${projects.gerard.name} for staging → staging`)
+  else {
+    const rule = { from: { slugs: [config.vercel.environment] }, to: { slugs: [config.vercel.environment] } }
+    const updated: TrustedProject = { ...entry, label: entry?.label ?? 'Gerard Platform', customAllow: [...(entry?.customAllow ?? []), rule] }
+    await vercel.updateTrustedSources(projects.novotralux.id, { ...trusted, projects: { ...(trusted.projects ?? {}), [projects.gerard.id]: updated } })
+    log(`✔ ${projects.novotralux.name}: Trusted Sources rule added for ${projects.gerard.name} staging → staging (other rules unchanged)`)
   }
 
   // 9. Migrations and QA accounts, through the same step every Staging build runs (never resets an existing account).
