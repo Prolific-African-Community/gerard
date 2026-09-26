@@ -44,7 +44,7 @@ async function command(script: string, args: string[] = [], extra: Record<string
 }
 
 const productionProjects = () => [
-  { id: 'prj_gerard', name: 'gerard', accountId: 'team_jonathan', settings: { framework: 'nextjs', buildCommand: 'npm run build', installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '22.x' }, env: { DATABASE_URL: 'postgresql://u:p@ep-ancient-block-za26cw6e.eu.aws.neon.tech/neondb', JWT_SECRET: 'production-jwt' }, domains: ['gerard-dispatch.vercel.app'] },
+  { id: 'prj_gerard', name: 'gerard', accountId: 'team_jonathan', settings: { framework: 'nextjs', buildCommand: 'npm run build', installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '22.x' }, env: { DATABASE_URL: 'postgresql://u:p@ep-ancient-block-za26cw6e.eu.aws.neon.tech/neondb', JWT_SECRET: 'production-jwt', OPENAI_API_KEY: 'production-openai' }, domains: ['gerard-dispatch.vercel.app'] },
   { id: 'prj_novotralux_custom', name: 'novotralux-custom', accountId: 'team_jonathan', settings: { framework: 'nextjs', buildCommand: 'npm run novotralux:build', installCommand: null, outputDirectory: '.next-novotralux', rootDirectory: null, nodeVersion: '22.x' }, env: { NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL: 'postgresql://u:p@ep-ancient-surf-zav7xo37.eu.aws.neon.tech/neondb' }, domains: ['novotralux-custom.vercel.app', 'www.novotralux.eu'] },
   { id: 'prj_legacy', name: 'novotralux', accountId: 'team_jonathan', settings: { framework: 'nextjs', buildCommand: null, installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '20.x' }, env: {}, domains: ['novotralux-legacy.vercel.app'] },
 ]
@@ -141,13 +141,15 @@ async function main() {
   assert.match(readFileSync('scripts/staging/lib.ts', 'utf8'), /\/branches\/\$\{branch\.id\}\/roles\/\$\{encodeURIComponent\(role\)\}\/reset_password`, '-X', 'POST'/, 'official Neon branch-scoped reset is the credential mechanism')
 
   // Non-interactive: every confirming Vercel command carries --yes (the fake CLI fails like Vercel CLI 60 otherwise).
-  assert.deepEqual(CONFIRMING_COMMANDS, ['project update', 'project inspect', 'env add', 'deploy'])
+  assert.deepEqual(CONFIRMING_COMMANDS, ['project update', 'project inspect', 'env add', 'env rm', 'deploy'])
   assert.deepEqual(nonInteractive(['project', 'update', 'gerard-staging', '--framework', 'nextjs']), ['project', 'update', 'gerard-staging', '--framework', 'nextjs', '--yes'])
   assert.deepEqual(nonInteractive(['project', 'add', 'gerard-staging']), ['project', 'add', 'gerard-staging'], 'no --yes where the command has no such option')
 
   // A local .env with Production-like values must never reach a Staging deployment (deploys build from a worktree).
   const hadEnv = existsSync(sentinel)
-  if (!hadEnv) writeFileSync(sentinel, 'GERARD_TEST_SENTINEL=1\n')
+  // It also carries Production-like values: `vercel env run` would merge them over the Staging project's variables; the
+  // tooling must never see them (no env run; env ls reads the project only).
+  if (!hadEnv) writeFileSync(sentinel, 'GERARD_TEST_SENTINEL=1\nDATABASE_URL=postgresql://u:p@ep-ancient-block-za26cw6e.eu.aws.neon.tech/neondb\nOPENAI_API_KEY=local-only\nGOOGLE_MAPS_API_KEY=local-only\n')
 
   // ─── Refusals before any write ────────────────────────────────────────────────────────────────────────
   for (const [label, extra, expected] of [
@@ -167,7 +169,7 @@ async function main() {
   // ─── Partial earlier run: both Staging projects exist (bare settings, no variables) → reused, never recreated ──
   writeState()
   const partial = readState()
-  partial.projects = [...productionProjects(), ...['gerard-staging', 'novotralux-custom-staging'].map((name) => ({ id: `prj_${name.replace(/-/g, '_')}`, name, accountId: 'team_jonathan', settings: { framework: null, buildCommand: null, installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '22.x' }, env: {}, domains: [] }))]
+  partial.projects = [...productionProjects(), ...['gerard-staging', 'novotralux-custom-staging'].map((name) => ({ id: `prj_${name.replace(/-/g, '_')}`, name, accountId: 'team_jonathan', settings: { framework: null, buildCommand: null, installCommand: null, outputDirectory: null, rootDirectory: null, nodeVersion: '22.x' }, env: name === 'gerard-staging' ? { GOOGLE_MAPS_API_KEY: 'maps-key', OPENAI_API_KEY: 'openai-key' } : { BLOB_READ_WRITE_TOKEN: 'blob-token' }, domains: [] }))]
   partial.vercelCalls = []
   writeFileSync(stateFile, JSON.stringify(partial))
   const resumed = await command('setup', ['--no-deploy'])
@@ -175,6 +177,9 @@ async function main() {
   assert.ok(!readState().vercelCalls.some((call: any) => call.args[0] === 'project' && call.args[1] === 'add'), 'existing Staging projects reused')
   assert.equal(project('gerard-staging').settings.buildCommand, 'npm run build', 'settings aligned on the reused project (project update --yes)')
   assertProductionUntouched('resumed setup')
+  assert.deepEqual([Object.keys(project('gerard-staging').env).filter((key) => /GOOGLE_MAPS|OPENAI|BLOB/.test(key)), Object.keys(project('novotralux-custom-staging').env).filter((key) => /GOOGLE_MAPS|OPENAI|BLOB/.test(key))], [[], []], 'forbidden Staging variables removed')
+  assert.match(resumed.output, /gerard-staging: forbidden Staging variables removed: GOOGLE_MAPS_API_KEY, OPENAI_API_KEY/)
+  assert.ok(readState().vercelCalls.filter((call: any) => call.args[0] === 'env' && call.args[1] === 'rm').every((call: any) => ['gerard-staging', 'novotralux-custom-staging'].includes(call.args[call.args.indexOf('--project') + 1])), 'env rm only on Staging projects')
   for (const url of Object.values(urls)) { const admin = new pg.Client({ connectionString: adminUrl }); await admin.connect(); await admin.query(`drop database if exists "${new URL(url).pathname.slice(1)}" with (force)`); await admin.end() }
 
   // ─── First setup: creates both Staging projects, configures them, deploys HEAD, returns the credential once ─────
@@ -271,7 +276,10 @@ async function main() {
 
   // ─── Check: read-only; configuration items pass; the fake hosts are not served here, so reachability fails ─────
   const callsBeforeCheck = readState().vercelCalls.length
+  const neonBeforeCheck = readState().neonCalls.length
   const check = await command('check')
+  const checkNeon = readState().neonCalls.slice(neonBeforeCheck)
+  for (const child of ['br-gerard-staging', 'br-novotralux-custom-staging']) assert.ok(checkNeon.some((call: string) => call.startsWith(`connection-string ${child}`)), `check reads ${child} through its official Neon credential`)
   const checkWrites = readState().vercelCalls.slice(callsBeforeCheck).filter((call: any) => (call.args[0] === 'env' && call.args[1] === 'add') || ['deploy'].includes(call.args[0]) || (call.args[0] === 'project' && ['add', 'update'].includes(call.args[1])))
   assert.deepEqual(checkWrites, [], 'check writes nothing')
   assert.notEqual(check.code, 0)
@@ -313,6 +321,17 @@ async function main() {
   assert.equal(readState().vercelCalls.filter((call: any) => call.args[0] === 'env' && call.args[1] === 'add').length, envAddsBefore, 'nothing written to Vercel')
   await unsafe.query(`delete from "OrganizationIntegration" where id = 'oi-unsafe'`); await unsafe.end()
   assert.deepEqual(await productionSnapshot(), parentsBefore, 'Production parents unchanged after all runs')
+  // Check failures from the Neon-side truth: a missing QA account, then a child credential on a Production endpoint.
+  const qa = new pg.Client({ connectionString: urls['gerard-staging'] }); await qa.connect()
+  await qa.query(`update "User" set username = 'renamed.for.test' where username = 'gerard.staging.superadmin'`)
+  assert.match((await command('check')).output, /FAIL {2}QA accounts — gerard\.staging\.superadmin missing or inactive/)
+  await qa.query(`update "User" set username = 'gerard.staging.superadmin' where username = 'renamed.for.test'`); await qa.end()
+  const overridden = readState(); overridden.connectionHostOverride = { 'br-gerard-staging': 'ep-ancient-block-za26cw6e.eu.aws.neon.tech' }; writeFileSync(stateFile, JSON.stringify(overridden))
+  const productionEndpoint = await command('check')
+  assert.match(productionEndpoint.output, /FAIL {2}Gerard Staging DB is not Production — .*DATABASE_ENVIRONMENT_MISMATCH/)
+  assert.ok(!productionEndpoint.output.includes('ep-ancient-block'), 'endpoint not printed')
+  const cleared = readState(); delete cleared.connectionHostOverride; writeFileSync(stateFile, JSON.stringify(cleared))
+  assert.ok(!readState().envRunCalls, '`vercel env run` is never used')
   assertProductionUntouched('all commands')
   if (process.env.STAGING_OPERATOR_TEST_VERBOSE) console.log(`${first.output}\n${second.output}\n${check.output}`)
   if (!hadEnv) rmSync(sentinel)
@@ -324,4 +343,4 @@ async function passwordHash() {
   try { return (await client.query(`select "passwordHash" from public."User" where username = 'gerard.staging.superadmin'`)).rows[0]?.passwordHash } finally { await client.end() }
 }
 
-main().catch((error) => { console.error(error); process.exitCode = 1 }).finally(() => { if (existsSync(sentinel) && readFileSync(sentinel, 'utf8') === 'GERARD_TEST_SENTINEL=1\n') rmSync(sentinel); rmSync(home, { recursive: true, force: true }); process.exit() })
+main().catch((error) => { console.error(error); process.exitCode = 1 }).finally(() => { if (existsSync(sentinel) && readFileSync(sentinel, 'utf8').startsWith('GERARD_TEST_SENTINEL=1')) rmSync(sentinel); rmSync(home, { recursive: true, force: true }); process.exit() })

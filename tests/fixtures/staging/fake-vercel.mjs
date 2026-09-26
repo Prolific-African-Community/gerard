@@ -24,8 +24,8 @@ const project = (nameOrId) => state.projects.find((item) => item.name === nameOr
 
 // Like Vercel CLI 60 without a TTY: confirming commands fail without --yes; commands without that option reject it.
 const name = command[0] === 'deploy' ? 'deploy' : `${command[0]} ${command[1]}`
-if (['project update', 'project inspect', 'env add', 'deploy'].includes(name) && !command.includes('--yes')) die('Confirmation required. Re-run with --yes or in an interactive terminal.')
-if (['project ls', 'project add', 'env run', 'api ' + command[1], 'whoami undefined'].includes(name) && command.includes('--yes')) die(`unknown or unexpected option: --yes`, 2)
+if (['project update', 'project inspect', 'env add', 'env rm', 'deploy'].includes(name) && !command.includes('--yes')) die('Confirmation required. Re-run with --yes or in an interactive terminal.')
+if (['project ls', 'project add', 'env run', 'env ls', 'api ' + command[1], 'whoami undefined'].includes(name) && command.includes('--yes')) die(`unknown or unexpected option: --yes`, 2)
 if (command[0] === 'whoami') process.exit(state.vercelUnauthenticated ? 1 : 0)
 if (command[0] === 'login') process.exit(1)
 if (scope !== state.scope) die(`scope ${scope} not accessible`)
@@ -86,7 +86,20 @@ if (command[0] === 'env') {
     found.env[command[2]] = value; save(); out(`Added ${command[2]}`)
     process.exit(0)
   }
+  // `env ls production --project X --json`: that project's records only (values readable for config variables).
+  if (command[1] === 'ls') {
+    if (command[2] !== 'production' || !command.includes('--json')) die('unexpected env ls usage', 2)
+    out({ envs: Object.entries(found.env).map(([key, value]) => ({ key, value, type: 'encrypted', target: ['production'] })) })
+    process.exit(0)
+  }
+  if (command[1] === 'rm') {
+    if (command[3] !== 'production') die('unexpected env rm usage', 2)
+    if (!(command[2] in found.env)) die(`Environment Variable ${command[2]} was not found`)
+    delete found.env[command[2]]; save(); out(`Removed ${command[2]}`)
+    process.exit(0)
+  }
   if (command[1] === 'run') {
+    state.envRunCalls = (state.envRunCalls ?? 0) + 1; save()
     if (option('-e') !== 'production') die('env run expects -e production', 2)
     const [executable, ...rest] = args.slice(separator + 1)
     const child = spawn(executable, rest, { env: { ...process.env, ...found.env, VERCEL_ENV: 'production' }, stdio: 'inherit' })

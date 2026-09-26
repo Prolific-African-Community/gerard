@@ -54,7 +54,7 @@ Project names are fixed in `scripts/staging/lib.ts`; they are never derived from
 | `GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION` | `0` | `0` |
 | `GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD` | generated while the account does not exist | — |
 
-Values are stored as *config* (not *sensitive*) so the tooling can compare them inside `vercel env run`; they are
+Values are stored as *config* (not *sensitive*) so the tooling can compare them in memory (`vercel env ls --project <staging project> --json`, which reads that project only — `vercel env run` is never used: it merges local `.env` files over the project's values); they are
 Staging-only and never printed. No Production secret, mail, SL Automotive, webhook, Blob, OpenAI or Google Maps
 credential is ever set on a Staging project, and no integration is enabled in the Staging databases.
 
@@ -77,7 +77,7 @@ changes nothing. In order it:
    settings of `gerard` / `novotralux-custom` (`vercel project inspect` read-only → `vercel project update` on Staging);
 3. creates each Neon Staging branch as a **child** of its own Production branch (never a root branch; the parent is
    only read) and, before any Staging project receives its URL: **reuses unchanged** the `DATABASE_URL` already stored
-   in the Staging project when it is valid for the child (checked inside `vercel env run`: expected child endpoint, not
+   in the Staging project when it is valid for the child (read with `vercel env ls --project`: expected child endpoint, not
    Production, authenticates, resolves as Staging, and is the credential Neon holds for the child); otherwise **resets
    the owner role's password on the child branch only with Neon's official branch-scoped reset** (`neonctl api
    /projects/{project}/branches/{child}/roles/{owner}/reset_password -X POST`, waiting for Neon's operations) and reads
@@ -87,7 +87,9 @@ changes nothing. In order it:
    the migrations and creates the QA accounts; and **verifies, fail-closed**: right parent, Staging endpoint, `staging`
    resolution, marker, no inherited row beyond the allow-list and the QA bootstrap, no enabled integration or integration
    secret, QA account active. An existing branch with another parent, or failing verification, stops setup;
-4. writes the Staging variables (`vercel env add … production --project <staging project>`, value on stdin);
+4. removes the variables forbidden in Staging from the two Staging projects only (`vercel env rm … production --project
+   <staging project> --yes`), then writes the Staging variables (`vercel env add … production --project <staging project>`,
+   value on stdin);
 5. deploys both Staging projects and aligns Gerard's variables if Vercel assigned different stable hosts.
 
 It refuses any Production or legacy project, a Neon branch that is (or is served by) Production or Preview, and two
@@ -117,9 +119,12 @@ QA accounts persist.
 
 ### `staging:check`
 
-Read-only: CLI metadata, a probe inside `vercel env run` (read-only database transactions and the existing signed reads
-`getConfiguration` / `getOrgAdmins`), and HTTP requests to the stable URLs. PASS/FAIL only, never a secret or database
-URL; exit code 1 on any FAIL.
+Read-only. Databases and QA accounts: each canonical Neon Staging child branch, read directly with its official Neon
+connection string in read-only transactions (migrations, sanitization marker, QA accounts and roles, integrations).
+Vercel configuration: each Staging project's own variables (`vercel env ls --project … --json`), compared with the Neon
+child branch (endpoint and exact credential) without printing them. Deployed runtimes: the stable URLs and the existing
+signed reads `getConfiguration` / `getOrgAdmins`. Never a local `.env`, never `vercel env run`. PASS/FAIL only, never a
+secret or database URL; exit code 1 on any FAIL.
 
 1. Gerard Staging reachable · 2. Novotralux Staging reachable · 3. Gerard Staging DB is not Production ·
 4. Novotralux Staging DB is not Production (both on their own Neon Staging branch, distinct, migrated) ·

@@ -17,8 +17,8 @@ const MARKER = 'gerard-staging-sanitized'
 
 const quote = (name: string) => `"${name.replace(/"/g, '""')}"`
 
-async function withClient<T>(url: string, work: (client: pg.Client) => Promise<T>) {
-  const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 20000 })
+async function withClient<T>(url: string, work: (client: pg.Client) => Promise<T>, options: { readOnly?: boolean } = {}) {
+  const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 20000, ...(options.readOnly ? { options: '-c default_transaction_read_only=on' } : {}) })
   await client.connect()
   try { return await work(client) } finally { await client.end().catch(() => undefined) }
 }
@@ -65,8 +65,8 @@ export async function sanitize(url: string, app: App, branch: NeonBranch) {
   })
 }
 
-export type DatabaseState = { marker: Marker | null; counts: Record<string, number>; users: string[]; organizations: string[]; domains: string[]; integrations: { enabled: number; withSecret: number }; foreign: string[]; qaActive: boolean }
-export const inspectDatabase = (url: string, app: App) => withClient(url, async (client) => {
+export type DatabaseState = { marker: Marker | null; counts: Record<string, number>; users: string[]; organizations: string[]; domains: string[]; integrations: { enabled: number; withSecret: number }; foreign: string[]; qaActive: boolean; migrations: { applied: number; failed: number }; qa: { platformRole: string | null; organizationRole: string | null } }
+export const inspectDatabase = (url: string, app: App, options: { readOnly?: boolean } = {}) => withClient(url, async (client) => {
   const counts: Record<string, number> = {}
   for (const table of await publicTables(client)) counts[table] = Number((await client.query(`select count(*)::int as n from public.${quote(table)}`)).rows[0].n)
   const column = (sql: string) => client.query(sql).then((result) => result.rows.map((row) => String(Object.values(row)[0])))
@@ -81,8 +81,10 @@ export const inspectDatabase = (url: string, app: App) => withClient(url, async 
     integrations,
     foreign: await foreignRows(client),
     qaActive: counts.User !== undefined && Boolean((await client.query('select 1 from public."User" where username = $1 and "isActive"', [QA_ACCOUNTS[app]])).rowCount),
+    migrations: counts._prisma_migrations === undefined ? { applied: 0, failed: 0 } : (await client.query(`select count(*) filter (where finished_at is not null and rolled_back_at is null)::int as applied, count(*) filter (where finished_at is null and rolled_back_at is null)::int as failed from public._prisma_migrations`)).rows[0],
+    qa: counts.User === undefined ? { platformRole: null, organizationRole: null } : (await client.query(`select u."platformRole"::text as "platformRole", (select m.role::text from public."OrganizationUser" m where m."userId" = u.id and m."organizationId" = $2) as "organizationRole" from public."User" u where u.username = $1`, [QA_ACCOUNTS[app], STAGING_ORGANIZATION[app]])).rows[0] ?? { platformRole: null, organizationRole: null },
   } as DatabaseState
-})
+}, options)
 
 // Fail-closed verification before the URL is exported to Vercel. `fresh` = sanitized by this run: then nothing but the
 // allow-list and the Staging bootstrap rows may exist. An already-marked branch may hold Staging test data, but never an

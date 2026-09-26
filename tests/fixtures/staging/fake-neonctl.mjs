@@ -74,6 +74,7 @@ if (group === 'connection-string') {
   if (role !== state.owners[branch.id]) die('role not found')
   url.username = role
   url.password = state.passwords?.[branch.id] ?? state.productionPassword
+  if (state.connectionHostOverride?.[branch.id]) url.hostname = state.connectionHostOverride[branch.id]
   console.log(url.toString()); process.exit(0)
 }
 die(`fake neonctl: unsupported ${args.join(' ')}`, 2)

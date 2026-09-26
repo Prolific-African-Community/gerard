@@ -120,8 +120,8 @@ export const runCli = (tool: Cli, args: string[], options: RunOptions = {}) => r
 // ─── Vercel CLI ─────────────────────────────────────────────────────────────────────────────────────────────────
 const lastLines = (text: string) => redact(text.trim().split('\n').slice(-3).join(' ')).slice(0, 300)
 // Vercel CLI 60 commands used here that can ask for confirmation: they always get `--yes` (after `vercel login` the
-// tooling never prompts). `project ls`, `project add`, `api` (GET) and `env run` take no confirmation flag.
-export const CONFIRMING_COMMANDS = ['project update', 'project inspect', 'env add', 'deploy']
+// tooling never prompts). `project ls`, `project add`, `api` (GET) and `env ls` take no confirmation flag.
+export const CONFIRMING_COMMANDS = ['project update', 'project inspect', 'env add', 'env rm', 'deploy']
 export function nonInteractive(args: string[]) {
   const command = args[0] === 'deploy' ? 'deploy' : `${args[0]} ${args[1]}`
   return CONFIRMING_COMMANDS.includes(command) && !args.includes('--yes') ? [...args, '--yes'] : args
@@ -146,6 +146,8 @@ export const vercelCli = {
   // Read-only API reads through the CLI session (team id for deployments, project domains for the stable URL).
   api: async (endpoint: string) => parseJson(await vercel(['api', `${endpoint}${endpoint.includes('?') ? '&' : '?'}slug=${SCOPE}`]), `api ${endpoint}`),
   // The value goes through stdin, never through the command line. Staging projects only, Vercel "production" scope.
+  // Removes a variable from a Staging project's production scope (forbidden in Staging). Staging projects only.
+  removeEnv: (project: string, key: string) => vercel(['env', 'rm', key, 'production', '--project', assertStagingProject(project)]),
   setEnv: (project: string, key: string, value: string) => vercel(['env', 'add', key, 'production', '--project', assertStagingProject(project), '--force', '--type', 'config'], { input: value }),
 }
 
@@ -157,33 +159,11 @@ export async function stableHost(project: string) {
   return production.find((name) => name === `${project}.vercel.app`) ?? production.find((name) => name.endsWith('.vercel.app')) ?? production[0]
 }
 
-// Runs the probe inside `vercel env run` for one Staging project: the project's variables reach only that child
-// process, which reports facts (names, booleans, fingerprints, statuses) and never values.
-const BASE_ENV = ['PATH', 'Path', 'PATHEXT', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'SystemRoot', 'SYSTEMROOT', 'ComSpec', 'TEMP', 'TMP', 'TMPDIR', 'XDG_DATA_HOME', 'XDG_CONFIG_HOME', 'XDG_CACHE_HOME', 'NODE_EXTRA_CA_CERTS', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'no_proxy', 'npm_config_cache', 'GERARD_STAGING_VERCEL_CLI', 'GERARD_STAGING_NEONCTL', 'FAKE_STAGING_STATE']
-export type ProbeFacts = {
-  keys: string[]
-  environment: string | null
-  routesCap: string | null
-  secrets: Record<string, { present: boolean; fingerprint: string | null }>
-  values: Record<string, string | null>
-  productionHostKeys: string[]
-  database?: { variables: Record<string, string | null>; productionEndpoint: boolean; reachable: boolean; migrations?: { applied: number; failed: number }; account?: { exists: boolean; active: boolean; platformRole: string | null; organizationRole: string | null }; integrationsEnabled?: number }
-  channel?: Record<string, { status: number; organizationId?: string | null; usernames?: string[] }>
-}
-// Runs one of this repository's scripts inside `vercel env run -e production --project <Staging project>`: the project's
-// variables exist only in that child process, which prints one marked line of facts (never values).
-export async function envRun(project: string, script: string, args: string[], extraEnv: Record<string, string>, marker: string) {
-  const env = Object.fromEntries(BASE_ENV.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]))
-  const tsx = path.join('node_modules', 'tsx', 'dist', 'cli.mjs')
-  const result = await runCli(VERCEL_CLI, ['env', 'run', '-e', 'production', '--project', assertStagingProject(project), '--scope', SCOPE, '--', 'node', tsx, script, ...args], {
-    quiet: true, replaceEnv: true, env: { ...env, ...extraEnv, GERARD_PROBE_BASELINE: [...Object.keys(env), ...Object.keys(extraEnv)].join(',') },
-  })
-  const line = result.stdout.split('\n').find((item) => item.startsWith(marker))
-  if (result.code !== 0 || !line) fail(`${project}: could not run with its Staging variables (${lastLines(result.output)})`)
-  return line!.slice(marker.length)
-}
-export async function probe(project: string, mode: 'facts' | 'credential' | 'full', app: App) {
-  return JSON.parse(await envRun(project, 'scripts/staging/probe.ts', [mode, app], {}, 'GERARD_PROBE ')) as ProbeFacts
+// The Staging project's own variables (Vercel "production" scope), read with `vercel env ls --project <name> --json`:
+// exactly that project's records, never merged with local .env files (as `vercel env run` does). Values stay in memory.
+export async function stagingVariables(project: string) {
+  const envs = (parseJson(await vercel(['env', 'ls', 'production', '--project', assertStagingProject(project), '--json']), 'env ls').envs ?? []) as { key: string; value?: string; target?: string[] | string }[]
+  return Object.fromEntries(envs.map((item) => [item.key, item.value])) as Record<string, string | undefined>
 }
 
 // ─── Authentication ───────────────────────────────────────────────────────────────────────────────────────────
