@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
+import path from 'node:path'
 import { resolveDeploymentEnvironment } from '@prolific/gerard-core'
 
 import { assertDatabaseForEnvironment } from '../apps/novotralux/scripts/database-target.mjs'
@@ -31,7 +32,8 @@ const custom = process.env.GERARD_APPLICATION_ID === 'novotralux'
 async function main() {
   // Migration output names the database host: it is redacted before reaching build or operator logs.
   try {
-    process.stdout.write(redact(execFileSync('npx', ['prisma', 'migrate', 'deploy'], { env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32' })))
+    // No shell: Prisma's own entry point run by this Node binary, arguments passed as argv items on every platform.
+    process.stdout.write(redact(execFileSync(process.execPath, [path.join(process.cwd(), 'node_modules', 'prisma', 'build', 'index.js'), 'migrate', 'deploy'], { env: process.env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], shell: false })))
   } catch (error) {
     const failed = error as { stdout?: string; stderr?: string }
     process.stdout.write(redact(`${failed.stdout ?? ''}${failed.stderr ?? ''}`))

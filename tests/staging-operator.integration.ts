@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import pg from 'pg'
 
 import { meaningfulChanges } from '../scripts/staging/deploy'
-import { CONFIRMING_COMMANDS, nonInteractive } from '../scripts/staging/lib'
+import { CONFIRMING_COMMANDS, nonInteractive, run as runChild, runCli } from '../scripts/staging/lib'
 
 // Staging operator commands (npm run staging:setup / staging:deploy / staging:check) against fake `vercel` and `neonctl`
 // CLIs and a disposable local PostgreSQL standing in for the Neon Staging branches. The fakes pin the tooling's contract
@@ -26,11 +26,17 @@ const home = mkdtempSync(path.join(tmpdir(), 'gerard-staging-'))
 const stateFile = path.join(home, 'state.json')
 const fixtures = path.join(process.cwd(), 'tests/fixtures/staging')
 const sentinel = path.join(process.cwd(), '.env')
+// The fake Vercel CLI runs from a directory whose path contains spaces, given as a JSON argv override.
+const spacedDirectory = path.join(home, 'cli dir with spaces')
+mkdirSync(spacedDirectory)
+copyFileSync(path.join(fixtures, 'fake-vercel.mjs'), path.join(spacedDirectory, 'fake-vercel.mjs'))
+const VERCEL_OVERRIDE = JSON.stringify(['node', path.join(spacedDirectory, 'fake-vercel.mjs')])
+const NEON_OVERRIDE = JSON.stringify(['node', path.join(fixtures, 'fake-neonctl.mjs')])
 
 type Result = { code: number; output: string }
 async function command(script: string, args: string[] = [], extra: Record<string, string> = {}): Promise<Result> {
   try {
-    const { stdout, stderr } = await run('npx', ['tsx', `scripts/staging/${script}.ts`, ...args], { env: { PATH: process.env.PATH!, HOME: home, GERARD_STAGING_VERCEL_CLI: `node ${fixtures}/fake-vercel.mjs`, GERARD_STAGING_NEONCTL: `node ${fixtures}/fake-neonctl.mjs`, FAKE_STAGING_STATE: stateFile, ...extra } as unknown as NodeJS.ProcessEnv, maxBuffer: 32 * 1024 * 1024, timeout: 600000 })
+    const { stdout, stderr } = await run('npx', ['tsx', `scripts/staging/${script}.ts`, ...args], { env: { PATH: process.env.PATH!, HOME: home, GERARD_STAGING_VERCEL_CLI: VERCEL_OVERRIDE, GERARD_STAGING_NEONCTL: NEON_OVERRIDE, FAKE_STAGING_STATE: stateFile, ...extra } as unknown as NodeJS.ProcessEnv, maxBuffer: 32 * 1024 * 1024, timeout: 600000 })
     return { code: 0, output: stdout + stderr }
   } catch (error: any) {
     return { code: error.code ?? 1, output: `${error.stdout ?? ''}${error.stderr ?? ''}` }
@@ -69,6 +75,21 @@ async function main() {
   // ─── Dirty-tree rule: generated files never block a deploy, source changes do ────────────────────────
   assert.deepEqual(meaningfulChanges(' M next-env.d.ts\n M tsconfig.tsbuildinfo\n'), [], 'generated files ignored')
   assert.deepEqual(meaningfulChanges(' M next-env.d.ts\n M lib/prisma.ts\n?? scripts/new.ts\n'), ['lib/prisma.ts', 'scripts/new.ts'], 'source changes refused')
+
+  // ─── Process runner: no shell, every argument is exactly one argv item (the Windows failure: values re-split) ───
+  const tricky = ['npm run build', 'npm run novotralux:build', 'C:\\Users\\Jon Doe\\My Projects\\gerard', '/tmp/path with spaces/x', 'https://novotralux-custom-staging.vercel.app/api/internal/platform/configuration?a=1&b=2', '', '"quoted"', "it's", 'a;b|c&d>e', '%PATH%', '$HOME']
+  const echoed = await runChild('node', [path.join(fixtures, 'echo-argv.mjs'), ...tricky], { quiet: true })
+  assert.deepEqual(JSON.parse(echoed.stdout), tricky, 'runner passes each value as one argv item')
+  const echoDirectory = path.join(home, 'echo dir with spaces')
+  mkdirSync(echoDirectory)
+  copyFileSync(path.join(fixtures, 'echo-argv.mjs'), path.join(echoDirectory, 'echo-argv.mjs'))
+  const viaCli = await runCli({ command: 'node', prefix: [path.join(echoDirectory, 'echo-argv.mjs')] }, ['project', 'update', 'gerard-staging', '--build-command', 'npm run build', '--output-directory', ''], { quiet: true })
+  assert.deepEqual(JSON.parse(viaCli.stdout), ['project', 'update', 'gerard-staging', '--build-command', 'npm run build', '--output-directory', ''], 'CLI path with spaces, values intact')
+  const stdinEcho = await runChild('node', ['-e', 'let v="";process.stdin.on("data",(c)=>v+=c).on("end",()=>process.stdout.write(JSON.stringify(v)))'], { quiet: true, input: 'value with spaces & symbols' })
+  assert.equal(JSON.parse(stdinEcho.stdout), 'value with spaces & symbols', 'stdin preserved')
+  for (const file of [...readdirSync('scripts/staging').map((name) => `scripts/staging/${name}`), 'scripts/staging-prepare.ts']) {
+    assert.ok(!/shell:\s*(true|windows|process\.platform)/.test(readFileSync(file, 'utf8')), `${file}: no shell for argv execution`)
+  }
 
   // Non-interactive: every confirming Vercel command carries --yes (the fake CLI fails like Vercel CLI 60 otherwise).
   assert.deepEqual(CONFIRMING_COMMANDS, ['project update', 'project inspect', 'env add', 'deploy'])
@@ -117,6 +138,8 @@ async function main() {
   assert.ok(gerard && novotralux, 'Staging projects created')
   assert.deepEqual(gerard.settings, { ...productionProjects()[0].settings }, 'gerard-staging builds like gerard')
   assert.deepEqual(novotralux.settings, { ...productionProjects()[1].settings }, 'novotralux-custom-staging builds like novotralux-custom')
+  const updates = readState().updates as string[][]
+  assert.ok(updates.some((item) => item[item.indexOf('--build-command') + 1] === 'npm run novotralux:build'), 'build command received as one argv item')
   assert.equal(gerard.env.GERARD_INSTANCE_ENVIRONMENT, 'staging')
   assert.equal(gerard.env.DATABASE_URL, urls['gerard-staging'], 'Gerard Staging DB')
   assert.equal(gerard.env.GERARD_PLATFORM_HOSTNAMES, 'gerard-staging-jonathan.vercel.app', 'platform host realigned on the host Vercel assigned')

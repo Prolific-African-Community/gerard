@@ -138,7 +138,7 @@ main(async () => {
   // 8. Migrations and QA accounts, through the same step every Staging build runs (never resets an existing account).
   let superadminCreated = false
   for (const app of APPS) {
-    const result = await run(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['tsx', 'scripts/staging-prepare.ts'], { env: {
+    const result = await run('node', [path.join('node_modules', 'tsx', 'dist', 'cli.mjs'), 'scripts/staging-prepare.ts'], { env: {
       VERCEL: '', VERCEL_ENV: '', VERCEL_TARGET_ENV: '', GERARD_INSTANCE_ENVIRONMENT: 'staging', DATABASE_URL: databases[app].direct,
       GERARD_APPLICATION_ID: app === 'novotralux' ? 'novotralux' : '', GERARD_INSTANCE_ORGANIZATION_ID: app === 'novotralux' ? 'org-novotralux' : '',
       GERARD_PLATFORM_HOSTNAMES: app === 'gerard' ? hosts.gerard : '', GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD: app === 'gerard' ? initialPassword ?? '' : '',

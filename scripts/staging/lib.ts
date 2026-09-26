@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
 
@@ -69,27 +70,46 @@ export async function main(run: () => Promise<number | void>) {
 }
 
 // ─── Child processes (output redacted) ─────────────────────────────────────────────────────────────────────────────
-// A CLI can be overridden (GERARD_STAGING_VERCEL_CLI / GERARD_STAGING_NEONCTL, e.g. "node fake-cli.mjs") for tests.
+// Every child runs WITHOUT a shell: each argument reaches the program as exactly one argv item on every platform (a value
+// such as `npm run build` or a path with spaces is never re-split). Windows cannot start `npx.cmd` without a shell, so
+// `npx` is run as npm's own `npx-cli.js` with this Node binary.
 type Cli = { command: string; prefix: string[] }
+function npxCli() {
+  const candidates = [
+    process.env.npm_execpath && path.join(path.dirname(process.env.npm_execpath), 'npx-cli.js'),
+    path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+    path.join(path.dirname(process.execPath), '..', 'lib', 'node_modules', 'npm', 'bin', 'npx-cli.js'),
+  ].filter(Boolean) as string[]
+  return candidates.find((file) => existsSync(file)) ?? fail('npx was not found next to this Node installation (run the command through npm run …).')
+}
+// A CLI can be overridden for tests (GERARD_STAGING_VERCEL_CLI / GERARD_STAGING_NEONCTL): a JSON argv array such as
+// ["node","/path with spaces/fake.mjs"], or a space-separated string without spaces inside items.
 const cli = (override: string | undefined, fallback: string[]): Cli => {
-  const parts = override ? override.split(' ').filter(Boolean) : fallback
+  const parts = override ? (override.trim().startsWith('[') ? JSON.parse(override) as string[] : override.split(' ').filter(Boolean)) : fallback
   return { command: parts[0], prefix: parts.slice(1) }
 }
 export const VERCEL_CLI = cli(process.env.GERARD_STAGING_VERCEL_CLI, ['npx', '--yes', 'vercel@latest'])
 export const NEONCTL = cli(process.env.GERARD_STAGING_NEONCTL, ['npx', '--yes', 'neonctl@latest'])
+// `node` and `npx` resolve to this Node binary / npm's npx-cli.js; any other command (git) is spawned as is.
+export function resolveCommand(command: string, args: string[]): [string, string[]] {
+  if (command === 'npx') return [process.execPath, [npxCli(), ...args]]
+  if (command === 'node') return [process.execPath, args]
+  return [command, args]
+}
 
 type RunOptions = { quiet?: boolean; interactive?: boolean; input?: string; env?: Record<string, string | undefined>; replaceEnv?: boolean; cwd?: string }
 export function run(command: string, args: string[], options: RunOptions = {}) {
   return new Promise<{ code: number; stdout: string; output: string }>((resolve) => {
-    const windows = process.platform === 'win32'
     const env = options.replaceEnv ? options.env : { ...process.env, ...options.env }
-    const child = spawn(command, args, { env: env as NodeJS.ProcessEnv, cwd: options.cwd, shell: windows, stdio: options.interactive ? 'inherit' : [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
+    let resolved: [string, string[]]
+    try { resolved = resolveCommand(command, args) } catch (error) { resolve({ code: 127, stdout: '', output: (error as Error).message }); return }
+    const child = spawn(resolved[0], resolved[1], { env: env as NodeJS.ProcessEnv, cwd: options.cwd, shell: false, windowsHide: true, stdio: options.interactive ? 'inherit' : [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] })
     let stdout = ''
     let output = ''
     child.stdout?.on('data', (chunk: Buffer) => { const text = chunk.toString(); stdout += text; output += text; if (!options.quiet) process.stdout.write(redact(text)) })
     child.stderr?.on('data', (chunk: Buffer) => { const text = chunk.toString(); output += text; if (!options.quiet) process.stderr.write(redact(text)) })
-    if (options.input !== undefined) { child.stdin?.write(options.input); child.stdin?.end() }
-    child.on('error', () => resolve({ code: 127, stdout, output }))
+    if (options.input !== undefined) { child.stdin?.on('error', () => undefined); child.stdin?.write(options.input); child.stdin?.end() }
+    child.on('error', (error) => resolve({ code: 127, stdout, output: `${output}${error.message}` }))
     child.on('close', (code) => resolve({ code: code ?? 1, stdout, output }))
   })
 }

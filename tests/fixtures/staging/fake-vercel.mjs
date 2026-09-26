@@ -41,6 +41,14 @@ if (command[0] === 'project') {
     out({ id: found.id, name: found.name, owner: { name: 'Jonathan', slug: scope }, ...found.settings })
   } else if (sub === 'update') {
     const found = project(name) ?? die('project not found')
+    // Strict like Vercel CLI 60: exactly one positional name, every value flag followed by exactly one value item.
+    const valueFlags = ['--framework', '--build-command', '--dev-command', '--install-command', '--output-directory', '--root-directory', '--node-version']
+    for (let index = 3; index < command.length; index++) {
+      if (command[index] === '--yes') continue
+      if (!valueFlags.includes(command[index]) || command[index + 1] === undefined) die('Invalid number of arguments. Usage: vercel project update [name] [options]', 2)
+      index++
+    }
+    state.updates = [...(state.updates ?? []), command.slice(3)]
     const map = { '--framework': 'framework', '--build-command': 'buildCommand', '--install-command': 'installCommand', '--output-directory': 'outputDirectory', '--root-directory': 'rootDirectory', '--node-version': 'nodeVersion' }
     for (const [flag, key] of Object.entries(map)) if (option(flag) !== undefined) found.settings[key] = option(flag)
     save(); out('Updated')
