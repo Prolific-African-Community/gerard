@@ -4,12 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
-// Dedicated synthetic Preview branch (docs/ENVIRONMENT_ARCHITECTURE.md). Anything else is refused.
-const PREVIEW_ENDPOINT = 'ep-mute-poetry-za1swvwu'
-const PRODUCTION_ENDPOINTS = ['ep-ancient-surf-zav7xo37', 'ep-ancient-block-za26cw6e']
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+import { assertPreviewDatabaseUrl } from '../preview-admin'
 
-export const PREVIEW_ORGANIZATION_ID = 'org-novotralux'
+export { PREVIEW_ORGANIZATION_ID } from '../preview-admin'
 
 // Loads the Preview variables pulled with `vercel env pull .env.preview.local --environment=preview`.
 function loadPreviewEnv() {
@@ -21,12 +18,8 @@ function loadPreviewEnv() {
 export function connectPreviewDatabase() {
   loadPreviewEnv()
   const url = process.env.NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL
-  if (!url) throw new Error('NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL missing (run: vercel env pull .env.preview.local --environment=preview)')
-  if (process.env.NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL && url === process.env.NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL) throw new Error('Refusing: Preview URL equals the Production URL')
-  const host = new URL(url).hostname
-  if (PRODUCTION_ENDPOINTS.some((endpoint) => host.includes(endpoint))) throw new Error('Refusing: Production database endpoint')
-  const local = LOCAL_HOSTS.has(host) && process.env.NOVOTRALUX_PREVIEW_ALLOW_LOCAL_DATABASE === '1'
-  if (!host.startsWith(PREVIEW_ENDPOINT) && !local) throw new Error(`Refusing: database endpoint is not the Novotralux Preview branch (${PREVIEW_ENDPOINT})`)
+  if (url === '[SENSITIVE]' || url === '') throw new Error('Preview database URL is a Vercel sensitive variable and cannot be pulled locally: use the in-Vercel reset (docs/CUSTOM_PREVIEW_WORKFLOW.md)')
   // The URL itself is never printed; only the endpoint prefix is reported.
-  return { prisma: new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) }), endpoint: local ? 'local' : PREVIEW_ENDPOINT }
+  const endpoint = assertPreviewDatabaseUrl(url, { allowLocal: process.env.NOVOTRALUX_PREVIEW_ALLOW_LOCAL_DATABASE === '1', productionUrl: process.env.NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL })
+  return { prisma: new PrismaClient({ adapter: new PrismaPg({ connectionString: url! }) }), endpoint }
 }
