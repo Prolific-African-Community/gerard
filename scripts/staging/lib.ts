@@ -16,13 +16,18 @@ export type App = 'gerard' | 'novotralux'
 export const APPS: App[] = ['gerard', 'novotralux']
 export const LABEL: Record<App, string> = { gerard: 'Gerard Staging', novotralux: 'Novotralux Staging' }
 
+// Canonical Vercel project names in scope jonathans-projects-e6d49b10. Fixed constants, never derived from a hostname
+// (`gerard-dispatch` is Gerard's Production URL, not a project) and never the legacy `novotralux` project.
+export const VERCEL_PROJECTS: Readonly<Record<App, string>> = Object.freeze({ gerard: 'gerard', novotralux: 'novotralux-custom' })
+export const FORBIDDEN_VERCEL_PROJECTS = ['novotralux', 'gerard-dispatch']
+
 const env = process.env
 export const config = {
   vercel: {
     // The Vercel scope owning both projects (team slug, or team id `team_…`). Every Vercel call names it explicitly.
     team: env.GERARD_STAGING_VERCEL_TEAM || 'jonathans-projects-e6d49b10',
     environment: 'staging',
-    projects: { gerard: env.GERARD_STAGING_VERCEL_PROJECT_GERARD || 'gerard-dispatch', novotralux: env.GERARD_STAGING_VERCEL_PROJECT_NOVOTRALUX || 'novotralux-custom' } as Record<App, string>,
+    projects: VERCEL_PROJECTS,
   },
   neon: {
     project: env.GERARD_STAGING_NEON_PROJECT || 'lucky-wildflower-15424624',
@@ -148,8 +153,11 @@ export function vercelClient(token: string, options: { readOnly?: boolean } = {}
       const found = {} as Record<App, VercelProject>
       for (const app of APPS) {
         const name = config.vercel.projects[app]
-        found[app] = await client.project(name).catch((error: Error) => fail(/→ 404/.test(error.message) ? `Vercel project ${name} not found in scope ${config.vercel.team} (set GERARD_STAGING_VERCEL_TEAM / GERARD_STAGING_VERCEL_PROJECT_${app.toUpperCase()}).` : error.message))
+        if (FORBIDDEN_VERCEL_PROJECTS.includes(name)) fail(`Vercel project ${name} is not a Staging target: refused.`)
+        found[app] = await client.project(name).catch((error: Error) => fail(/→ 404/.test(error.message) ? `Vercel project ${name} not found in scope ${config.vercel.team} (set GERARD_STAGING_VERCEL_TEAM if the scope changed).` : error.message))
+        if (found[app].name !== name) fail(`Vercel returned project ${found[app].name} for ${name}: refused.`)
       }
+      if (found.gerard.id === found.novotralux.id) fail('Gerard and Novotralux resolve to one Vercel project: refused.')
       if (found.gerard.accountId !== found.novotralux.accountId) fail('The Gerard and Novotralux projects belong to different Vercel accounts: refused.')
       return found
     },

@@ -8,7 +8,7 @@ export function productionFixture() {
     scope: { id: 'team_gerard', slug: 'jonathans-projects-e6d49b10' },
     customEnvironmentLimit: 1,
     projects: [
-      { id: 'prj_gerard', name: 'gerard-dispatch', accountId: 'team_gerard', customEnvironments: [], protectionBypass: {},
+      { id: 'prj_gerard', name: 'gerard', accountId: 'team_gerard', customEnvironments: [], protectionBypass: {},
         envs: [env('env_g1', 'DATABASE_URL', ['production']), env('env_g2', 'JWT_SECRET', ['production', 'preview']), env('env_g3', 'GERARD_PLATFORM_INSTANCE_SHARED_SECRET', ['production'])],
         domains: [{ name: 'gerard-dispatch.vercel.app', customEnvironmentId: null, gitBranch: null }] },
       { id: 'prj_novotralux', name: 'novotralux-custom', accountId: 'team_gerard', customEnvironments: [], protectionBypass: {},
@@ -16,6 +16,9 @@ export function productionFixture() {
         trustedSources: { enableVercelCiSameRepository: true, projects: { prj_gerard: { label: 'Gerard Preview', customAllow: [{ from: { slugs: ['preview'] }, to: { slugs: ['preview'] } }] } } },
         envs: [env('env_n1', 'NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL', ['production']), env('env_n2', 'NOVOTRALUX_CUSTOM_PREVIEW_DATABASE_URL', ['preview']), env('env_n3', 'GERARD_PLATFORM_INSTANCE_SHARED_SECRET', ['production'])],
         domains: [{ name: 'novotralux-custom.vercel.app', customEnvironmentId: null, gitBranch: null }, { name: 'www.novotralux.eu', customEnvironmentId: null, gitBranch: null }] },
+      // Decoys: a lookup by Production hostname or of the legacy project would silently succeed; the test forbids both.
+      { id: 'prj_decoy_hostname', name: 'gerard-dispatch', accountId: 'team_gerard', customEnvironments: [], protectionBypass: {}, envs: [], domains: [] },
+      { id: 'prj_legacy_novotralux', name: 'novotralux', accountId: 'team_gerard', customEnvironments: [], protectionBypass: {}, envs: [], domains: [{ name: 'novotralux-legacy.vercel.app', customEnvironmentId: null, gitBranch: null }] },
     ],
   }
 }

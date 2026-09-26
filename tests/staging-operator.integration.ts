@@ -35,6 +35,13 @@ async function command(script: string, env: Record<string, string>, args: string
 const neonState = (extra: Record<string, unknown> = {}) => writeFileSync(stateFile, JSON.stringify({ neonProject: 'lucky-wildflower-15424624', adminUrl, urls, branches: [{ id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }, { id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-production' }, { id: 'br-still-field-za5dh59a', name: 'novotralux-custom-preview' }], neonCalls: [], deploys: [], ...extra }))
 const readState = () => JSON.parse(readFileSync(stateFile, 'utf8'))
 
+// Only the canonical projects are ever addressed: never a Production hostname, never the legacy project.
+const FORBIDDEN_PROJECT_PATHS = /\/projects\/(gerard-dispatch|prj_decoy_hostname|novotralux|prj_legacy_novotralux)(\/|$)/
+const assertCanonicalProjects = (api: { calls: string[] }, name: string) => {
+  const wrong = api.calls.filter((call) => FORBIDDEN_PROJECT_PATHS.test(call.split(' ')[1]))
+  assert.deepEqual(wrong, [], `${name}: only projects gerard and novotralux-custom are addressed`)
+}
+
 async function main() {
   // ─── Refusals: nothing is written when a target is, or looks like, Production ───────────────────────────
   const refusal = async (name: string, mutate: (fixture: any) => void, expected: RegExp, env: Record<string, string> = {}, extraNeon: Record<string, unknown> = {}) => {
@@ -43,6 +50,7 @@ async function main() {
     neonState(extraNeon)
     const result = await command('setup', { GERARD_STAGING_VERCEL_API: api.url, ...env }, ['--no-deploy'])
     await api.close()
+    assertCanonicalProjects(api, name)
     assert.notEqual(result.code, 0, `${name}: must fail`)
     assert.match(result.output, expected, name)
     assert.ok(!api.writes.some((write: any) => write.path.endsWith('/env') || write.path.endsWith('/domains')), `${name}: no variable or domain written`)
@@ -52,22 +60,26 @@ async function main() {
   await refusal('staging branch name on a Production branch', () => undefined, /Production branch: refused/, {}, { branches: [{ id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-staging' }, { id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }] })
   await refusal('Neon not authenticated', () => undefined, /Neon CLI is not authenticated: run .*neonctl.* auth/, {}, { neonUnauthenticated: true })
   await refusal('custom environments not in the plan', (fixture) => { fixture.customEnvironmentLimit = 0 }, /allows 0 custom environment\(s\).*Pro\/Enterprise/)
-  await refusal('unknown Vercel scope', () => undefined, /Vercel project gerard-dispatch not found in scope other-team/, { GERARD_STAGING_VERCEL_TEAM: 'other-team' })
+  await refusal('unknown Vercel scope', () => undefined, /Vercel project gerard not found in scope other-team/, { GERARD_STAGING_VERCEL_TEAM: 'other-team' })
   await refusal('Vercel not authenticated', () => undefined, /Vercel CLI is not authenticated: run .*vercel.* login/, {}, { vercelUnauthenticated: true })
 
   // ─── First setup: creates everything in Staging only, deploys to the staging target, returns the credential once ──
   const fixture = productionFixture()
   const api = await startMockVercel(fixture)
   neonState()
-  const env = { GERARD_STAGING_VERCEL_API: api.url }
+  // The former hostname-derived overrides must have no effect.
+  const env = { GERARD_STAGING_VERCEL_API: api.url, GERARD_STAGING_VERCEL_PROJECT_GERARD: 'gerard-dispatch', GERARD_STAGING_VERCEL_PROJECT_NOVOTRALUX: 'novotralux' }
   const first = await command('setup', env, ['--allow-dirty'])
   assert.equal(first.code, 0, first.output)
   assert.ok(!api.calls.some((call: string) => call.includes('/v2/teams')), 'teams are never enumerated')
+  assertCanonicalProjects(api, 'first setup')
+  assert.ok(api.calls.includes('GET /v9/projects/gerard') && api.calls.includes('GET /v9/projects/novotralux-custom'), 'projects looked up by canonical name')
+  for (const decoy of fixture.projects.slice(2)) assert.equal(decoy.customEnvironments.length + decoy.envs.length, 0, `${decoy.name}: untouched`)
   const trust = fixture.projects[1].trustedSources as any
   assert.equal(trust.enableVercelCiSameRepository, true, 'Trusted Sources settings preserved')
   assert.deepEqual(trust.projects.prj_gerard.customAllow, [{ from: { slugs: ['preview'] }, to: { slugs: ['preview'] } }, { from: { slugs: ['staging'] }, to: { slugs: ['staging'] } }], 'Gerard staging → Novotralux staging added, Preview rule kept')
   assert.ok(api.writes.filter((write: any) => write.method === 'PATCH' && /^\/v9\/projects\/[^/]+$/.test(write.path)).every((write: any) => write.path === '/v9/projects/prj_novotralux' && Object.keys(write.body).join() === 'trustedSources'), 'only the Novotralux Trusted Sources is updated')
-  const stagingIds = fixture.projects.map((project: any) => project.customEnvironments.find((item: any) => item.slug === 'staging')?.id)
+  const stagingIds = fixture.projects.slice(0, 2).map((project: any) => project.customEnvironments.find((item: any) => item.slug === 'staging')?.id)
   assert.ok(stagingIds.every(Boolean), 'staging environment created in both projects')
   const envWrites = api.writes.filter((write: any) => write.method === 'POST' && write.path.endsWith('/env'))
   assert.ok(envWrites.length >= 14, 'Staging variables created')
@@ -129,7 +141,7 @@ async function main() {
   // Trusted Sources losing the staging rule is reported.
   const rules = trust.projects.prj_gerard.customAllow
   trust.projects.prj_gerard.customAllow = rules.slice(0, 1)
-  assert.match((await command('check', env)).output, /FAIL {2}Channel — .*Trusted Sources does not admit gerard-dispatch staging → staging/)
+  assert.match((await command('check', env)).output, /FAIL {2}Channel — .*Trusted Sources does not admit gerard staging → staging/)
   trust.projects.prj_gerard.customAllow = rules
 
   // A Staging variable drifting to the Production database is reported.
@@ -138,6 +150,7 @@ async function main() {
   assert.match(drift.output, /FAIL {2}Gerard Staging DB/)
   assert.match(drift.output, /FAIL {2}Production DB overlap/)
   assert.ok(!drift.output.includes('ep-ancient-block'), 'endpoint not printed')
+  assertCanonicalProjects(api, 'second setup and checks')
   if (process.env.STAGING_OPERATOR_TEST_VERBOSE) console.log(`${first.output}\n${second.output}\n${check.output}\n${drift.output}`)
   await api.close()
   console.log('Staging operator commands (setup idempotency, Production refusals, staging-only writes, read-only check, no secret output): OK')

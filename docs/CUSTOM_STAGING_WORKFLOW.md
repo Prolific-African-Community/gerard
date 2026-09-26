@@ -11,7 +11,7 @@ feature/<scope> ──► npm run staging:deploy ──► Staging validation �
 
 | | Gerard Staging (Standard / Platform) | Novotralux Staging (Custom) |
 | --- | --- | --- |
-| Vercel project / environment | `gerard-dispatch` / custom environment `staging` | `novotralux-custom` / custom environment `staging` |
+| Vercel project / environment (scope `jonathans-projects-e6d49b10`) | `gerard` / custom environment `staging` | `novotralux-custom` / custom environment `staging` |
 | Stable URL | `https://gerard-dispatch-staging.vercel.app` | `https://novotralux-custom-staging.vercel.app` |
 | Neon branch (project `lucky-wildflower-15424624`) | `gerard-staging` | `novotralux-custom-staging` |
 | Database variable | `DATABASE_URL` | `NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL` |
@@ -67,7 +67,8 @@ npm run staging:check     # PASS/FAIL readiness report
 `staging:setup` is idempotent (a second run changes nothing) and does, in order:
 
 1. checks `vercel whoami` and `neonctl me`; if either is not authenticated it opens `vercel login` / `neonctl auth`;
-2. looks both Vercel projects up in the configured scope `jonathans-projects-e6d49b10` only (every Vercel call names
+2. looks up the canonical projects `gerard` and `novotralux-custom` (fixed names, never derived from a URL; the legacy
+   `novotralux` project is refused) in the configured scope `jonathans-projects-e6d49b10` only (every Vercel call names
    it; teams are never enumerated) and creates the `staging` custom environment if missing (plan limit checked first);
 3. creates the Neon branches `gerard-staging` and `novotralux-custom-staging` **schema-only** (no row copied) and, only
    while a branch is fresh (no migration history, no user), rebuilds its schema from this repository's migrations;
@@ -85,7 +86,7 @@ a variable shared with Production or Preview, and two Staging apps on one databa
 
 Flags: `--no-deploy` (stop before deploying), `--allow-dirty` (deploy uncommitted changes).
 Overrides (environment variables, only if the defaults don't match your accounts): `GERARD_STAGING_VERCEL_TEAM`,
-`GERARD_STAGING_VERCEL_PROJECT_GERARD`, `GERARD_STAGING_VERCEL_PROJECT_NOVOTRALUX`, `GERARD_STAGING_DOMAIN_GERARD`,
+`GERARD_STAGING_DOMAIN_GERARD`,
 `GERARD_STAGING_DOMAIN_NOVOTRALUX`, `GERARD_STAGING_NEON_PROJECT`, `GERARD_STAGING_NEON_PARENT_BRANCH`.
 
 ## 3. QA accounts
@@ -154,7 +155,7 @@ Nothing in this workflow writes Production variables, domains, branches or data.
 | --- | --- |
 | `Vercel CLI is not authenticated` / `Neon CLI is not authenticated` | run `npx vercel login` / `npx neonctl auth`, retry |
 | `credentials file was not found` | set `VERCEL_TOKEN` in the current shell (vercel.com/account/tokens), retry |
-| `project … not found in scope …` / `Vercel refused … (403)` | the scope is wrong for your login: set `GERARD_STAGING_VERCEL_TEAM` (team slug or `team_…` id) and/or the project-name overrides |
+| `project … not found in scope …` / `Vercel refused … (403)` | the scope is wrong for your login: set `GERARD_STAGING_VERCEL_TEAM` (team slug or `team_…` id) |
 | domain attach fails (`domain_taken`) | choose another `*.vercel.app` name via `GERARD_STAGING_DOMAIN_*`, rerun setup |
 | `Neon branch … refused` | a branch with the Staging name points at Production/Preview: rename that branch in Neon |
 | build fails `DATABASE_ENVIRONMENT_MISMATCH` | the environment's database variable points at another environment's database; rerun `staging:setup` |
@@ -164,7 +165,7 @@ Nothing in this workflow writes Production variables, domains, branches or data.
 | QA accounts FAIL (superadmin missing) | rerun `staging:setup` (creates it and shows the credential once) |
 | creating the `staging` environment fails (plan limit) | Vercel custom environments require a Pro/Enterprise team; one per project is enough |
 | a Staging deployment builds the wrong app | deploys reuse each project's own Build Command / Root Directory (as Production); check them in Vercel project settings |
-| lost the initial superadmin password before first login | Vercel → `gerard-dispatch` → Settings → Environment Variables → `staging` → `GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD` |
+| lost the initial superadmin password before first login | Vercel → `gerard` → Settings → Environment Variables → `staging` → `GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD` |
 
 ## 8. Tests
 
