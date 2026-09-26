@@ -7,12 +7,20 @@ were abandoned and removed from the repository.
 
 ### LOCAL DEVELOPMENT
 
-- Developer machine.
-- Local/development database (`DATABASE_URL`, or `NOVOTRALUX_CUSTOM_DATABASE_URL`
-  to give Novotralux Custom its own local database).
+- Developer machine, a plain local Next.js process.
+- Works against the two real application databases, exactly like the other
+  projects on this machine:
+  - Gerard Standard: `DATABASE_URL` (root `.env` / `.env.local`).
+  - Novotralux Custom: `NOVOTRALUX_CUSTOM_DATABASE_URL`
+    (`apps/novotralux/.env.local`), required and never inherited from
+    `DATABASE_URL`.
 - `npm run dev` — Gerard Standard.
 - `npm run novotralux:dev` — Novotralux Custom.
-- The Production databases are **explicitly rejected**.
+- Local env files: root `.env.local` for Gerard,
+  `apps/novotralux/.env.local` for Novotralux Custom. The launcher loads the
+  application-specific file first, so its keys win. Neither is committed.
+- Mail intake is disabled locally (`MAIL_IMPORT_PROVIDER=disabled`) so a
+  development process never polls the live mailbox into the application data.
 
 ### PRODUCTION
 
@@ -26,26 +34,35 @@ returns `development` or `production` and nothing else. `production` means Verce
 Production; everything else, including a local `next build`, is `development`.
 `GERARD_INSTANCE_ENVIRONMENT` is optional and accepts only those two values; it
 must agree with Vercel, and any unknown value or contradiction fails closed. No
-`VERCEL_TARGET_ENV`, Preview or Staging variable is used anywhere.
+`VERCEL_TARGET_ENV`, Preview or Staging variable is used anywhere. Local
+development never declares itself as Production.
 
-## The one environment safety rule
+## Production database validation
 
-Local development must never connect to a Production database.
+Local development is deliberately unrestricted: it uses the real application
+databases. The guard constrains **Production deployments only**, so each one
+reaches its own application database and nothing else.
 
 `assertRuntimeDatabase` (`lib/runtime/database-guard.ts`) runs where the Prisma
-client is created, so it fires before any connection, for Gerard Standard and
-Novotralux Custom alike. Database identity is the Neon endpoint id, so a pooled
-host is the same identity and no environment *name* is trusted.
+client is created, so it fires before any connection. Database identity is the
+Neon endpoint id, so a pooled host is the same identity and no variable or
+environment *name* is trusted. The application is `GERARD_APPLICATION_ID`
+(absent means Gerard Standard).
 
-| Environment | Rule |
+| Runtime | Rule |
 | --- | --- |
-| `development` | Refuses every documented Production endpoint (`DATABASE_ENVIRONMENT_MISMATCH`). |
-| `production` | Allow-list: accepts only a documented Production endpoint, so a new branch is refused without a code change. |
+| local development | No restriction. |
+| Production `gerard` | Must resolve to `ep-ancient-block-za26cw6e`, else `PRODUCTION_DATABASE_MISMATCH`. |
+| Production `novotralux-custom` | Must resolve to `ep-ancient-surf-zav7xo37`, else `PRODUCTION_DATABASE_MISMATCH`. |
+| Production, unknown application | `PRODUCTION_DATABASE_UNDECLARED`. |
+
+So a Production deployment cannot swap the two application databases, and cannot
+open an undocumented endpoint without a code change.
 
 `npm run build` runs `scripts/check-production-database.ts`, a static identity
-check with no connection: a Production build whose `DATABASE_URL` is not a
-documented Production endpoint fails the deployment instead of the running site.
-It is a no-op locally. Run it on demand with `npm run db:check`.
+check with no connection: a Production build whose `DATABASE_URL` is not that
+application's documented database fails the deployment instead of the running
+site. It is a no-op locally. Run it on demand with `npm run db:check`.
 
 ## Ownership
 | Surface | Owns | Environment and database | Secrets |
@@ -71,17 +88,18 @@ branch positionally to `neonctl connection-string`; the command has no
 
 ## Runtime conventions
 
-- Local Gerard uses a local/development database, development credentials and
-  integrations disabled by default. Google provider calls default to `0`.
-- Novotralux local development uses `NOVOTRALUX_CUSTOM_DATABASE_URL` when set and
-  otherwise the local `DATABASE_URL`. There is no fallback to any Production URL.
+- Local Gerard uses the Gerard Standard application database, and mail intake is
+  disabled. Google provider calls are capped locally for Novotralux Custom.
+- Novotralux local development requires `NOVOTRALUX_CUSTOM_DATABASE_URL`. There is
+  no fallback to the Gerard Standard `DATABASE_URL`.
 - Novotralux Production requires `NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL`, and
   Vercel Production also maps `DATABASE_URL` to the same branch because
   serverless functions do not inherit variables calculated by the build wrapper.
 - `LEGACY_TARGET_DATABASE_URL` is an obsolete migration variable and is not a
   Custom runtime input.
-- Production secrets live in the owning Vercel project and Production scope.
-  Local `.env.local` is not the normal transport for them.
+- Vercel stores every Production variable of both projects as a sensitive value,
+  so `vercel env pull` returns `[SENSITIVE]` and cannot seed a local file. Local
+  values are maintained by hand in the two `.env.local` files.
 - Migration URLs, bootstrap passwords and cleanup tokens are supplied only for
   the explicit maintenance command that needs them; they are not permanent
   application runtime configuration.

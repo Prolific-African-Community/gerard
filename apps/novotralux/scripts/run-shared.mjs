@@ -5,9 +5,12 @@ import { resolveNovotraluxDatabaseTarget } from './database-target.mjs'
 
 const command = process.argv[2]
 if (!['dev', 'build', 'start'].includes(command)) throw new Error('EXPECTED_DEV_BUILD_OR_START')
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..')
-for (const name of ['.env.local', '.env']) {
-  try { process.loadEnvFile(path.join(root, name)) } catch (error) {
+const here = path.dirname(fileURLToPath(import.meta.url))
+const root = path.resolve(here, '../../..')
+// process.loadEnvFile never overwrites a value that is already set, so the application-specific file is loaded
+// first: apps/novotralux/.env.local wins over the root Gerard configuration for every key it defines.
+for (const file of [path.join(here, '..', '.env.local'), path.join(root, '.env.local'), path.join(root, '.env')]) {
+  try { process.loadEnvFile(file) } catch (error) {
     if (error?.code !== 'ENOENT') throw error
   }
 }

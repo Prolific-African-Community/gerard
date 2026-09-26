@@ -14,7 +14,7 @@ npm run dev              # Gerard Standard
 npm run novotralux:dev   # Novotralux Custom
 ```
 
-`DATABASE_URL` must point at a development database: the Production endpoints are refused before any connection is opened. `npm run db:check` reports what the current configuration resolves to.
+Local development runs against the two real application databases: `DATABASE_URL` (root `.env`/`.env.local`) for Gerard Standard, and `NOVOTRALUX_CUSTOM_DATABASE_URL` (`apps/novotralux/.env.local`) for Novotralux Custom. Neither local env file is committed. `npm run db:check` verifies what a Production build would resolve to.
 
 ## Checks
 
@@ -27,4 +27,4 @@ npm run novotralux:check
 
 ## Production
 
-Pushing to `main` deploys the Vercel projects `gerard` and `novotralux-custom` against their Production Neon databases. Every build runs the Production database identity check first.
+Pushing to `main` deploys the Vercel projects `gerard` and `novotralux-custom` against their Production Neon databases. Every build first verifies that it resolves to its own application database, so the two can never be swapped.

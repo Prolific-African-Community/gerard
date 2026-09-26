@@ -4,7 +4,8 @@ Cette application est le premier consumer réel de Gerard Custom. Elle consomme 
 
 - Définition et manifest : `application.tsx`, `manifest.ts`.
 - Extensions : `extensions/`; configuration tenant : branding et `OrganizationIntegration`.
-- Base dédiée : `LEGACY_TARGET_DATABASE_URL`, injectée comme `DATABASE_URL` seulement par le lanceur local. La source legacy et la base Gerard Standard sont refusées.
+- Base : `NOVOTRALUX_CUSTOM_DATABASE_URL`, obligatoire, injectée comme `DATABASE_URL` par le lanceur local. Aucune reprise de la `DATABASE_URL` de Gerard Standard.
+- Configuration locale : `apps/novotralux/.env.local` (non commité), chargé avant les fichiers racine, donc prioritaire.
 - Lancer : `npm run novotralux:dev` depuis la racine.
 - Tester/build : `npm run novotralux:test`, `npm run novotralux:check`, `npm run novotralux:build`.
 - Mettre à jour le Core : modifier la dépendance et le manifest, lancer le check de compatibilité, appliquer les migrations Core puis Custom sur une copie, puis tous les tests/builds.

@@ -8,9 +8,9 @@ config({ path: '../../.env.local', quiet: true })
 config({ path: '../../.env', quiet: true })
 
 async function main() {
-  const target = process.env.NOVOTRALUX_CUSTOM_DATABASE_URL || process.env.DATABASE_URL
-  if (!target) throw new Error('NOVOTRALUX_LOCAL_DATABASE_URL_REQUIRED')
-  // Same rule as the runtime: this QA pass never runs against a Production database.
+  const target = process.env.NOVOTRALUX_CUSTOM_DATABASE_URL
+  if (!target) throw new Error('NOVOTRALUX_CUSTOM_DATABASE_URL_REQUIRED')
+  // Same rule as the runtime: the QA pass is bound to the Novotralux Custom application database.
   assertRuntimeDatabase(target)
   process.env.DATABASE_URL = target
   const { createSessionToken, sessionCookieName } = await import('../lib/auth/session')

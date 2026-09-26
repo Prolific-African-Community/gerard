@@ -18,7 +18,7 @@ Gerard Standard importe `defaultGerardApplication`, le provider et le manifest v
 
 `templates/gerard-custom-app` fournit un consumer fictif : définition applicative, branding/env, navigation, slot UI, policy de scoring, intégration et manifest. Il ne contient aucune donnée client réelle.
 
-`apps/novotralux` est le premier consumer Custom réel. Il compose le shell partagé avec sa définition, son branding tenant et son registre d'intégrations, tout en conservant les pages, APIs, permissions et moteurs dans Gerard Core/Standard partagé. Son lanceur n'accepte que `LEGACY_TARGET_DATABASE_URL` et isole le build dans `.next-novotralux`.
+`apps/novotralux` est le premier consumer Custom réel. Il compose le shell partagé avec sa définition, son branding tenant et son registre d'intégrations, tout en conservant les pages, APIs, permissions et moteurs dans Gerard Core/Standard partagé. Son lanceur exige `NOVOTRALUX_CUSTOM_DATABASE_URL` (aucune reprise de la base Gerard Standard) et isole le build dans `.next-novotralux`.
 
 ## Compatibility
 
