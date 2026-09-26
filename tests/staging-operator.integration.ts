@@ -50,10 +50,13 @@ const productionProjects = () => [
 ]
 const PARENTS = { gerard: 'br-patient-wildflower-zarmyqcq', novotralux: 'br-cool-sea-zaufb5ng' }
 const PRODUCTION_DATABASES = { [PARENTS.gerard]: 'op_prod_gerard', [PARENTS.novotralux]: 'op_prod_novotralux' }
-// Staging URLs use the Staging-only role, never the inherited owner.
-const roleUrl = (branch: keyof typeof urls, role: string) => { const url = new URL(urls[branch]); url.username = role; url.password = 'staging-role-password'; return url.toString() }
+// A child branch inherits its parent's owner role with the Production password; setup must rotate it on the child only.
+const PRODUCTION_PASSWORD = 'production-password'
+const OWNERS = { [PARENTS.gerard]: 'owner_prod_gerard', [PARENTS.novotralux]: 'owner_prod_novotralux' }
+const withPassword = (url: string, user: string, password: string) => { const value = new URL(url); value.username = user; value.password = password; return value.toString() }
+async function opens(url: string) { const client = new pg.Client({ connectionString: url }); try { await client.connect(); return true } catch { return false } finally { await client.end().catch(() => undefined) } }
 const writeState = (extra: Record<string, unknown> = {}) => writeFileSync(stateFile, JSON.stringify({
-  parentDatabases: PRODUCTION_DATABASES,
+  parentDatabases: PRODUCTION_DATABASES, owners: { ...OWNERS }, productionPassword: PRODUCTION_PASSWORD,
   scope: SCOPE, teamId: 'team_jonathan', projects: productionProjects(), vercelCalls: [], deploys: [],
   neonProject: 'lucky-wildflower-15424624', adminUrl, urls, neonCalls: [],
   branches: [{ id: 'br-patient-wildflower-zarmyqcq', name: 'production', default: true }, { id: 'br-cool-sea-zaufb5ng', name: 'novotralux-custom-production' }, { id: 'br-still-field-za5dh59a', name: 'novotralux-custom-preview' }],
@@ -80,9 +83,14 @@ function assertProductionUntouched(label: string) {
 async function createProductionParents() {
   for (const [app, database] of [['gerard', 'op_prod_gerard'], ['novotralux', 'op_prod_novotralux']] as const) {
     const admin = new pg.Client({ connectionString: adminUrl }); await admin.connect()
-    await admin.query(`drop database if exists "${database}" with (force)`); await admin.query(`create database "${database}"`); await admin.end()
+    const owner = OWNERS[app === 'gerard' ? PARENTS.gerard : PARENTS.novotralux]
+    await admin.query(`drop database if exists "${database}" with (force)`); await admin.query(`create database "${database}"`)
+    if ((await admin.query('select 1 from pg_roles where rolname = $1', [owner])).rowCount) await admin.query(`alter role "${owner}" password '${PRODUCTION_PASSWORD}'`)
+    else await admin.query(`create role "${owner}" login password '${PRODUCTION_PASSWORD}'`)
+    await admin.end()
     const url = databaseUrl('localhost', database)
-    await run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: url } })
+    const grant = new pg.Client({ connectionString: url }); await grant.connect(); await grant.query(`grant usage, create on schema public to "${owner}"`); await grant.end()
+    await run(process.execPath, ['node_modules/prisma/build/index.js', 'migrate', 'deploy'], { env: { ...process.env, DATABASE_URL: withPassword(url, owner, PRODUCTION_PASSWORD) } })
     const client = new pg.Client({ connectionString: url }); await client.connect()
     const org = app === 'gerard' ? 'org-gerard-default' : 'org-novotralux'
     await client.query(`insert into "Organization" (id, name, slug, "updatedAt") values ($1, $1, $1, now()) on conflict (id) do nothing`, [org])
@@ -124,6 +132,7 @@ async function main() {
   assert.equal(JSON.parse(stdinEcho.stdout), 'value with spaces & symbols', 'stdin preserved')
   for (const file of [...readdirSync('scripts/staging').map((name) => `scripts/staging/${name}`), 'scripts/staging-prepare.ts']) {
     assert.ok(!/shell:\s*(true|windows|process\.platform)/.test(readFileSync(file, 'utf8')), `${file}: no shell for argv execution`)
+    assert.ok(!/\bgrant\b|neondb_owner\s+to|createRole|roles', 'create/i.test(readFileSync(file, 'utf8')), `${file}: no GRANT / role-membership logic`)
   }
 
   // Non-interactive: every confirming Vercel command carries --yes (the fake CLI fails like Vercel CLI 60 otherwise).
@@ -177,13 +186,20 @@ async function main() {
   const updates = readState().updates as string[][]
   assert.ok(updates.some((item) => item[item.indexOf('--build-command') + 1] === 'npm run novotralux:build'), 'build command received as one argv item')
   assert.equal(gerard.env.GERARD_INSTANCE_ENVIRONMENT, 'staging')
-  assert.equal(gerard.env.DATABASE_URL, roleUrl('gerard-staging', 'gerard_staging'), 'Gerard Staging DB through the Staging-only role')
+  for (const [project, branch] of [[gerard, 'gerard-staging'], [novotralux, 'novotralux-custom-staging']] as const) {
+    const url = new URL(project.env.DATABASE_URL)
+    const expected = new URL(urls[branch])
+    assert.deepEqual([url.hostname, url.pathname, url.username], [expected.hostname, expected.pathname, `owner_${branch.replace(/-/g, '_')}`], `${branch}: child endpoint, inherited owner role`)
+    assert.ok(url.password && url.password !== PRODUCTION_PASSWORD, `${branch}: Staging-only password`)
+    assert.ok(await opens(project.env.DATABASE_URL), `${branch}: rotated credential opens the child`)
+    assert.ok(!(await opens(withPassword(urls[branch], `owner_${branch.replace(/-/g, '_')}`, PRODUCTION_PASSWORD))), `${branch}: the inherited Production password no longer opens the child`)
+  }
+  for (const [parent, database] of Object.entries(PRODUCTION_DATABASES)) assert.ok(await opens(withPassword(databaseUrl('localhost', database), OWNERS[parent], PRODUCTION_PASSWORD)), `${database}: Production credential unchanged`)
   assert.equal(gerard.env.GERARD_PLATFORM_HOSTNAMES, 'gerard-staging-jonathan.vercel.app', 'platform host realigned on the host Vercel assigned')
   assert.equal(gerard.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT, 'https://novotralux-custom-staging.vercel.app/api/internal/platform/configuration')
   assert.equal(gerard.env.GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION, '0')
   assert.equal(novotralux.env.GERARD_INSTANCE_ENVIRONMENT, 'staging')
-  assert.equal(novotralux.env.DATABASE_URL, roleUrl('novotralux-custom-staging', 'novotralux_staging'), 'Novotralux runtime DB through the Staging-only role')
-  assert.equal(novotralux.env.NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL, roleUrl('novotralux-custom-staging', 'novotralux_staging'), 'Novotralux build DB')
+  assert.equal(novotralux.env.NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL, novotralux.env.DATABASE_URL, 'Novotralux build DB = runtime DB')
   assert.deepEqual([novotralux.env.GERARD_APPLICATION_ID, novotralux.env.GERARD_INSTANCE_ORGANIZATION_ID, novotralux.env.NEXT_PUBLIC_GERARD_APPLICATION], ['novotralux', 'org-novotralux', 'novotralux'])
   assert.equal(gerard.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET, novotralux.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET, 'one Staging shared secret')
   assert.ok(gerard.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET.length >= 48)
@@ -199,7 +215,7 @@ async function main() {
   assert.ok(creates.some((call: string) => call.includes('--name gerard-staging') && call.includes(`--parent ${PARENTS.gerard}`)), 'gerard-staging is a child of Gerard Production')
   assert.ok(creates.some((call: string) => call.includes('--name novotralux-custom-staging') && call.includes(`--parent ${PARENTS.novotralux}`)), 'novotralux-custom-staging is a child of Novotralux Production')
   for (const [name, parent] of [['gerard-staging', PARENTS.gerard], ['novotralux-custom-staging', PARENTS.novotralux]]) assert.equal(readState().branches.find((item: any) => item.name === name).parent_id, parent)
-  assert.ok(!readState().neonCalls.some((call: string) => call.startsWith('roles create') && Object.values(PARENTS).some((parent) => call.includes(parent))), 'no role created on a Production branch')
+  assert.ok(!readState().neonCalls.some((call: string) => call.startsWith('roles')), 'no Neon role created or managed')
   assert.ok(readState().sanitizedBeforeWiring >= 3, 'every database URL was sanitized and verified before Vercel received it')
   const credentials = path.join(home, '.gerard-staging-credentials.txt')
   assert.ok(existsSync(credentials), 'first-run credential returned once (private file when not interactive)')
@@ -230,10 +246,13 @@ async function main() {
   const callsBefore = readState().vercelCalls.length
   const neonBefore = readState().neonCalls.length
   const hashBefore = await passwordHash()
+  const urlsBefore = [project('gerard-staging').env.DATABASE_URL, project('novotralux-custom-staging').env.DATABASE_URL]
   const second = await command('setup', ['--no-deploy'])
   assert.equal(second.code, 0, second.output)
   const writes = readState().vercelCalls.slice(callsBefore).filter((call: any) => (call.args[0] === 'env' && call.args[1] === 'add') || (call.args[0] === 'project' && ['add', 'update'].includes(call.args[1])))
   assert.deepEqual(writes, [], 'second run writes nothing')
+  assert.deepEqual([project('gerard-staging').env.DATABASE_URL, project('novotralux-custom-staging').env.DATABASE_URL], urlsBefore, 'credential not rotated again; the stored one is reused')
+  assert.match(second.output, /Staging credential already initialized/)
   assert.ok(!existsSync(credentials), 'credential not re-issued')
   assert.equal(await passwordHash(), hashBefore, 'existing account never reset')
   assert.ok(!readState().neonCalls.slice(neonBefore).some((call: string) => call.includes('branches create')), 'no branch recreated')
@@ -250,11 +269,17 @@ async function main() {
 
   // Drift: a Staging variable pointing at the Production database is reported.
   const state = readState()
+  const driftBackup = state.projects.find((item: any) => item.name === 'gerard-staging').env.DATABASE_URL
   state.projects.find((item: any) => item.name === 'gerard-staging').env.DATABASE_URL = 'postgresql://u@ep-ancient-block-za26cw6e.eu.aws.neon.tech/neondb'
   writeFileSync(stateFile, JSON.stringify(state))
   const drift = await command('check')
   assert.match(drift.output, /FAIL {2}Gerard Staging DB is not Production — .*(does not point at the Staging branch|Production database)/)
   assert.ok(!drift.output.includes('ep-ancient-block'), 'endpoint not printed')
+  // A drifted Staging project DATABASE_URL is also refused by setup's bootstrap (fail closed), then restored.
+  assert.match((await command('setup', ['--no-deploy'])).output, /DATABASE_ENVIRONMENT_MISMATCH|not this Staging branch/)
+  const restored = readState()
+  restored.projects.find((item: any) => item.name === 'gerard-staging').env.DATABASE_URL = driftBackup
+  writeFileSync(stateFile, JSON.stringify(restored))
 
   // Deploy refuses source changes unless explicitly acknowledged (and then still deploys HEAD only).
   if (meaningfulChanges((await run('git', ['status', '--porcelain'])).stdout).length) assert.match((await command('deploy', ['novotralux'])).output, /Uncommitted changes/)

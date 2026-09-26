@@ -4,12 +4,11 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import { resolveDeploymentEnvironment } from '@prolific/gerard-core'
 
-import { assertDatabaseForEnvironment } from '../../apps/novotralux/scripts/database-target.mjs'
-import { STAGING_ORGANIZATION, grantOwnerRole, inspectDatabase, readMarker, sanitize, verifyDatabase } from './database'
+import { STAGING_ORGANIZATION, bootstrapDatabase, credentialState, rotateOwnerPassword } from './database'
 import { deployToStaging } from './deploy'
 import {
   APPS, CONFIGURATION_PATH, FORBIDDEN_STAGING_VARIABLES, LABEL, PRODUCTION_HOSTS, PRODUCTION_PROJECTS, QA_ACCOUNTS, SCOPE, STAGING_PROJECTS, authenticate, fail, fingerprint, flags,
-  assertStagingBranch, databaseEndpoint, isProductionOrPreviewEndpoint, log, main, neon, neonConfig, probe, resolveProjects, run, stableHost, vercelCli, type App, type NeonBranch, type ProjectSettings,
+  assertStagingBranch, envRun, isProductionOrPreviewEndpoint, log, main, neon, neonConfig, probe, resolveProjects, stableHost, stagingDatabase, vercelCli, type App, type NeonBranch, type ProjectSettings,
 } from './lib'
 
 // npm run staging:setup — one-time (and repeatable) creation of the permanent Staging projects gerard-staging and
@@ -64,48 +63,39 @@ main(async () => {
     branches = await neon.branches()
   }
 
-  // 7. Per branch, before any Staging project receives a URL: Staging-only role, allow-listed sanitization of the
-  //    inherited Production rows, migrations, QA accounts, then a fail-closed verification.
-  const databases = {} as Record<App, { branch: NeonBranch; direct: string; endpoint: string; fresh: boolean }>
+  // 7. Per branch, before any Staging project receives a URL: rotate the inherited owner password on the CHILD branch
+  //    (first initialization only), sanitize the inherited rows, migrations + QA accounts, fail-closed verification.
+  //    Once rotated, the valid credential lives only in the Staging project: later runs use it through `vercel env run`.
+  const databases = {} as Record<App, { branch: NeonBranch; endpoint: string; stagingUrl?: string }>
+  const candidatePassword = randomBytes(18).toString('base64url')
+  let superadminCreated = false
   for (const app of APPS) {
-    const branch = assertStagingBranch(app, branches.find((item) => item.name === neonConfig.branches[app]) ?? fail(`Neon branch ${neonConfig.branches[app]} missing after creation`))
-    const role = neonConfig.roles[app]
-    if (!(await neon.roles(branch)).includes(role)) { await neon.createRole(branch, role); log(`✔ ${branch.name}: role ${role} created on the Staging branch only`) }
-    const owner = await neon.databaseOwner(branch) ?? fail(`${branch.name} has no ${neonConfig.database} database`)
-    const ownerUrl = await neon.connectionString(branch, owner)
-    assertDatabaseForEnvironment('staging', ownerUrl)
-    await grantOwnerRole(ownerUrl, owner, role)
-    const direct = await neon.connectionString(branch, role)
-    assertDatabaseForEnvironment('staging', direct)
-    const endpoint = databaseEndpoint(direct)
-    if (isProductionOrPreviewEndpoint(endpoint) || endpoint !== databaseEndpoint(ownerUrl)) fail(`${branch.name}: unexpected database endpoint: refused.`)
-    const fresh = !(await readMarker(direct))
-    if (fresh) {
-      const result = await sanitize(direct, app, branch)
-      log(`✔ ${branch.name}: inherited data removed (${result.emptied} tables emptied, ${result.organizations} organizations removed; kept: schema, migration history, ${STAGING_ORGANIZATION[app]})`)
-    } else log(`✔ ${branch.name}: already sanitized (reused)`)
-    databases[app] = { branch, direct, endpoint, fresh }
+    const { branch, owner, inheritedUrl, endpoint } = await stagingDatabase(app, branches) ?? fail(`Neon branch ${neonConfig.branches[app]} missing after creation`)
+    if (isProductionOrPreviewEndpoint(endpoint)) fail(`${branch.name}: Production endpoint: refused.`)
+    const hostList = app === 'gerard' ? [hosts.gerard] : []
+    const initialPassword = app === 'gerard' ? candidatePassword : undefined
+    let result: { fresh?: boolean; sanitized?: { emptied: number; organizations: number }; superadminCreated?: boolean; problems: string[] }
+    if (await credentialState(inheritedUrl) === 'inherited') {
+      const stagingUrl = await rotateOwnerPassword(inheritedUrl, owner, endpoint)
+      log(`✔ ${branch.name}: ${owner} password rotated on the Staging branch only (the inherited Production password no longer opens it)`)
+      result = await bootstrapDatabase({ url: stagingUrl, app, branch, hosts: hostList, initialPassword })
+      databases[app] = { branch, endpoint, stagingUrl }
+    } else {
+      log(`✔ ${branch.name}: Staging credential already initialized — using the one stored in ${STAGING_PROJECTS[app]}`)
+      const line = (await envRun(STAGING_PROJECTS[app], 'scripts/staging/bootstrap.ts', [app, branch.id, branch.parent_id ?? '', endpoint, hostList.join(',')], { GERARD_STAGING_BOOTSTRAP_INITIAL_PASSWORD: initialPassword ?? '' }, 'GERARD_BOOTSTRAP '))
+      result = JSON.parse(line)
+      if (result.problems.some((problem) => /no longer opens|no DATABASE_URL|not this Staging branch/.test(problem))) fail(`${branch.name}: ${result.problems.join('; ')}. Reset the ${owner} password of ${branch.name} in the Neon console (never the Production branch), then rerun: setup rotates it again.`)
+      databases[app] = { branch, endpoint }
+    }
+    if (result.sanitized) log(`✔ ${branch.name}: inherited data removed (${result.sanitized.emptied} tables emptied, ${result.sanitized.organizations} organizations removed; kept: schema, migration history, ${STAGING_ORGANIZATION[app]})`)
+    else log(`✔ ${branch.name}: already sanitized`)
+    if (result.problems.length) fail(`${branch.name} failed verification (${result.problems.join('; ')}): its URL is NOT exported to Vercel.`)
+    superadminCreated ||= app === 'gerard' && Boolean(result.superadminCreated)
+    log(`✔ ${branch.name} verified: Staging endpoint, no inherited Production data, QA account present, integrations off`)
   }
   if (databases.gerard.endpoint === databases.novotralux.endpoint) fail('Gerard and Novotralux Staging resolve to the same database endpoint: refused.')
   if (resolveDeploymentEnvironment({ VERCEL_ENV: 'production', GERARD_INSTANCE_ENVIRONMENT: 'staging' }) !== 'staging') fail('Staging environment resolution failed: refused.')
-
-  const superadminExists = (await inspectDatabase(databases.gerard.direct, 'gerard')).users.includes(QA_ACCOUNTS.gerard)
-  const initialPassword = superadminExists ? undefined : randomBytes(18).toString('base64url')
-  let superadminCreated = false
-  for (const app of APPS) {
-    const result = await run('node', [path.join('node_modules', 'tsx', 'dist', 'cli.mjs'), 'scripts/staging-prepare.ts'], { env: {
-      VERCEL: '', VERCEL_ENV: '', VERCEL_TARGET_ENV: '', GERARD_INSTANCE_ENVIRONMENT: 'staging', DATABASE_URL: databases[app].direct,
-      GERARD_APPLICATION_ID: app === 'novotralux' ? 'novotralux' : '', GERARD_INSTANCE_ORGANIZATION_ID: app === 'novotralux' ? 'org-novotralux' : '',
-      GERARD_PLATFORM_HOSTNAMES: app === 'gerard' ? hosts.gerard : '', GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD: app === 'gerard' ? initialPassword ?? '' : '',
-    } })
-    if (result.code !== 0) fail(`${LABEL[app]}: migrations/QA accounts failed (output above).`)
-    superadminCreated ||= /gerard\.staging\.superadmin created/.test(result.output)
-  }
-  for (const app of APPS) {
-    const problems = verifyDatabase(await inspectDatabase(databases[app].direct, app), app, databases[app].branch, { fresh: databases[app].fresh, hosts: [hosts[app]] })
-    if (problems.length) fail(`${databases[app].branch.name} failed verification (${problems.join('; ')}): its URL is NOT exported to Vercel.`)
-    log(`✔ ${databases[app].branch.name} verified: Staging endpoint, no inherited Production data, QA account present, integrations off`)
-  }
+  const initialPassword = superadminCreated ? candidatePassword : undefined
 
   // 8. Staging variables (only now, after verification), in the Vercel "production" scope of the Staging projects (they are Staging).
   const facts = { gerard: await probe(STAGING_PROJECTS.gerard, 'facts', 'gerard'), novotralux: await probe(STAGING_PROJECTS.novotralux, 'facts', 'novotralux') }
@@ -116,7 +106,7 @@ main(async () => {
   const desired: Record<App, [string, string | undefined, 'align' | 'keep'][]> = {
     gerard: [
       ['GERARD_INSTANCE_ENVIRONMENT', 'staging', 'align'],
-      ['DATABASE_URL', databases.gerard.direct, 'align'],
+      ['DATABASE_URL', databases.gerard.stagingUrl, 'align'],
       ['GERARD_PLATFORM_HOSTNAMES', hosts.gerard, 'align'],
       ['GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT', channelEndpoint, 'align'],
       ['GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_DOMAIN', hosts.novotralux, 'align'],
@@ -128,8 +118,8 @@ main(async () => {
     ],
     novotralux: [
       ['GERARD_INSTANCE_ENVIRONMENT', 'staging', 'align'],
-      ['DATABASE_URL', databases.novotralux.direct, 'align'],
-      ['NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL', databases.novotralux.direct, 'align'],
+      ['DATABASE_URL', databases.novotralux.stagingUrl, 'align'],
+      ['NOVOTRALUX_CUSTOM_STAGING_DATABASE_URL', databases.novotralux.stagingUrl, 'align'],
       ['GERARD_APPLICATION_ID', 'novotralux', 'align'],
       ['GERARD_INSTANCE_ORGANIZATION_ID', 'org-novotralux', 'align'],
       ['NEXT_PUBLIC_GERARD_APPLICATION', 'novotralux', 'align'],

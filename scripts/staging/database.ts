@@ -1,6 +1,8 @@
+import { randomBytes } from 'node:crypto'
+import path from 'node:path'
 import pg from 'pg'
 
-import { QA_ACCOUNTS, fail, type App, type NeonBranch } from './lib'
+import { QA_ACCOUNTS, databaseEndpoint, fail, isProductionOrPreviewEndpoint, run, type App, type NeonBranch } from './lib'
 
 // Sanitization and verification of the Neon Staging child branches. A child branch starts as a copy of its Production
 // parent; before any Staging project receives its URL, every row is removed except an explicit allow-list, the result is
@@ -30,12 +32,34 @@ async function foreignRows(client: pg.Client) {
   return found
 }
 
-// The Staging role gets the privileges of the inherited owner role, on the Staging branch only.
-export async function grantOwnerRole(ownerUrl: string, owner: string, role: string) {
-  await withClient(ownerUrl, async (client) => {
-    const granted = (await client.query(`select pg_has_role($1, $2, 'MEMBER') as member`, [role, owner])).rows[0].member
-    if (!granted) await client.query(`grant ${quote(owner)} to ${quote(role)}`)
+// ─── Credential: the child branch inherits the owner role AND its Production password ───────────────────────────
+// `inherited`: the inherited (Production) password still opens the child → it must be rotated before anything else.
+// `rotated`: it no longer does → the Staging credential stored in the Staging Vercel project is the valid one.
+export async function credentialState(inheritedUrl: string) {
+  const client = new pg.Client({ connectionString: inheritedUrl, connectionTimeoutMillis: 20000 })
+  try { await client.connect(); return 'inherited' as const } catch (error) {
+    if ((error as { code?: string }).code === '28P01') return 'rotated' as const
+    throw error
+  } finally { await client.end().catch(() => undefined) }
+}
+
+// Rotates the owner password on the CHILD branch only (the connection is asserted to be the Staging endpoint, never a
+// Production one), then proves the new credential works and the inherited one no longer opens the child.
+export async function rotateOwnerPassword(inheritedUrl: string, owner: string, expectedEndpoint: string) {
+  if (databaseEndpoint(inheritedUrl) !== expectedEndpoint || isProductionOrPreviewEndpoint(expectedEndpoint)) fail('credential rotation refused: not the Staging endpoint')
+  const password = randomBytes(32).toString('base64url')
+  await withClient(inheritedUrl, async (client) => {
+    const current = (await client.query('select current_user as role')).rows[0].role as string
+    if (current !== owner) fail(`credential rotation refused: connected as ${current}, expected ${owner}`)
+    await client.query(`alter role ${quote(owner)} password ${client.escapeLiteral(password)}`)
   })
+  const url = new URL(inheritedUrl)
+  url.password = password
+  const stagingUrl = url.toString()
+  if (databaseEndpoint(stagingUrl) !== expectedEndpoint) fail('credential rotation refused: endpoint changed')
+  await withClient(stagingUrl, (client) => client.query('select 1'))
+  if (await credentialState(inheritedUrl) !== 'rotated') fail('credential rotation failed: the inherited password still opens the Staging branch')
+  return stagingUrl
 }
 
 export type Marker = { branch: string; parent: string; app: App; at: string }
@@ -105,4 +129,20 @@ export function verifyDatabase(state: DatabaseState, app: App, branch: NeonBranc
     if (state.domains.some((host) => !options.hosts.includes(host))) problems.push('organization domains other than the Staging host')
   }
   return problems
+}
+
+// Sanitize (once) → migrations + QA accounts (same step as every Staging build) → fail-closed verification. Runs either
+// locally right after the rotation, or inside `vercel env run` with the Staging project's stored credential.
+export async function bootstrapDatabase(input: { url: string; app: App; branch: NeonBranch; hosts: string[]; initialPassword?: string }) {
+  const { url, app, branch } = input
+  const fresh = !(await readMarker(url))
+  const sanitized = fresh ? await sanitize(url, app, branch) : undefined
+  const prepare = await run('node', [path.join('node_modules', 'tsx', 'dist', 'cli.mjs'), 'scripts/staging-prepare.ts'], { quiet: true, env: {
+    VERCEL: '', VERCEL_ENV: '', VERCEL_TARGET_ENV: '', GERARD_INSTANCE_ENVIRONMENT: 'staging', DATABASE_URL: url,
+    GERARD_APPLICATION_ID: app === 'novotralux' ? 'novotralux' : '', GERARD_INSTANCE_ORGANIZATION_ID: app === 'novotralux' ? 'org-novotralux' : '',
+    GERARD_PLATFORM_HOSTNAMES: app === 'gerard' ? input.hosts[0] : '', GERARD_STAGING_SUPERADMIN_INITIAL_PASSWORD: app === 'gerard' ? input.initialPassword ?? '' : '',
+  } })
+  if (prepare.code !== 0) return { fresh, sanitized, prepared: false, superadminCreated: false, problems: ['migrations/QA accounts failed'], log: prepare.output }
+  const problems = verifyDatabase(await inspectDatabase(url, app), app, branch, { fresh, hosts: input.hosts })
+  return { fresh, sanitized, prepared: true, superadminCreated: /gerard\.staging\.superadmin created/.test(prepare.output), problems, log: prepare.output }
 }

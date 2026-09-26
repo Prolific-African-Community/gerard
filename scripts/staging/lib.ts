@@ -34,14 +34,12 @@ export function assertStagingProject(name: string) {
 export const neonConfig = {
   project: process.env.GERARD_STAGING_NEON_PROJECT || 'lucky-wildflower-15424624',
   // Staging branches are CHILD branches of their own Production branch (no root branch is created). A child starts with
-  // the parent's data: setup sanitizes it (scripts/staging/database.ts) before any Staging project receives its URL.
+  // the parent's data and the parent's owner password: setup rotates that password on the child, then sanitizes the data
+  // (scripts/staging/database.ts) before any Staging project receives its URL.
   parents: { gerard: 'br-patient-wildflower-zarmyqcq', novotralux: 'br-cool-sea-zaufb5ng' } as Record<App, string>,
   productionBranches: ['br-patient-wildflower-zarmyqcq', 'br-cool-sea-zaufb5ng'],
   previewBranches: ['br-still-field-za5dh59a'],
   branches: { gerard: 'gerard-staging', novotralux: 'novotralux-custom-staging' } as Record<App, string>,
-  // Login role created on the Staging branch only, with its own Neon-generated password: a child branch inherits the
-  // parent's roles and passwords, so the inherited owner role is never used in a Staging URL.
-  roles: { gerard: 'gerard_staging', novotralux: 'novotralux_staging' } as Record<App, string>,
   database: 'neondb',
 }
 
@@ -171,15 +169,20 @@ export type ProbeFacts = {
   database?: { variables: Record<string, string | null>; productionEndpoint: boolean; reachable: boolean; migrations?: { applied: number; failed: number }; account?: { exists: boolean; active: boolean; platformRole: string | null; organizationRole: string | null }; integrationsEnabled?: number }
   channel?: Record<string, { status: number; organizationId?: string | null; usernames?: string[] }>
 }
-export async function probe(project: string, mode: 'facts' | 'full', app: App) {
+// Runs one of this repository's scripts inside `vercel env run -e production --project <Staging project>`: the project's
+// variables exist only in that child process, which prints one marked line of facts (never values).
+export async function envRun(project: string, script: string, args: string[], extraEnv: Record<string, string>, marker: string) {
   const env = Object.fromEntries(BASE_ENV.filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]))
   const tsx = path.join('node_modules', 'tsx', 'dist', 'cli.mjs')
-  const result = await runCli(VERCEL_CLI, ['env', 'run', '-e', 'production', '--project', assertStagingProject(project), '--scope', SCOPE, '--', 'node', tsx, 'scripts/staging/probe.ts', mode, app], {
-    quiet: true, replaceEnv: true, env: { ...env, GERARD_PROBE_BASELINE: Object.keys(env).join(',') },
+  const result = await runCli(VERCEL_CLI, ['env', 'run', '-e', 'production', '--project', assertStagingProject(project), '--scope', SCOPE, '--', 'node', tsx, script, ...args], {
+    quiet: true, replaceEnv: true, env: { ...env, ...extraEnv, GERARD_PROBE_BASELINE: [...Object.keys(env), ...Object.keys(extraEnv)].join(',') },
   })
-  const line = result.stdout.split('\n').find((item) => item.startsWith('GERARD_PROBE '))
-  if (result.code !== 0 || !line) fail(`${project}: could not read its Staging variables (${lastLines(result.output)})`)
-  return JSON.parse(line!.slice('GERARD_PROBE '.length)) as ProbeFacts
+  const line = result.stdout.split('\n').find((item) => item.startsWith(marker))
+  if (result.code !== 0 || !line) fail(`${project}: could not run with its Staging variables (${lastLines(result.output)})`)
+  return line!.slice(marker.length)
+}
+export async function probe(project: string, mode: 'facts' | 'full', app: App) {
+  return JSON.parse(await envRun(project, 'scripts/staging/probe.ts', [mode, app], {}, 'GERARD_PROBE ')) as ProbeFacts
 }
 
 // ─── Authentication ───────────────────────────────────────────────────────────────────────────────────────────
@@ -220,10 +223,8 @@ export const neon = {
   branches: async () => list(neonJson(await neonctl(['branches', 'list', '--output', 'json'])), 'branches') as NeonBranch[],
   // A child of the given Production branch (copy-on-write; the parent is only read). Never a root branch.
   createChildBranch: async (name: string, parent: string) => { const value = neonJson(await neonctl(['branches', 'create', '--name', name, '--parent', parent, '--no-secrets', '--output', 'json'])); return (value.branch ?? value) as NeonBranch },
-  roles: async (branch: NeonBranch) => (list(neonJson(await neonctl(['roles', 'list', '--branch', branch.id, '--output', 'json'])), 'roles') as { name: string }[]).map((item) => item.name),
-  createRole: (branch: NeonBranch, name: string) => neonctl(['roles', 'create', '--name', name, '--branch', branch.id, '--output', 'json']),
   databaseOwner: async (branch: NeonBranch) => (list(neonJson(await neonctl(['databases', 'list', '--branch', branch.id, '--output', 'json'])), 'databases') as { name: string; owner_name: string }[]).find((item) => item.name === neonConfig.database)?.owner_name,
-  // The URL stays in memory: handed to Vercel through stdin or to a child environment, never displayed.
+  // The branch's control-plane connection string (inherited owner credential). It stays in memory, never displayed.
   connectionString: (branch: NeonBranch, role: string) => neonctl(['connection-string', branch.id, '--database-name', neonConfig.database, '--role-name', role]).then((value) => value.split('\n').filter((line) => /^postgres(ql)?:\/\//.test(line.trim())).pop()?.trim() || fail('neonctl returned no connection string')),
 }
 
@@ -237,13 +238,14 @@ export function assertStagingBranch(app: App, branch: NeonBranch) {
   return branch
 }
 
-// Resolves an existing Staging branch and the URL of its Staging-only role (Production endpoints refused).
+// Resolves an existing Staging branch: its inherited owner role and endpoint (the connection string is used only to
+// read the endpoint and, before the first rotation, to connect).
 export async function stagingDatabase(app: App, branches: NeonBranch[]) {
   const found = branches.find((item) => item.name === neonConfig.branches[app])
   if (!found) return undefined
   const branch = assertStagingBranch(app, found)
-  if (!(await neon.roles(branch)).includes(neonConfig.roles[app])) fail(`Neon branch ${branch.name} has no ${neonConfig.roles[app]} role (run npm run staging:setup)`)
-  const direct = await neon.connectionString(branch, neonConfig.roles[app])
-  assertDatabaseForEnvironment('staging', direct)
-  return { branch, direct, endpoint: databaseEndpoint(direct) }
+  const owner = await neon.databaseOwner(branch) ?? fail(`Neon branch ${branch.name} has no ${neonConfig.database} database`)
+  const inheritedUrl = await neon.connectionString(branch, owner)
+  assertDatabaseForEnvironment('staging', inheritedUrl)
+  return { branch, owner, inheritedUrl, endpoint: databaseEndpoint(inheritedUrl) }
 }
