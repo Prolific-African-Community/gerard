@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createPlatformConfigurationRequest, verifyPlatformConfigurationRequest } from '../lib/platform/configuration-channel'
 
-process.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET = 'run-9c1-preview-only-channel-secret'
+process.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET = 'run-9c1-test-only-channel-secret'
 
 const base = { application: 'novotralux', organizationId: 'org-novotralux', action: 'updateBranding' as const, payload: { accentColor: '#123456' } }
 const signed = createPlatformConfigurationRequest({ ...base, timestamp: Math.floor(Date.now() / 1000) })

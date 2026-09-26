@@ -2,14 +2,16 @@ import { config } from 'dotenv'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
-config({ path: '../../.env.production.local', quiet: true })
+import { assertRuntimeDatabase } from '../lib/runtime/database-guard'
+
 config({ path: '../../.env.local', quiet: true })
 config({ path: '../../.env', quiet: true })
 
 async function main() {
-  const target = process.env.LEGACY_TARGET_DATABASE_URL
-  const prototype = process.env.DATABASE_URL
-  if (!target || target === process.env.LEGACY_SOURCE_DATABASE_URL || target === prototype) throw new Error('ISOLATED_LEGACY_TARGET_REQUIRED')
+  const target = process.env.NOVOTRALUX_CUSTOM_DATABASE_URL || process.env.DATABASE_URL
+  if (!target) throw new Error('NOVOTRALUX_LOCAL_DATABASE_URL_REQUIRED')
+  // Same rule as the runtime: this QA pass never runs against a Production database.
+  assertRuntimeDatabase(target)
   process.env.DATABASE_URL = target
   const { createSessionToken, sessionCookieName } = await import('../lib/auth/session')
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: target }) })

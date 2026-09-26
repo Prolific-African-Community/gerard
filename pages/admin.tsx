@@ -21,7 +21,7 @@ const moduleInfo: Record<string, { label: string; description: string }> = {
 }
 const roles = ['ORG_ADMIN', 'MANAGER', 'DISPATCHER', 'SECRETARY', 'ACCOUNTING', 'DRIVER', 'VIEWER'] as const
 const statusInfo: Record<string, { label: string; tone: 'positive' | 'warning' | 'neutral' }> = { ACTIVE: { label: 'Active', tone: 'positive' }, SUSPENDED: { label: 'Suspendue', tone: 'warning' }, ARCHIVED: { label: 'Archivée', tone: 'neutral' } }
-const environmentLabels: Record<string, string> = { production: 'Production', preview: 'Preview', staging: 'Préproduction', development: 'Développement' }
+const environmentLabels: Record<string, string> = { production: 'Production', development: 'Développement' }
 type IntegrationType = 'MAIL_INTAKE' | 'SL_AUTOMOTIVE'
 type ConfigField = { key: string; label: string; kind: 'text' | 'number' | 'boolean'; placeholder?: string }
 const integrationCatalog: { type: IntegrationType; name: string; purpose: string; fields: ConfigField[] }[] = [
@@ -67,7 +67,6 @@ type Confirmation = { title: string; body: ReactNode; confirm: string; destructi
 const errorText = (cause: unknown, fallback: string) => cause instanceof Error ? cause.message : fallback
 const customErrors: Record<string, string> = {
   'Platform instance channel unavailable': 'Le canal de configuration n’est pas configuré sur cet environnement.',
-  'Platform preview identity unavailable': 'Identité Preview indisponible : la requête signée n’a pas pu être émise.',
   'Custom configuration unavailable': 'L’instance n’a pas répondu.',
   'Custom instance unavailable': 'Cette instance n’accepte pas de configuration depuis cet environnement.',
 }
@@ -76,7 +75,7 @@ const customCodes: Record<string, string> = { PLATFORM_ACCOUNT_PROTECTED: 'Compt
 async function call(url: string, init: RequestInit) {
   const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json' } })
   const body = await response.json().catch(() => ({}))
-  if (body.code === 'CUSTOM_INSTANCE_OUTDATED') throw new Error(`L’instance Custom jointe (${body.endpointHost}) exécute une version antérieure${body.instanceCoreVersion ? ` (Core ${body.instanceCoreVersion})` : ''} qui ne connaît pas cette action. Redéployez-la ou pointez l’endpoint de configuration Preview vers le déploiement à jour.`)
+  if (body.code === 'CUSTOM_INSTANCE_OUTDATED') throw new Error(`L’instance Custom jointe (${body.endpointHost}) exécute une version antérieure${body.instanceCoreVersion ? ` (Core ${body.instanceCoreVersion})` : ''} qui ne connaît pas cette action. Redéployez-la ou pointez l’endpoint de configuration vers le déploiement à jour.`)
   if (!response.ok) throw new Error(customCodes[body.code] || customErrors[body.error] || body.error || 'Opération impossible')
   return body
 }

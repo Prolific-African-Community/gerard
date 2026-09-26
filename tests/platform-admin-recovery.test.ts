@@ -13,8 +13,8 @@ const prefix = 'QA_RECOVERY_'
 const OLD_PASSWORD = 'Qa!OldPassword2026'
 
 process.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET = 'qa-recovery-channel-secret'
-process.env.GERARD_INSTANCE_ENVIRONMENT = 'preview'
-process.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_PREVIEW_CONFIGURATION_ENDPOINT = 'https://novotralux-qa.invalid/api/internal/platform/configuration'
+process.env.GERARD_INSTANCE_ENVIRONMENT = 'development'
+process.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_DEVELOPMENT_CONFIGURATION_ENDPOINT = 'https://novotralux-qa.invalid/api/internal/platform/configuration'
 
 function response() {
   let statusCode = 200

@@ -12,8 +12,8 @@ import platformInstanceConfigurationHandler from '../pages/api/platform/instance
 // the Platform route, the signed request and the Custom endpoint must accept exactly the same commands.
 const prefix = 'QA_CONTRACT_'
 process.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET = 'qa-contract-channel-secret'
-process.env.GERARD_INSTANCE_ENVIRONMENT = 'preview'
-process.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_PREVIEW_CONFIGURATION_ENDPOINT = 'https://novotralux-qa.invalid/api/internal/platform/configuration'
+process.env.GERARD_INSTANCE_ENVIRONMENT = 'development'
+process.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_DEVELOPMENT_CONFIGURATION_ENDPOINT = 'https://novotralux-qa.invalid/api/internal/platform/configuration'
 process.env.GERARD_APPLICATION_ID = 'novotralux'
 process.env.GERARD_INSTANCE_ORGANIZATION_ID = 'org-novotralux'
 

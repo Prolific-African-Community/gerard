@@ -1,27 +1,30 @@
-# Next.js + Tailwind CSS Example
+# Gerard
 
-This example shows how to use [Tailwind CSS](https://tailwindcss.com/) [(v3.0)](https://tailwindcss.com/blog/tailwindcss-v3) with Next.js. It follows the steps outlined in the official [Tailwind docs](https://tailwindcss.com/docs/guides/nextjs).
+Multi-tenant dispatch platform: Gerard Core (`packages/gerard-core`), Gerard Standard (repository root) and the Custom applications (`apps/`, currently Novotralux).
 
-## Preview
+## Two environments
 
-Preview the example live on [StackBlitz](http://stackblitz.com/):
+Gerard has **LOCAL DEVELOPMENT** and **PRODUCTION**, and nothing else. See [docs/ENVIRONMENT_ARCHITECTURE.md](docs/ENVIRONMENT_ARCHITECTURE.md).
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/vercel/next.js/tree/canary/examples/with-tailwindcss)
-
-## Deploy your own
-
-Deploy the example using [Vercel](https://vercel.com?utm_source=github&utm_medium=readme&utm_campaign=next-example):
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/git/external?repository-url=https://github.com/vercel/next.js/tree/canary/examples/with-tailwindcss&project-name=with-tailwindcss&repository-name=with-tailwindcss)
-
-## How to use
-
-Execute [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app) with [npm](https://docs.npmjs.com/cli/init) or [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/) to bootstrap the example:
+## Local development
 
 ```bash
-npx create-next-app --example with-tailwindcss with-tailwindcss-app
-# or
-yarn create next-app --example with-tailwindcss with-tailwindcss-app
+npm install
+npm run dev              # Gerard Standard
+npm run novotralux:dev   # Novotralux Custom
 ```
 
-Deploy it to the cloud with [Vercel](https://vercel.com/new?utm_source=github&utm_medium=readme&utm_campaign=next-example) ([Documentation](https://nextjs.org/docs/deployment)).
+`DATABASE_URL` must point at a development database: the Production endpoints are refused before any connection is opened. `npm run db:check` reports what the current configuration resolves to.
+
+## Checks
+
+```bash
+npx tsc --noEmit
+npm test
+npm run novotralux:test
+npm run novotralux:check
+```
+
+## Production
+
+Pushing to `main` deploys the Vercel projects `gerard` and `novotralux-custom` against their Production Neon databases. Every build runs the Production database identity check first.

@@ -34,14 +34,14 @@ Status: `MIGRATION_CLOSED`
 
 - Runtime/build: `DATABASE_URL`, `NOVOTRALUX_CUSTOM_PRODUCTION_DATABASE_URL`, application/organization/environment identity, and the public application definition are retained in Production.
 - Auth, Blob, server Google, browser Google, and all integration credentials are Production-only.
-- Preview has no production database, JWT, Blob, Google, mail, or SL credentials; only the non-sensitive dispatch base coordinates remain shared.
-- Migration/staging aliases, demo database variables, bootstrap/reset credentials, development cleanup credentials, legacy mail variables, and superseded SL key variables were removed from the normal Custom runtime.
+- Local development has no production database, JWT, Blob, Google, mail, or SL credentials; only the non-sensitive dispatch base coordinates remain shared.
+- Obsolete migration aliases, demo database variables, bootstrap/reset credentials, development cleanup credentials, legacy mail variables, and superseded SL key variables were removed from the normal Custom runtime.
 - `SL_AUTOMOTIVE_API_BASE_URL` is retained Production-only solely as the isolated unresolved provider configuration; it is not consumed by the disabled tenant integration.
 - Google Maps/Routes variables remain configured, with the per-operation limit retained. No Google call was made during cleanup.
 
 ## Legacy fallback
 
-The legacy repository, production database, final snapshot `pre-gerard-final-cutover-20260923-172829`, and legacy-only Vercel deployment are retained. The fallback runtime connects with the dedicated `legacy_fallback_reader` role: transactions default to read-only, `SELECT` is granted, and métier `INSERT` is denied. Mail polling, SL credentials, server-side Google credentials, and Preview access to Production DB/JWT/Blob credentials were removed from the legacy Vercel project. A rollback requires freezing Custom writes, reconciling any Custom-only deltas, deliberately restoring a writable credential, then promoting the known legacy-only deployment; blind rollback is forbidden.
+The legacy repository, production database, final snapshot `pre-gerard-final-cutover-20260923-172829`, and legacy-only Vercel deployment are retained. The fallback runtime connects with the dedicated `legacy_fallback_reader` role: transactions default to read-only, `SELECT` is granted, and métier `INSERT` is denied. Mail polling, SL credentials, server-side Google credentials, and non-production access to Production DB/JWT/Blob credentials were removed from the legacy Vercel project. A rollback requires freezing Custom writes, reconciling any Custom-only deltas, deliberately restoring a writable credential, then promoting the known legacy-only deployment; blind rollback is forbidden.
 
 ## Future Core updates
 

@@ -89,6 +89,5 @@ export function isConfiguredPlatformHostname(hostname: string | null) {
     .split(',')
     .map(normalizeHostname)
     .filter(Boolean)
-  if (configured.includes(hostname)) return true
-  return process.env.VERCEL_ENV === 'preview' && normalizeHostname(process.env.VERCEL_URL) === hostname
+  return configured.includes(hostname)
 }

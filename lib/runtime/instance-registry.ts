@@ -26,8 +26,8 @@ const registeredInstances: readonly GerardInstanceRegistryEntry[] = Object.freez
 const instanceKey = (instance: GerardInstanceRegistryEntry, environment: DeploymentEnvironment, suffix: string) =>
   `GERARD_PLATFORM_INSTANCE_${instance.application.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_${environment.toUpperCase()}_${suffix}`
 
-// A non-production Platform reaches a Custom instance only through the endpoint declared for its own environment
-// (e.g. GERARD_PLATFORM_INSTANCE_NOVOTRALUX_STAGING_CONFIGURATION_ENDPOINT). Missing, malformed or pointing at the
+// A local Platform reaches a Custom instance only through the endpoint declared for its own environment
+// (e.g. GERARD_PLATFORM_INSTANCE_NOVOTRALUX_DEVELOPMENT_CONFIGURATION_ENDPOINT). Missing, malformed or pointing at the
 // Production Custom host: no endpoint, so the channel fails closed.
 // Hosts that serve the Production instance: its configuration endpoint and its public domain (with and without www).
 export function productionHostsOf(instance: GerardInstanceRegistryEntry) {

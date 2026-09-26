@@ -15,9 +15,9 @@ const SECRET_REF = 'QA_ADMIN_CFG_SECRET_REF_VALUE'
 const SECRET_VALUE = 'qa-admin-cfg-must-not-leak'
 
 process.env.GERARD_PLATFORM_INSTANCE_SHARED_SECRET = 'qa-admin-configuration-channel-secret'
-// Preview runtime with a non-routable endpoint: the registry must never resolve the Production Custom endpoint here.
-process.env.GERARD_INSTANCE_ENVIRONMENT = 'preview'
-process.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_PREVIEW_CONFIGURATION_ENDPOINT = 'https://novotralux-qa.invalid/api/internal/platform/configuration'
+// Local runtime with a non-routable endpoint: the registry must never resolve the Production Custom endpoint here.
+process.env.GERARD_INSTANCE_ENVIRONMENT = 'development'
+process.env.GERARD_PLATFORM_INSTANCE_NOVOTRALUX_DEVELOPMENT_CONFIGURATION_ENDPOINT = 'https://novotralux-qa.invalid/api/internal/platform/configuration'
 
 function response() {
   let statusCode = 200
@@ -129,7 +129,7 @@ async function main() {
     try {
       const platform = (session: any, body: Record<string, unknown>) => call(platformInstanceConfigurationHandler, request(session, 'POST', body, { application: 'novotralux' }))
       assert.equal((await platform(superUser, { action: 'getConfiguration' })).statusCode, 200, 'O1 SUPER_ADMIN read through Platform')
-      assert.equal(outgoing[0].url, 'https://novotralux-qa.invalid/api/internal/platform/configuration', 'Preview endpoint used, never Production')
+      assert.equal(outgoing[0].url, 'https://novotralux-qa.invalid/api/internal/platform/configuration', 'declared local endpoint used, never Production')
       assert.equal(outgoing[0].body.request.action, 'getConfiguration', 'read action signed')
       assert.ok(/^[0-9a-f]{64}$/.test(outgoing[0].headers['x-gerard-platform-signature']), 'HMAC signature attached')
       assert.equal((await platform(supportUser, { action: 'getConfiguration' })).statusCode, 200, 'O2 PLATFORM_SUPPORT may read')
