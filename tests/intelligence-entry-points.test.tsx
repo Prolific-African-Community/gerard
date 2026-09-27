@@ -65,12 +65,26 @@ for (const file of [
   const source = readFileSync(file, 'utf8')
   assert.ok(!/onAnalyzePlanning/.test(source), `${file} ne doit plus câbler d’action d’analyse`)
   assert.match(source, /hideTrigger/, `${file} doit masquer le déclencheur local du panneau de suggestions`)
-  assert.match(source, /analyzeRef=\{openSuggestionsRef\}/, `${file} doit piloter le panneau depuis la surface proactive`)
-  assert.match(source, /<GerardInsightsPanel/, `${file} doit monter la surface proactive`)
+  assert.match(source, /analyzeRef=\{openSuggestionsRef\}/, `${file} doit piloter le panneau depuis l’assistant`)
   assert.match(source, /<GerardAssistantPanel/, `${file} doit monter l’assistant`)
   assert.match(source, /<AutoPlanningPanel/, `${file} doit conserver l’affectation automatique`)
+  // Le planning reste la vue reine : plus aucun panneau d'insights posé dans
+  // son flux. Les insights sont consultés depuis l'assistant.
+  assert.ok(!/<GerardInsightsPanel/.test(source), `${file} ne doit plus poser de bloc d’insights dans le planning`)
+  assert.match(source, /useGerardInsights/, `${file} doit lire le rapport partagé`)
+  assert.match(source, /assistantBadge=\{insightBadgeCount\(insights\.report\)\}/, `${file} doit porter la pastille sur l’entrée assistant`)
+  assert.match(source, /insights=\{insights\.report\}/, `${file} doit transmettre le rapport à l’assistant`)
+  assert.match(source, /onOpenMission=\{/, `${file} doit brancher l’ouverture de mission`)
+  assert.match(source, /openSuggestionsRef\.current\?\.\(\)/, `${file} doit brancher la simulation`)
+  // Le panneau de résultats est moins haut que l'assistant : sans retrait
+  // préalable, il s'ouvrirait derrière lui et resterait invisible.
+  assert.match(
+    source,
+    /setIsAssistantOpen\(false\)\s*\n\s*openSuggestionsRef\.current/,
+    `${file} doit retirer l’assistant avant d’ouvrir le panneau de résultats`
+  )
 }
-console.log('E desktop et mobile : plus de déclencheur autonome, surfaces conservées: OK')
+console.log('E desktop et mobile : insights dans l’assistant, CTA branchés, pastille portée: OK')
 
 // E2 — les deux chemins d'application rafraîchissent la surface proactive. Sans
 // cela, une opportunité appliquée depuis le chat resterait affichée alors

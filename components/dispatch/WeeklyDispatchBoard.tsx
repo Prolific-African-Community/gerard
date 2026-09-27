@@ -97,7 +97,7 @@ import {
 } from '../../lib/dispatch/trailer-rotation'
 import { getMissionDisplayLocation } from '../../lib/dispatch/mission-display-location'
 import { DriverOperationalCardContent } from './DriverOperationalCardContent'
-import { GerardInsightsPanel } from './intelligence/GerardInsightsPanel'
+import { insightBadgeCount, useGerardInsights } from './intelligence/useGerardInsights'
 import { GerardSuggestionsPanel } from './intelligence/GerardSuggestionsPanel'
 import { GerardAssistantPanel } from './intelligence/GerardAssistantPanel'
 
@@ -1263,6 +1263,12 @@ export function WeeklyDispatchBoard({
   const openSuggestionsRef = useRef<(() => void) | null>(null)
   /** Relance la surface proactive après une modification du planning. */
   const [insightsRefreshKey, setInsightsRefreshKey] = useState(0)
+  /** Rapport partagé : pastille de la barre de contrôles et contenu de l'assistant. */
+  const insights = useGerardInsights({
+    weekStart: formatDateParam(selectedWeekStartDate),
+    enabled: capabilities.canViewPlanning,
+    refreshKey: insightsRefreshKey,
+  })
   const [isPlanningFullscreen, setIsPlanningFullscreen] = useState(false)
   const [resourceEditRequest, setResourceEditRequest] =
     useState<ResourceEditRequest | null>(null)
@@ -3315,6 +3321,7 @@ export function WeeklyDispatchBoard({
           onWeekChange={viewMode !== 'park' ? handleWeekChange : undefined}
           onOpenSearch={capabilities.canViewPlanning ? () => setIsSearchOpen(true) : undefined}
           onOpenAssistant={capabilities.canViewPlanning ? () => setIsAssistantOpen(true) : undefined}
+          assistantBadge={insightBadgeCount(insights.report)}
           onOpenAutoPlanning={
             capabilities.canAssign && viewMode === 'planning'
               ? () => setIsAutoPlanningOpen(true)
@@ -3340,23 +3347,18 @@ export function WeeklyDispatchBoard({
           onCreateMission={capabilities.canCreateMission ? () => setIsCreateMissionOpen(true) : undefined}
         />
 
+        {/* La surface proactive ne vit plus dans le flux du planning : elle est
+            consultée depuis l'assistant, la grille reste la vue principale. */}
         {viewMode === 'planning' && capabilities.canViewPlanning ? (
-          <>
-            <GerardInsightsPanel
-              weekStart={formatDateParam(selectedWeekStartDate)}
-              refreshKey={insightsRefreshKey}
-              onSimulate={() => openSuggestionsRef.current?.()}
-            />
-            <GerardSuggestionsPanel
-              weekStart={formatDateParam(selectedWeekStartDate)}
-              onApplied={() => {
-                setInsightsRefreshKey((current) => current + 1)
-                return loadOverview()
-              }}
-              hideTrigger
-              analyzeRef={openSuggestionsRef}
-            />
-          </>
+          <GerardSuggestionsPanel
+            weekStart={formatDateParam(selectedWeekStartDate)}
+            onApplied={() => {
+              setInsightsRefreshKey((current) => current + 1)
+              return loadOverview()
+            }}
+            hideTrigger
+            analyzeRef={openSuggestionsRef}
+          />
         ) : null}
 
         {viewMode === 'planning' && !capabilities.canAssign ? (
@@ -3630,6 +3632,20 @@ export function WeeklyDispatchBoard({
         onClose={() => setIsAssistantOpen(false)}
         weekStart={formatDateParam(selectedWeekStartDate)}
         missionReference={selectedMission?.reference}
+        insights={insights.report}
+        insightsLoading={insights.loading}
+        insightsError={insights.error}
+        onSimulate={() => {
+          // Le panneau de résultats prend le relais : l'assistant se retire
+          // plutôt que de le masquer.
+          setIsAssistantOpen(false)
+          openSuggestionsRef.current?.()
+        }}
+        onOpenMission={({ missionId }) => {
+          setViewMode('planning')
+          setSelectedMissionId(missionId)
+          setIsAssistantOpen(false)
+        }}
         onApplied={() => {
           setInsightsRefreshKey((current) => current + 1)
           return loadOverview()

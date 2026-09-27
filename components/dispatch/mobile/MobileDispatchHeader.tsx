@@ -23,6 +23,8 @@ type MobileDispatchHeaderProps = {
   onOpenAutoPlanning?: () => void
   onOpenSearch?: () => void
   onOpenAssistant?: () => void
+  /** Points d'attention détectés par Gerard Intelligence. */
+  assistantBadge?: number | null
 }
 
 type IconName =
@@ -61,6 +63,7 @@ export function MobileDispatchHeader({
   onOpenAutoPlanning,
   onOpenSearch,
   onOpenAssistant,
+  assistantBadge,
 }: MobileDispatchHeaderProps) {
   const currentWeekStartDate = getWeekStartDate()
   const isCurrentWeek =
@@ -80,7 +83,20 @@ export function MobileDispatchHeader({
 
         <div className="flex shrink-0 items-center gap-2">
           {onOpenAssistant && activeTab !== 'park' ? (
-            <button type="button" onClick={onOpenAssistant} aria-label="Assistant Gerard" title="Assistant Gerard" className="flex h-11 w-11 items-center justify-center rounded-full border-0 bg-[#eaffc8] text-sm font-black text-[#2d3d14] shadow-[0_10px_24px_rgba(120,170,40,0.16)] outline-none transition active:scale-95">G</button>
+            <button
+              type="button"
+              onClick={onOpenAssistant}
+              aria-label={assistantBadge ? `Assistant Gerard — ${assistantBadge} point${assistantBadge > 1 ? 's' : ''} à vérifier` : 'Assistant Gerard'}
+              title="Assistant Gerard"
+              className="relative flex h-11 w-11 items-center justify-center rounded-full border-0 bg-[#eaffc8] text-sm font-black text-[#2d3d14] shadow-[0_10px_24px_rgba(120,170,40,0.16)] outline-none transition active:scale-95"
+            >
+              G
+              {assistantBadge ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#16180f] px-1 text-[10px] font-bold text-white ring-2 ring-white">
+                  {assistantBadge}
+                </span>
+              ) : null}
+            </button>
           ) : null}
           {onOpenSearch && activeTab !== 'park' ? (
             <SmartSearchButton

@@ -36,6 +36,7 @@ export function DispatchToolbar({
   onOpenSearch,
   onOpenAutoPlanning,
   onOpenAssistant,
+  assistantBadge,
   onCompletePlanningRows,
   completePlanningRowsLabel,
   onOpenImports,
@@ -51,6 +52,8 @@ export function DispatchToolbar({
   onOpenSearch?: () => void;
   onOpenAutoPlanning?: () => void;
   onOpenAssistant?: () => void;
+  /** Points d'attention détectés par Gerard Intelligence. Absent ou nul : aucune pastille. */
+  assistantBadge?: number | null;
   onCompletePlanningRows?: () => void;
   completePlanningRowsLabel?: string;
   onOpenImports?: () => void;
@@ -105,7 +108,16 @@ export function DispatchToolbar({
         ) : null}
 
         {onOpenAssistant ? (
-          <ControlButton label="Assistant Gerard" icon={<Icons.assistant />} onClick={onOpenAssistant} />
+          <ControlButton
+            label={
+              assistantBadge
+                ? `Assistant Gerard — ${assistantBadge} point${assistantBadge > 1 ? "s" : ""} à vérifier`
+                : "Assistant Gerard"
+            }
+            icon={<Icons.assistant />}
+            onClick={onOpenAssistant}
+            badge={assistantBadge}
+          />
         ) : null}
 
         {onOpenAutoPlanning || onCompletePlanningRows ? (

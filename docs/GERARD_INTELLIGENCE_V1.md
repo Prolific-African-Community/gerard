@@ -15,8 +15,17 @@ Le cockpit dispatch expose **deux** entrées, pas trois :
 | **Affectation automatique** | « Fais le planning » | Flux de planification lourd, pouvant toucher de nombreuses missions. Action explicite et séparée. |
 | **Assistant Gerard** | « Aide-moi à comprendre et à améliorer » | Analyse, explication, simulation, puis application d'**une** suggestion après confirmation. |
 
-À côté, **Gerard Intelligence** est la surface proactive : elle se charge avec le
-planning et ne demande aucun clic pour exister.
+À côté, **Gerard Intelligence** est la couche analytique proactive. Elle se
+calcule dès l'ouverture de la semaine, mais ne s'impose jamais dans la page : le
+planning reste la vue reine. Sa présence se signale par une **pastille sur
+l'entrée assistant** portant le nombre de points à vérifier ; son contenu se
+consulte **dans l'assistant**, en tête de panneau, replié dès qu'une
+conversation commence. Aucun point d'attention : aucune pastille.
+
+Depuis l'assistant, un point d'attention ouvre la mission concernée ou lance la
+simulation existante. Ouvrir une mission referme l'assistant et sélectionne la
+mission dans le planning ; lancer une simulation referme l'assistant et laisse
+le panneau de résultats prendre le relais.
 
 L'entrée autonome « Analyser le planning » a été **retirée de l'interface** au
 Run 5. Sa capacité n'a pas disparu : l'analyse arrive d'elle-même par la surface
@@ -54,7 +63,10 @@ Routes (`pages/api/dispatch/intelligence/`) : `analyze`, `insights`, `simulate`,
 
 UI, montée par `WeeklyDispatchBoard.tsx` et `MobileDispatchView.tsx` :
 
-- `GerardInsightsPanel.tsx` — surface proactive, chargée avec le planning.
+- `useGerardInsights.ts` — source unique du rapport : la pastille de la barre de
+  contrôles et le contenu de l'assistant lisent le même chargement.
+- `GerardInsightsPanel.tsx` — `GerardInsightsSection`, bloc repliable des points
+  d'attention. Il vit **dans l'assistant**, jamais dans le flux du planning.
 - `GerardSuggestionsPanel.tsx` — panneau de résultats, **sans entrée autonome**
   depuis le Run 5 : il s'ouvre depuis un insight d'optimisation
   (`hideTrigger` + `analyzeRef`).
