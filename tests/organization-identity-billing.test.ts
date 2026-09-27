@@ -45,8 +45,9 @@ assert.match(read('pages/api/platform/organizations/[id]/billing.ts'), /upsertOr
 for (const valid of ['facturation@example.com', 'a.b-c@sub.example.lu']) assert.ok(isBillingEmail(valid), `${valid} is a valid billing email`)
 for (const invalid of ['not-an-email', 'a@b', 'a b@example.com', '@example.com', `${'x'.repeat(250)}@example.com`]) assert.ok(!isBillingEmail(invalid), `${invalid} is rejected`)
 
-// An omitted payment term means "none": absent, null and empty are all handled, not a validation error.
-assert.match(platformService, /rawDays === null \|\| rawDays === undefined \|\| rawDays === ''/, 'an absent payment term is not a validation error')
+// Omitted fields keep their stored value; an explicit null or empty string clears a nullable field.
+assert.match(platformService, /Object\.prototype\.hasOwnProperty\.call\(input\.value, field\)/, 'the service distinguishes an omitted field from a cleared one')
+assert.match(platformService, /rawDays === null \|\| rawDays === ''/, 'an explicit null or empty payment term clears it')
 
 async function main() {
   // ─── Invoice logo: the organization's own logo, Gerard only as a fallback ───────────────────────────────

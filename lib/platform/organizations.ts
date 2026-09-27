@@ -13,6 +13,7 @@ import { hashPassword } from '../auth/password'
 import { prisma } from '../prisma'
 import { normalizeAccentColor, normalizeBrandAssetUrl } from '../tenant/branding'
 import { normalizeHostname, normalizePathPrefix } from '../tenant/request-resolution'
+import type { OrganizationBillingConfig } from '@prisma/client'
 import { normalizeInvoicePrefix } from '../tenant/billing-config'
 import { sanitizeIntegration } from '../integrations/config'
 
@@ -128,23 +129,44 @@ export function isBillingEmail(value: string) {
 }
 
 export async function upsertOrganizationBillingConfig(input: { actorUserId: string; organizationId: string; value: Record<string, unknown> }) {
-  const legalName = boundedText(input.value.legalName, 'legalName')
-  if (!legalName) throw new Error('LEGAL_NAME_REQUIRED')
-  // Absent, null or empty all mean "no payment term", like every other optional field here.
-  const rawDays = input.value.paymentTermsDays
-  const days = rawDays === null || rawDays === undefined || rawDays === '' ? null : Number(rawDays)
-  if (days !== null && (!Number.isInteger(days) || days < 0 || days > 365)) throw new Error('PAYMENT_TERMS_INVALID')
-  const billingEmail = boundedText(input.value.billingEmail, 'billingEmail')
+  // A field absent from the payload keeps its stored value; a field sent as null or an empty string is cleared
+  // through the normalization rules below. A partial update can therefore never wipe the rest of the
+  // configuration, while the admin forms, which always send every field, behave exactly as before.
+  const provided = (field: string) => Object.prototype.hasOwnProperty.call(input.value, field)
+  const existing = await prisma.organizationBillingConfig.findUnique({ where: { organizationId: input.organizationId } })
+
+  const text = (field: keyof OrganizationBillingConfig & string, max = BILLING_TEXT_MAX_LENGTH) =>
+    provided(field) ? boundedText(input.value[field], field, max) : undefined
+
+  // The legal name is the one required column: it may be set or changed, never cleared, and a first
+  // configuration must provide it.
+  const legalName = text('legalName')
+  if (provided('legalName') && !legalName) throw new Error('LEGAL_NAME_REQUIRED')
+  if (!existing && !legalName) throw new Error('LEGAL_NAME_REQUIRED')
+
+  let days: number | null | undefined
+  if (provided('paymentTermsDays')) {
+    const rawDays = input.value.paymentTermsDays
+    days = rawDays === null || rawDays === '' ? null : Number(rawDays)
+    if (days !== null && (!Number.isInteger(days) || days < 0 || days > 365)) throw new Error('PAYMENT_TERMS_INVALID')
+  }
+
+  const billingEmail = text('billingEmail')
   if (billingEmail && !isBillingEmail(billingEmail)) throw new Error('BILLING_EMAIL_INVALID')
+
   const data = {
-    legalName, legalAddress: boundedText(input.value.legalAddress, 'legalAddress', BILLING_ADDRESS_MAX_LENGTH),
-    vatNumber: boundedText(input.value.vatNumber, 'vatNumber'),
-    iban: boundedText(input.value.iban, 'iban'), bic: boundedText(input.value.bic, 'bic'),
-    bankName: boundedText(input.value.bankName, 'bankName'),
-    beneficiary: boundedText(input.value.beneficiary, 'beneficiary'), invoicePrefix: normalizeInvoicePrefix(input.value.invoicePrefix),
+    // legalName is the one non-nullable column; the guards above ensure null never reaches Prisma.
+    legalName: legalName ?? undefined, legalAddress: text('legalAddress', BILLING_ADDRESS_MAX_LENGTH), vatNumber: text('vatNumber'),
+    iban: text('iban'), bic: text('bic'), bankName: text('bankName'), beneficiary: text('beneficiary'),
+    invoicePrefix: provided('invoicePrefix') ? normalizeInvoicePrefix(input.value.invoicePrefix) : undefined,
     paymentTermsDays: days, billingEmail,
   }
-  const config = await prisma.organizationBillingConfig.upsert({ where: { organizationId: input.organizationId }, create: { organizationId: input.organizationId, ...data }, update: data })
+  // Prisma ignores undefined on update, so omitted fields keep their stored value; on a first configuration
+  // they are simply absent. The two paths are explicit because an upsert would also validate its create
+  // payload, which a partial update deliberately does not carry.
+  const config = existing
+    ? await prisma.organizationBillingConfig.update({ where: { organizationId: input.organizationId }, data })
+    : await prisma.organizationBillingConfig.create({ data: { ...data, organizationId: input.organizationId, legalName: legalName! } })
   await prisma.platformAuditLog.create({ data: { actorUserId: input.actorUserId, organizationId: input.organizationId, action: PlatformAuditAction.BILLING_CONFIG_CHANGED } })
   return config
 }
