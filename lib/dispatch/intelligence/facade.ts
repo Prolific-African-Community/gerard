@@ -2,6 +2,7 @@ import { prisma } from '../../prisma'
 import { getWeekEndDate } from '../date-utils'
 import { compatibilityMessages } from '../optimization/compatibility'
 import { analyzePlanningForSuggestions } from '../suggestions/planning-service'
+import { buildPlanningInsights } from './insights'
 import type { GerardSuggestion } from '../suggestions/types'
 import type { GerardAssistantContext, GerardAssistantFact } from './types'
 import { computeWeeklyProfitability } from '../profitability'
@@ -122,6 +123,14 @@ export async function getResourceAvailability(input: { weekStart: Date; missionR
     availableActions: validSuggestion ? [{ type: 'SIMULATE', label: `Simuler ${resolved.mission.reference}`, suggestionId: validSuggestion.id }] : [],
     suggestions: validSuggestion ? [validSuggestion] : [], details: { ...base.details, conflictMissionIds: conflicts.map((item) => item.missionId), candidateValidated: Boolean(validSuggestion) },
   }
+}
+
+/**
+ * Les faits proactifs et les réponses de l'assistant viennent de la même
+ * source : l'assistant ne recalcule jamais sa propre version du planning.
+ */
+export async function getPlanningInsights(weekStart: Date, options: { now?: Date; limit?: number } = {}) {
+  return buildPlanningInsights({ weekStart, ...options })
 }
 
 export async function getPlanningSuggestions(weekStart: Date) {

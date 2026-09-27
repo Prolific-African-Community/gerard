@@ -44,6 +44,12 @@ export type GerardSuggestion = {
   severity: GerardSuggestionSeverity
   weekStart: string
   snapshotFingerprint: string
+  /**
+   * Empreinte des faits montrés et classés (kilomètres, économie, score,
+   * routes). Le snapshot ne couvre pas les routes : cette empreinte ferme
+   * l'écart entre ce qui a été confirmé et ce qui serait écrit.
+   */
+  evidenceFingerprint: string
   title: string
   summary: string
   reason: string

@@ -12,7 +12,7 @@ function typescriptFiles(directory: string): string[] {
 }
 
 const routes = roots.flatMap(typescriptFiles).sort()
-assert.equal(routes.length, 76, 'Update the tenant API audit when a métier route is added or removed')
+assert.equal(routes.length, 77, 'Update the tenant API audit when a métier route is added or removed')
 
 for (const route of routes) {
   const source = readFileSync(route, 'utf8')
@@ -20,4 +20,4 @@ for (const route of routes) {
   assert.match(source, /import \{ withTenantApiRoute \} from /, `${route} must use the shared tenant route wrapper`)
 }
 
-console.log(`Tenant API context audit: ${routes.length}/76 métier routes wrapped`)
+console.log(`Tenant API context audit: ${routes.length}/77 métier routes wrapped`)

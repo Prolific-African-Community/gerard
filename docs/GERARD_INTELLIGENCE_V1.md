@@ -1,9 +1,10 @@
 # Gerard Intelligence — contrat V1
 
 Figé au Run 1 (2026-09-27), étendu au Run 2 (l'assistant applique une suggestion
-après confirmation structurée) puis au Run 3 (durcissement et classement
-multicritère déterministe). Ce document décrit l'état réel du code, pas une cible
-produit. Toute évolution passe par un Run explicite.
+après confirmation structurée), au Run 3 (durcissement et classement
+multicritère déterministe) puis au Run 4 (fraîcheur des routes et surface
+proactive). Ce document décrit l'état réel du code, pas une cible produit. Toute
+évolution passe par un Run explicite.
 
 ## Architecture actuelle
 
@@ -334,6 +335,118 @@ Gerard **n'optimise pas encore**, faute de données structurées fiables :
 Chacun exige une source de données ou une règle métier qui n'existe pas
 aujourd'hui. Aucun n'est approximé par une heuristique inventée.
 
+## Fraîcheur des routes
+
+L'empreinte de snapshot ne couvre **pas** les résultats de route, et l'identité
+d'une suggestion est purement structurelle
+(`reassignment:<empreinte[0..16]>:<missionId>:<missionId:pairRowId:trailerId>`).
+Or les kilomètres à vide, l'économie et donc le score dérivent entièrement des
+routes, et les valeurs du cache de routes sont réécrites en place
+(`routeCache.upsert`, script `routes:backfill-cache`).
+
+Ce que la réanalyse serveur protégeait déjà : si la dérive rend le candidat
+invalide, immatériel ou non premier, il n'est plus trouvé par son identifiant et
+l'application sort en `STALE`. Restait un écart : une dérive qui laisse la
+suggestion valide, matérielle et première, mais change l'ampleur du gain. Une
+confirmation donnée sur « 137 km gagnés » pouvait s'appliquer sur « 25 km ».
+
+Décision V1 : une seconde empreinte, `GerardSuggestion.evidenceFingerprint`,
+couvre exactement les faits montrés et classés — kilomètres à vide, coût, marge,
+score et routes des deux candidats. Elle est signée dans le jeton d'action et
+revérifiée par `applyPlanningSuggestion` ; un écart sort en `STALE` avec un
+message distinct. L'empreinte globale de planning n'est pas redéfinie.
+
+## Contrat d'insight proactif
+
+`lib/dispatch/intelligence/insights.ts` calcule, à la demande et sans rien
+persister, un `GerardInsightReport` :
+
+```ts
+type GerardInsight = {
+  id: string            // insight:<type>:<sujet>:<hash d'état>
+  type: GerardInsightType
+  severity: GerardInsightSeverity
+  title: string         // une ligne
+  summary: string       // une explication factuelle
+  missionIds: string[]
+  evidence: Array<{ code: string; label: string; value?: string | number | null }>
+  confidence: 'HIGH' | 'MEDIUM'
+  availableActions: GerardInsightAction[]   // OPEN_MISSION | SIMULATE
+  occursAt: string | null
+  score: number | null  // matérialité, pour les opportunités
+}
+```
+
+Aucune logique métier nouvelle : chaque famille dérive d'un moteur existant.
+Route : `POST /api/dispatch/intelligence/insights`, `dispatch.view` + module
+`INTELLIGENCE`, lecture seule, sans appel au fournisseur de modèle.
+
+## Types d'insight V1
+
+| Type | Déclencheur | Preuve | Disparaît quand |
+| --- | --- | --- | --- |
+| `UNASSIGNED_MISSION` | mission `PENDING` de la semaine sans affectation | statut, date d'enlèvement | la mission est affectée ou sort de la semaine |
+| `PLANNING_CONFLICT` | `findResourceOccupationConflicts` sur les affectations de la semaine | ressources partagées, fin d'occupation connue ou non | le chevauchement cesse |
+| `OPTIMIZATION_OPPORTUNITY` | une suggestion du moteur du Run 3 | kilomètres évités, marge estimée, score | la suggestion est appliquée ou cesse d'être matérielle |
+| `INCOMPLETE_CRITICAL_DATA` | mission affectée privée d'un champ exigé par l'analyse | la liste exacte des champs manquants | les champs sont renseignés |
+
+`LOW_OR_NEGATIVE_MARGIN` est **exclu de la V1**. L'économie de Gerard repose
+entièrement sur des paramètres de coût constants (0,60 €/km, 25 €/h) : une marge
+« négative » serait un artefact de tarification par défaut, pas une observation.
+L'annoncer comme un fait serait malhonnête. À reconsidérer quand
+`economicBasis` pourra valoir `MEASURED`.
+
+## Gravité et priorisation
+
+`CRITICAL` l'exploitation est invalide ou bloquée · `ATTENTION` une action est
+nécessaire · `OPPORTUNITY` une amélioration valide existe, le plan reste tenable
+· `INFO` contexte sur des données incomplètes, sans défaillance immédiate.
+
+La gravité dérive de faits structurés uniquement : une mission non affectée est
+`ATTENTION`, et `CRITICAL` si son enlèvement est déjà passé. Le modèle de
+langage ne choisit jamais une gravité.
+
+Ordre : gravité, puis urgence opérationnelle (`occursAt`), puis matérialité
+(`score`), puis identifiant. Total, stable, indépendant de l'ordre de calcul.
+Cinq insights sont rendus par défaut (`insightDisplayLimit`) ; `total` reste
+complet et l'interface propose « Voir tout ».
+
+## Déduplication et rafraîchissement
+
+L'identifiant encode le type, le sujet et un condensé de l'état : le même
+problème dans le même état ne produit qu'un insight, et un changement d'état
+change l'identifiant. Pour une opportunité, l'état est
+`evidenceFingerprint`, donc l'insight suit exactement la suggestion annoncée. Un
+chevauchement détecté dans les deux sens est réduit à une seule entrée. Aucune
+persistance, aucun état de rejet : quand la cause disparaît, l'insight disparaît.
+
+Le rafraîchissement réutilise les mécanismes existants : changement de semaine,
+et `onApplied` des panneaux suggestion et assistant, qui incrémentent une clé de
+rafraîchissement. Pas de sondage, pas de tâche de fond, pas de notification.
+
+## Relation avec l'assistant
+
+Les deux surfaces partagent les mêmes faits : `getPlanningInsights` vit dans la
+façade et le résumé de planning de l'assistant en tire son nombre de points à
+vérifier. Une opportunité proactive et la réponse à « qu'est-ce qu'il y a à
+optimiser ? » proviennent de la même analyse. Le modèle reste cantonné à
+l'intention et à la formulation.
+
+Une action d'insight ne peut pas écrire : elle ouvre une mission ou lance la
+**simulation existante**, qui mène ensuite à la confirmation explicite et à
+`applyPlanningSuggestion`. Il n'existe aucun second chemin d'application.
+
+## Limites de la surface proactive
+
+- Aucune persistance, donc aucun rejet mémorisé : un insight réapparaît tant que
+  sa cause existe.
+- Le calcul est synchrone à l'ouverture de la semaine ; il n'existe ni analyse
+  planifiée ni notification.
+- `PLANNING_CONFLICT` ne couvre que les chevauchements de ressources entre deux
+  affectations de la semaine analysée.
+- `INCOMPLETE_CRITICAL_DATA` ne couvre que les champs exigés par l'analyse de
+  réaffectation, pas l'exhaustivité métier d'une mission.
+
 ## Validation manuelle
 
 `scripts/qa-intelligence-chat-apply.ts` monte une organisation jetable avec son
@@ -349,16 +462,32 @@ npm run qa:intelligence-chat:cleanup
 Aucune donnée opérationnelle n'est touchée : tout porte le préfixe
 `QA_CHAT_APPLY_` et vit dans sa propre organisation.
 
-## Périmètre du Run 4
+## Périmètre du Run 5
 
-1. C2 : l'empreinte Intelligence exclut les routes ; décider si une suggestion
-   doit se périmer quand ses distances changent, ou documenter le choix inverse.
-2. D1 : première surface proactive, si et seulement si le Run 4 la cadre.
-3. B3 : éprouver le `CONFLICT` de course entre la réanalyse et la transaction.
-4. T2 : couvrir `getMissionContext` et `getResourceAvailability` sur données
-   jetables, indépendamment du jeu de données `gerard`.
-5. Économie mesurée : introduire des coûts par ressource permettrait de passer
-   `economicBasis` à `MEASURED` et de relever le poids de la composante marge.
+1. Observabilité : durées d'analyse, consommation de routes, statut fournisseur
+   et refus d'application exposés de façon exploitable (lacune E3).
+2. B3 : le `CONFLICT` de course reste non testé, faute de couture non invasive
+   (voir ci-dessous).
+3. Économie mesurée : des coûts par ressource permettraient `economicBasis:
+   MEASURED`, un poids de marge plus élevé, et rouvriraient
+   `LOW_OR_NEGATIVE_MARGIN`.
+4. Persistance éventuelle des insights si le rejet mémorisé devient nécessaire.
+
+## Course en transaction (B3)
+
+Le `CONFLICT` de ressource pure n'est atteignable qu'entre la réanalyse serveur
+et la transaction. Toute invalidation observable modifie aussi le snapshot
+métier et sort donc en `STALE` avant d'atteindre ce contrôle. Le reproduire
+exigerait une couture d'injection dans `applyPlanningSuggestion`, c'est-à-dire
+de la complexité de production au seul service du test.
+
+Décision : ne pas la forcer. La frontière reste l'isolation `Serializable`, le
+verrou consultatif par organisation et semaine, la revérification des ressources
+et des occupations dans la transaction, et la traduction explicite de `P2034` et
+`P2002` en 409. Ce qui est couvert par test : les entrées du détecteur de
+conflit, le refus sans écriture lors d'une invalidation métier, et le mappage
+`P2002` → 409. Ce qui ne l'est pas : la fenêtre de course elle-même. Risque
+résiduel assumé et documenté.
 
 ## Hors périmètre V1
 

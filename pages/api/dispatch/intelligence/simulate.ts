@@ -33,6 +33,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           weekStart: rawWeekStart,
           suggestionId: suggestion.id,
           snapshotFingerprint: suggestion.snapshotFingerprint,
+          evidenceFingerprint: suggestion.evidenceFingerprint,
           missionReference: suggestion.currentState.missionReference,
           summary: describeSuggestion(suggestion),
         })

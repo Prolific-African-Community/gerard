@@ -41,6 +41,8 @@ export class SuggestionApplicationError extends Error {
 
 const staleMessage =
   'Le planning a changé depuis l’analyse. Relancez l’analyse avant d’appliquer cette suggestion.'
+const evidenceMessage =
+  'Les données de route ou de gain ont changé depuis la simulation. Relancez la simulation avant d’appliquer.'
 const unavailableTruckStatuses = new Set<TruckStatus>([
   TruckStatus.IN_MAINTENANCE,
   TruckStatus.MAINTENANCE_EXT,
@@ -170,6 +172,8 @@ export async function applyPlanningSuggestion(input: {
   suggestionId: string
   weekStart: string
   snapshotFingerprint: string
+  /** Empreinte des faits confirmés. Fournie par le jeton signé. */
+  evidenceFingerprint?: string
   idempotencyKey: string
 }): Promise<SuggestionApplicationResult> {
   const organizationId = requireActiveOrganizationId()
@@ -192,6 +196,15 @@ export async function applyPlanningSuggestion(input: {
   )
   if (!suggestion || suggestion.snapshotFingerprint !== input.snapshotFingerprint) {
     throw new SuggestionApplicationError('STALE', staleMessage)
+  }
+  // L'identité d'une suggestion et l'empreinte de snapshot ne couvrent pas les
+  // routes. Sans ce contrôle, une confirmation donnée sur un gain annoncé
+  // pourrait s'appliquer sur un gain devenu tout autre.
+  if (
+    input.evidenceFingerprint !== undefined &&
+    suggestion.evidenceFingerprint !== input.evidenceFingerprint
+  ) {
+    throw new SuggestionApplicationError('STALE', evidenceMessage)
   }
   const plan = await buildMutationPlan({
     suggestion,

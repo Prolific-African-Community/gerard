@@ -3,6 +3,7 @@ import type {
   OptimizationConfidence,
   OptimizationDataSource,
 } from '../optimization'
+import { fingerprintSnapshot } from '../auto-planning/snapshot'
 import { reassignmentEfficiencyConfig } from './config'
 import {
   compareScoredCandidates,
@@ -216,6 +217,58 @@ function candidateDelta(
   }
 }
 
+/**
+ * Empreinte des faits sur lesquels le répartiteur se prononce.
+ *
+ * L'empreinte de snapshot ne couvre volontairement pas les routes : deux
+ * analyses peuvent partager la même identité de planning alors que les
+ * distances ont changé, donc l'ampleur du gain aussi. L'identité d'une
+ * suggestion (`id`) est elle-même purement structurelle
+ * (`missionId:pairRowId:trailerId`). Sans cette seconde empreinte, une action
+ * confirmée sur « 137 km gagnés » pourrait s'appliquer sur « 25 km gagnés ».
+ *
+ * Elle couvre donc exactement ce qui est montré et ce qui a servi à classer :
+ * kilomètres à vide, économie, marge, score, et les routes qui les produisent.
+ */
+function evidenceFingerprint(input: {
+  currentCandidate: OptimizationCandidate
+  candidate: OptimizationCandidate
+  score: ReassignmentScore
+}) {
+  const routes = (candidate: OptimizationCandidate) =>
+    candidate.transitions
+      .map((route) => ({
+        key: route.key,
+        distanceMeters: route.distanceMeters,
+        durationSeconds: route.durationSeconds,
+        source: route.source,
+      }))
+      .sort((left, right) => left.key.localeCompare(right.key))
+  const money = (value: number | null) => (finite(value) ? Math.round(value * 100) / 100 : null)
+  const distance = (value: number) => Math.round(value * 1000) / 1000
+  return fingerprintSnapshot({
+    current: {
+      candidateId: input.currentCandidate.id,
+      emptyKm: distance(input.currentCandidate.cost.emptyDistanceKm),
+      estimatedCost: money(input.currentCandidate.cost.estimatedCost),
+      estimatedMargin: money(input.currentCandidate.cost.estimatedMargin),
+      routes: routes(input.currentCandidate),
+    },
+    proposed: {
+      candidateId: input.candidate.id,
+      emptyKm: distance(input.candidate.cost.emptyDistanceKm),
+      estimatedCost: money(input.candidate.cost.estimatedCost),
+      estimatedMargin: money(input.candidate.cost.estimatedMargin),
+      routes: routes(input.candidate),
+    },
+    score: {
+      total: input.score.total,
+      economicBasis: input.score.economicBasis,
+      components: input.score.components.map((component) => ({ code: component.code, value: component.value })),
+    },
+  })
+}
+
 function elapsedMinutes(candidate: OptimizationCandidate) {
   const start = candidate.temporalEvaluation?.possibleStartAt
   const end = candidate.temporalEvaluation?.completedAt
@@ -373,6 +426,7 @@ export function detectReassignmentEfficiency(
     severity: 'INFO',
     weekStart: input.weekStart,
     snapshotFingerprint: input.snapshotFingerprint,
+    evidenceFingerprint: evidenceFingerprint({ currentCandidate: input.currentCandidate, candidate, score: best.score }),
     title: `Réaffectation plus efficace · ${candidate.mission.reference}`,
     summary: summary(input.currentCandidate, best),
     reason:

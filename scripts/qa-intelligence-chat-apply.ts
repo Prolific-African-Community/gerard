@@ -31,6 +31,7 @@ const missionDay = addDays(weekStart, 1)
 const missionStart = new Date(missionDay.getFullYear(), missionDay.getMonth(), missionDay.getDate(), 8)
 const missionEnd = new Date(missionDay.getFullYear(), missionDay.getMonth(), missionDay.getDate(), 22)
 const regulatoryReference = new Date(`${formatDateParam(missionDay)}T04:00:00.000Z`)
+const dayName = ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][missionDay.getDay()] as never
 const isoWeek = (() => {
   const reference = new Date(Date.UTC(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()))
   const yearStart = new Date(Date.UTC(reference.getUTCFullYear(), 0, 1))
@@ -158,6 +159,24 @@ async function create() {
     await prisma.driverRegulatoryDeclaration.createMany({
       data: [declaration(`${prefix}DRIVER_FAR`, `${prefix}DECLARATION_FAR`), declaration(`${prefix}DRIVER_NEAR`, `${prefix}DECLARATION_NEAR`)],
     })
+    // Mission jamais affectée : alimente l'insight UNASSIGNED_MISSION.
+    await prisma.mission.create({
+      data: {
+        id: `${prefix}MISSION_PENDING`,
+        reference: 'QA-CHAT-APPLY-02',
+        clientName: 'QA Client Chat',
+        status: 'PENDING',
+        pickupDate: missionStart,
+        deliveryDate: missionEnd,
+        pickupResolvedAddress: 'QA-CHAT-PICKUP-2',
+        deliveryResolvedAddress: 'QA-CHAT-DELIVERY-2',
+        pickupLat: points.pickup.latitude + 0.05,
+        pickupLng: points.pickup.longitude - 0.05,
+        deliveryLat: points.delivery.latitude + 0.05,
+        deliveryLng: points.delivery.longitude - 0.05,
+        routeDurationSeconds: 4200,
+      },
+    })
     await prisma.mission.create({
       data: {
         id: `${prefix}MISSION`,
@@ -183,6 +202,34 @@ async function create() {
         routeCalculatedAt: regulatoryReference,
       },
     })
+    await prisma.driver.create({ data: { id: `${prefix}DRIVER_THIRD`, name: 'QA Chauffeur tiers', hourlyCostAmount: 20 } })
+    await prisma.truck.create({ data: { id: `${prefix}TRUCK_THIRD`, plateNumber: 'QA-CHAT-THIRD', driverId: `${prefix}DRIVER_THIRD` } })
+    await prisma.planningRow.create({ data: { id: `${prefix}ROW_THIRD`, weekStartDate: weekStart, driverId: `${prefix}DRIVER_THIRD`, truckId: `${prefix}TRUCK_THIRD`, sortOrder: 2 } })
+    // Mission affectée mais incomplète : alimente INCOMPLETE_CRITICAL_DATA.
+    await prisma.mission.create({
+      data: {
+        id: `${prefix}MISSION_INCOMPLETE`,
+        reference: 'QA-CHAT-APPLY-03',
+        clientName: 'QA Client Chat',
+        status: 'ASSIGNED',
+        pickupDate: missionStart,
+        deliveryDate: missionEnd,
+        pickupCity: 'Ville départ',
+        deliveryCity: 'Ville arrivée',
+      },
+    })
+    await prisma.missionAssignment.create({
+      data: {
+        id: `${prefix}ASSIGNMENT_INCOMPLETE`,
+        missionId: `${prefix}MISSION_INCOMPLETE`,
+        planningRowId: `${prefix}ROW_THIRD`,
+        driverId: `${prefix}DRIVER_THIRD`,
+        truckId: `${prefix}TRUCK_THIRD`,
+        day: dayName,
+        scheduledDate: missionStart,
+        plannedEndAt: missionEnd,
+      },
+    })
     await prisma.missionAssignment.create({
       data: {
         id: `${prefix}ASSIGNMENT`,
@@ -190,7 +237,7 @@ async function create() {
         planningRowId: `${prefix}ROW_FAR`,
         driverId: `${prefix}DRIVER_FAR`,
         truckId: `${prefix}TRUCK_FAR`,
-        day: ['SUNDAY','MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY'][missionDay.getDay()] as never,
+        day: dayName,
         scheduledDate: missionStart,
         plannedEndAt: missionEnd,
         approachDistanceMeters: 139000,

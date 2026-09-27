@@ -312,6 +312,7 @@ async function main() {
       const collision = createPendingApplyToken({
         userId: dispatcher.id, suggestionId: pendingApply.suggestionId,
         weekStart: weekStartParam, snapshotFingerprint: pendingApply.snapshotFingerprint,
+        evidenceFingerprint: valid.body.suggestion.evidenceFingerprint,
         idempotencyKey: `${prefix}KEY_INCOMPLETE`,
       })
       const conflict = await invoke(applyHandler, { body: { token: collision.token }, cookie: dispatcherCookie })

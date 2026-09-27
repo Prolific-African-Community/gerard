@@ -31,6 +31,7 @@ const action = buildPendingApplyAction({
   weekStart,
   suggestionId: conversationContext.suggestionId,
   snapshotFingerprint: 'fingerprint-chat-confirmation',
+  evidenceFingerprint: 'evidence-chat-confirmation',
   missionReference: 'QA-CHAT-01',
   summary: 'Julien remplacerait Karim sur QA-CHAT-01. Gain estimé : 62.0 km à vide.',
 })

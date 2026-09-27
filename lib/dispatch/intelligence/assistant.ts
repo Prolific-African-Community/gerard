@@ -1,6 +1,6 @@
 import { routeAssistantIntent } from './intent-router'
 import { classifyIntentWithConfiguredModel } from './llm-router'
-import { explainSuggestion, getMissionContext, getPlanningSuggestions, getPlanningSummary, getResourceAvailability, resolveMissionReference, simulateSuggestion } from './facade'
+import { explainSuggestion, getMissionContext, getPlanningInsights, getPlanningSuggestions, getPlanningSummary, getResourceAvailability, resolveMissionReference, simulateSuggestion } from './facade'
 import { buildPendingApplyAction, verifyPendingApplyToken } from './pending-action'
 import type { GerardAssistantAction, GerardAssistantApplicationOutcome, GerardAssistantConfirmation, GerardAssistantContext, GerardAssistantIntentResult, GerardAssistantReply } from './types'
 import { SuggestionApplicationError, applyPlanningSuggestion } from '../suggestions/application'
@@ -89,6 +89,7 @@ function pendingApplyActions(input: {
     weekStart: formatDateParam(input.weekStart),
     suggestionId: input.suggestion.id,
     snapshotFingerprint: input.suggestion.snapshotFingerprint,
+    evidenceFingerprint: input.suggestion.evidenceFingerprint,
     missionReference: input.suggestion.currentState.missionReference,
     summary: describeSuggestion(input.suggestion),
   })]
@@ -119,6 +120,7 @@ async function applyConfirmedSuggestion(input: {
       suggestionId: pending.suggestionId,
       weekStart: pending.weekStart,
       snapshotFingerprint: pending.snapshotFingerprint,
+      evidenceFingerprint: pending.evidenceFingerprint,
       idempotencyKey: pending.idempotencyKey,
     })
     return reply(
@@ -207,9 +209,15 @@ export async function answerAssistantQuestion(input: {
   }
 
   if (intent.intent === 'PLANNING_SUMMARY') {
-    const context = await getPlanningSummary(input.weekStart)
+    // Le résumé s'appuie sur les mêmes faits que la surface proactive : le
+    // nombre de points à vérifier vient du même calcul déterministe.
+    const [context, insights] = await Promise.all([
+      getPlanningSummary(input.weekStart),
+      getPlanningInsights(input.weekStart),
+    ])
     const suggestions = numberFact(context, 'Suggestions applicables')
-    return reply(intent, context, `${numberFact(context, 'Missions analysées')} missions analysées, ${numberFact(context, 'Baselines valides')} baselines valides et ${numberFact(context, 'Alternatives valides')} alternatives valides. ${suggestions ? `${suggestions} amélioration(s) significative(s) et applicable(s) détectée(s).` : "Gerard n’a détecté aucune amélioration significative et applicable avec les règles et données actuellement disponibles."}`, routing)
+    const attention = insights.bySeverity.CRITICAL + insights.bySeverity.ATTENTION
+    return reply(intent, context, `${numberFact(context, 'Missions analysées')} missions analysées, ${numberFact(context, 'Baselines valides')} baselines valides et ${numberFact(context, 'Alternatives valides')} alternatives valides. ${suggestions ? `${suggestions} amélioration(s) significative(s) et applicable(s) détectée(s).` : "Gerard n’a détecté aucune amélioration significative et applicable avec les règles et données actuellement disponibles."}${attention ? ` ${attention} point(s) demandent aussi ton attention sur cette semaine.` : ''}`, routing)
   }
   if (intent.intent === 'PLANNING_SUGGESTIONS') {
     const context = await getPlanningSuggestions(input.weekStart)

@@ -12,6 +12,7 @@ const base = {
   suggestionId: 'reassignment:0123456789abcdef:mission-1:candidate-1',
   weekStart: '2031-01-06',
   snapshotFingerprint: 'fingerprint-pending-action-0001',
+  evidenceFingerprint: 'evidence-pending-action-0001',
 }
 
 // A — un jeton émis par le serveur se relit intégralement, et seulement lui.
@@ -20,6 +21,7 @@ const payload = verifyPendingApplyToken(issued.token, base.userId)
 assert.ok(payload)
 assert.equal(payload.suggestionId, base.suggestionId)
 assert.equal(payload.snapshotFingerprint, base.snapshotFingerprint)
+assert.equal(payload.evidenceFingerprint, base.evidenceFingerprint)
 assert.equal(payload.weekStart, base.weekStart)
 assert.equal(payload.idempotencyKey, issued.payload.idempotencyKey)
 assert.ok(payload.idempotencyKey.length >= 16, 'la clé d’idempotence est émise par le serveur')
@@ -28,7 +30,7 @@ console.log('A jeton émis puis relu intégralement: OK')
 // B — le jeton ne transporte que ce qui est nécessaire : aucune organisation,
 // aucune donnée métier. La frontière tenant reste celle du contexte serveur.
 assert.deepEqual(Object.keys(payload).sort(), [
-  'expiresAt', 'idempotencyKey', 'snapshotFingerprint', 'suggestionId', 'userId', 'weekStart',
+  'evidenceFingerprint', 'expiresAt', 'idempotencyKey', 'snapshotFingerprint', 'suggestionId', 'userId', 'weekStart',
 ])
 console.log('B charge utile minimale, sans organisation: OK')
 

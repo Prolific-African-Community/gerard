@@ -97,6 +97,7 @@ import {
 } from '../../lib/dispatch/trailer-rotation'
 import { getMissionDisplayLocation } from '../../lib/dispatch/mission-display-location'
 import { DriverOperationalCardContent } from './DriverOperationalCardContent'
+import { GerardInsightsPanel } from './intelligence/GerardInsightsPanel'
 import { GerardSuggestionsPanel } from './intelligence/GerardSuggestionsPanel'
 import { GerardAssistantPanel } from './intelligence/GerardAssistantPanel'
 
@@ -1255,6 +1256,8 @@ export function WeeklyDispatchBoard({
   }, [viewMode, viewOptions])
   // L'analyse Gerard est déclenchée depuis la barre : le panneau expose son action.
   const analyzePlanningRef = useRef<(() => void) | null>(null)
+  /** Relance la surface proactive après une modification du planning. */
+  const [insightsRefreshKey, setInsightsRefreshKey] = useState(0)
   const [isPlanningFullscreen, setIsPlanningFullscreen] = useState(false)
   const [resourceEditRequest, setResourceEditRequest] =
     useState<ResourceEditRequest | null>(null)
@@ -3338,12 +3341,22 @@ export function WeeklyDispatchBoard({
         />
 
         {viewMode === 'planning' && capabilities.canViewPlanning ? (
-          <GerardSuggestionsPanel
-            weekStart={formatDateParam(selectedWeekStartDate)}
-            onApplied={() => loadOverview()}
-            hideTrigger
-            analyzeRef={analyzePlanningRef}
-          />
+          <>
+            <GerardInsightsPanel
+              weekStart={formatDateParam(selectedWeekStartDate)}
+              refreshKey={insightsRefreshKey}
+              onSimulate={() => analyzePlanningRef.current?.()}
+            />
+            <GerardSuggestionsPanel
+              weekStart={formatDateParam(selectedWeekStartDate)}
+              onApplied={() => {
+                setInsightsRefreshKey((current) => current + 1)
+                return loadOverview()
+              }}
+              hideTrigger
+              analyzeRef={analyzePlanningRef}
+            />
+          </>
         ) : null}
 
         {viewMode === 'planning' && !capabilities.canAssign ? (

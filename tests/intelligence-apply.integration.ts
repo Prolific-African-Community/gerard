@@ -593,6 +593,63 @@ async function main() {
       }
     })
     console.log('P sortie de modèle demandant une mutation sans effet: OK')
+
+    // Q — régression C2 : l'empreinte de snapshot ne couvre pas les routes. Si
+    // les distances changent après la simulation, l'identité de la suggestion et
+    // l'empreinte de planning restent identiques, mais l'ampleur du gain change.
+    // La confirmation doit alors être refusée, pas appliquée en silence.
+    await runWithOrganization(context, async () => {
+      await restorePlanning()
+      const { suggestion, snapshotFingerprint } = await freshSuggestion()
+      const before = await writeCounters()
+
+      // Allonge l'approche de l'alternative dans le cache de routes partagé.
+      const inflated = await prisma.routeCache.updateMany({
+        where: { fingerprint: { in: Array.from(createdRouteFingerprints) }, distanceMeters: { lt: 20_000 } },
+        data: { distanceMeters: 61_000, durationSeconds: 3_400 },
+      })
+      assert.ok(inflated.count > 0, 'le test doit réellement modifier une route d’approche')
+
+      const drifted = await freshSuggestion()
+      assert.equal(drifted.suggestion.id, suggestion.id, 'l’identité de la suggestion survit à la dérive de route')
+      assert.equal(drifted.snapshotFingerprint, snapshotFingerprint, 'l’empreinte de planning aussi')
+      assert.notEqual(
+        drifted.suggestion.evidenceFingerprint,
+        suggestion.evidenceFingerprint,
+        'l’empreinte de preuve doit, elle, changer'
+      )
+      assert.notEqual(drifted.suggestion.impact.emptyKm.delta, suggestion.impact.emptyKm.delta)
+
+      await assert.rejects(
+        applyPlanningSuggestion({
+          userId: user.id,
+          suggestionId: suggestion.id,
+          weekStart: weekStartParam,
+          snapshotFingerprint,
+          evidenceFingerprint: suggestion.evidenceFingerprint,
+          idempotencyKey: `${prefix}KEY_ROUTE_DRIFT`,
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof SuggestionApplicationError)
+          assert.equal(error.status, 'STALE')
+          assert.match(error.message, /route ou de gain/)
+          return true
+        }
+      )
+      assert.deepEqual(await writeCounters(), before, 'une dérive de route ne doit rien écrire')
+
+      // Avec les faits à jour, la même suggestion reste applicable.
+      const reconfirmed = await applyPlanningSuggestion({
+        userId: user.id,
+        suggestionId: drifted.suggestion.id,
+        weekStart: weekStartParam,
+        snapshotFingerprint: drifted.snapshotFingerprint,
+        evidenceFingerprint: drifted.suggestion.evidenceFingerprint,
+        idempotencyKey: `${prefix}KEY_ROUTE_DRIFT_OK`,
+      })
+      assert.equal(reconfirmed.status, 'APPLIED')
+    })
+    console.log('Q dérive de route entre simulation et confirmation refusée: OK')
   } finally {
     globalThis.fetch = realFetch
     await runWithOrganization(context, async () => {

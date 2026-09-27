@@ -32,6 +32,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       suggestionId: pending.suggestionId,
       weekStart: pending.weekStart,
       snapshotFingerprint: pending.snapshotFingerprint,
+      evidenceFingerprint: pending.evidenceFingerprint,
       idempotencyKey: pending.idempotencyKey,
     })
     return res.status(200).json(result)

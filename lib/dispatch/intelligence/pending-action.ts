@@ -14,6 +14,12 @@ export type PendingApplyPayload = {
   suggestionId: string
   weekStart: string
   snapshotFingerprint: string
+  /**
+   * Empreinte des faits confirmés (kilomètres, économie, score, routes). Le
+   * snapshot ne couvre pas les routes : sans cela, l'ampleur du gain pourrait
+   * changer entre la confirmation et l'écriture.
+   */
+  evidenceFingerprint: string
   idempotencyKey: string
   expiresAt: string
 }
@@ -42,6 +48,7 @@ export function createPendingApplyToken(
     suggestionId: input.suggestionId,
     weekStart: input.weekStart,
     snapshotFingerprint: input.snapshotFingerprint,
+    evidenceFingerprint: input.evidenceFingerprint,
     idempotencyKey: input.idempotencyKey ?? randomUUID(),
     expiresAt: new Date(
       (input.now?.getTime() ?? Date.now()) + (input.lifetimeMs ?? defaultLifetimeMs)
@@ -62,6 +69,7 @@ export function buildPendingApplyAction(input: {
   weekStart: string
   suggestionId: string
   snapshotFingerprint: string
+  evidenceFingerprint: string
   missionReference: string
   summary: string
   label?: string
@@ -71,6 +79,7 @@ export function buildPendingApplyAction(input: {
     suggestionId: input.suggestionId,
     weekStart: input.weekStart,
     snapshotFingerprint: input.snapshotFingerprint,
+    evidenceFingerprint: input.evidenceFingerprint,
   })
   return {
     type: 'CONFIRM_APPLY',
@@ -108,6 +117,7 @@ export function verifyPendingApplyToken(
       !payload.suggestionId ||
       !payload.weekStart ||
       !payload.snapshotFingerprint ||
+      !payload.evidenceFingerprint ||
       !payload.idempotencyKey ||
       new Date(payload.expiresAt).getTime() <= now.getTime()
     ) {

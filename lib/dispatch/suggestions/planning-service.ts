@@ -47,7 +47,22 @@ async function analyzePlanningForSuggestionsInternal(weekStart: Date): Promise<P
     if (!assignment.planningRowId || !mission.pickupResolvedAddress || !mission.deliveryResolvedAddress || typeof mission.pickupLat !== 'number' || typeof mission.pickupLng !== 'number' || typeof mission.deliveryLat !== 'number' || typeof mission.deliveryLng !== 'number') return []
     return [{ missionId: mission.id, pairRowId: assignment.planningRowId, trailerId: assignment.trailerId, startsAt: assignment.scheduledDate.toISOString(), endsAt: (assignment.plannedEndAt ?? mission.deliveryDate ?? assignment.scheduledDate).toISOString(), pickup: { id: mission.pickupResolvedAddress, label: mission.pickupResolvedAddress, latitude: mission.pickupLat, longitude: mission.pickupLng }, delivery: { id: mission.deliveryResolvedAddress, label: mission.deliveryResolvedAddress, latitude: mission.deliveryLat, longitude: mission.deliveryLng } }]
   })
-  const current = assignments.filter((assignment) => assignment.mission.status === 'ASSIGNED' && assignment.planningRowId)
+  // Une mission affectée dont les adresses ou coordonnées sont incomplètes ne
+  // figure pas dans le voisinage : l'analyser ferait échouer toute la semaine.
+  // Elle est comptée comme non analysable, pas propagée en erreur.
+  const analysable = new Set(neighbors.map((neighbor) => neighbor.missionId))
+  const current = assignments.filter(
+    (assignment) =>
+      assignment.mission.status === 'ASSIGNED' &&
+      assignment.planningRowId &&
+      analysable.has(assignment.missionId)
+  )
+  const notAnalysable = assignments.filter(
+    (assignment) =>
+      assignment.mission.status === 'ASSIGNED' &&
+      assignment.planningRowId &&
+      !analysable.has(assignment.missionId)
+  )
   const snapshots = new Map<string, Awaited<ReturnType<typeof buildAutoPlanningSnapshot>>>()
   const suggestions: GerardSuggestion[] = []
   const missionDiagnostics: PlanningSuggestionAnalysis['missionDiagnostics'] = []
@@ -57,6 +72,15 @@ async function analyzePlanningForSuggestionsInternal(weekStart: Date): Promise<P
   let belowThreshold = 0
   let incomplete = 0
   let fingerprint = ''
+  for (const assignment of notAnalysable) {
+    incomplete += 1
+    missionDiagnostics.push({
+      missionId: assignment.missionId,
+      reference: assignment.mission.reference,
+      diagnostics: ['INCOMPLETE_MISSION_DATA'],
+      validAlternatives: 0,
+    })
+  }
   for (const assignment of current) {
     const day = assignment.scheduledDate.toISOString().slice(0, 10)
     let snapshot = snapshots.get(day)

@@ -65,6 +65,7 @@ import type { ParkOverviewDTO } from '../../../lib/park/types'
 import type { ViewMode } from '../WeeklyDispatchBoard'
 import { AutoPlanningPanel } from '../auto-planning/AutoPlanningPanel'
 import type { AutoPlanningPreview } from '../auto-planning/AutoPlanningPanel'
+import { GerardInsightsPanel } from '../intelligence/GerardInsightsPanel'
 import { GerardSuggestionsPanel } from '../intelligence/GerardSuggestionsPanel'
 import { GerardAssistantPanel } from '../intelligence/GerardAssistantPanel'
 
@@ -330,6 +331,8 @@ export function MobileDispatchView({
   const [rotationNotice, setRotationNotice] = useState<string | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
   const [isAssistantOpen, setIsAssistantOpen] = useState(false)
+  /** Relance la surface proactive après une modification du planning. */
+  const [insightsRefreshKey, setInsightsRefreshKey] = useState(0)
   const { requestHighlight } = useLocatorHighlight()
   const [autoPlanningNotice, setAutoPlanningNotice] = useState<string | null>(
     null
@@ -772,11 +775,21 @@ export function MobileDispatchView({
       />
 
       {activeTab === 'missions' && capabilities.canViewPlanning ? (
-        <GerardSuggestionsPanel
-          weekStart={formatDateParam(selectedWeekStartDate)}
-          compact
-          onApplied={() => refreshOverview()}
-        />
+        <>
+          <GerardInsightsPanel
+            weekStart={formatDateParam(selectedWeekStartDate)}
+            refreshKey={insightsRefreshKey}
+            compact
+          />
+          <GerardSuggestionsPanel
+            weekStart={formatDateParam(selectedWeekStartDate)}
+            compact
+            onApplied={() => {
+              setInsightsRefreshKey((current) => current + 1)
+              return refreshOverview()
+            }}
+          />
+        </>
       ) : null}
 
       <DispatchSmartSearchPanel
