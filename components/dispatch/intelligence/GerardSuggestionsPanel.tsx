@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import type { GerardSuggestion } from '../../../lib/dispatch/suggestions/types'
+import type { GerardAssistantConfirmApplyAction } from '../../../lib/dispatch/intelligence/types'
 
 type Analysis = {
   analyzedAt: string
@@ -23,7 +24,8 @@ export function GerardSuggestionsPanel({ weekStart, compact = false, onApplied, 
   const [confirming, setConfirming] = useState<string | null>(null)
   const [application, setApplication] = useState<Record<string, 'loading' | 'applied' | 'error'>>({})
   const [applicationMessage, setApplicationMessage] = useState<Record<string, string>>({})
-  const [idempotencyKeys, setIdempotencyKeys] = useState<Record<string, string>>({})
+  /** Action d'application émise par le serveur à la simulation, indexée par suggestion. */
+  const [pendingApply, setPendingApply] = useState<Record<string, GerardAssistantConfirmApplyAction>>({})
 
   async function analyze() {
     setOpen(true); setLoading(true); setError(null); setAnalysis(null)
@@ -50,7 +52,7 @@ export function GerardSuggestionsPanel({ weekStart, compact = false, onApplied, 
           next[freshId] = 'valid'
           return next
         })
-        setIdempotencyKeys((current) => ({ ...current, [freshId]: current[freshId] ?? crypto.randomUUID() }))
+        if (body.pendingApply) setPendingApply((current) => ({ ...current, [freshId]: body.pendingApply }))
         return
       }
       setSimulation((current) => ({ ...current, [suggestion.id]: response.ok && body.status === 'VALID' ? 'valid' : 'stale' }))
@@ -58,15 +60,19 @@ export function GerardSuggestionsPanel({ weekStart, compact = false, onApplied, 
   }
 
   async function applySuggestion(suggestion: GerardSuggestion) {
-    const idempotencyKey = idempotencyKeys[suggestion.id] ?? crypto.randomUUID()
-    setIdempotencyKeys((current) => ({ ...current, [suggestion.id]: idempotencyKey }))
+    const action = pendingApply[suggestion.id]
+    if (!action) {
+      setApplication((current) => ({ ...current, [suggestion.id]: 'error' }))
+      setApplicationMessage((current) => ({ ...current, [suggestion.id]: 'Relancez la simulation avant d’appliquer cette suggestion.' }))
+      return
+    }
     setApplication((current) => ({ ...current, [suggestion.id]: 'loading' }))
     setApplicationMessage((current) => ({ ...current, [suggestion.id]: '' }))
     try {
       const response = await fetch('/api/dispatch/intelligence/apply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ suggestionId: suggestion.id, weekStart, snapshotFingerprint: suggestion.snapshotFingerprint, idempotencyKey }),
+        body: JSON.stringify({ token: action.token }),
       })
       const body = await response.json()
       if (!response.ok || !['APPLIED', 'ALREADY_APPLIED'].includes(body.status)) {
@@ -79,7 +85,12 @@ export function GerardSuggestionsPanel({ weekStart, compact = false, onApplied, 
       }
       setConfirming(null)
       setApplication((current) => ({ ...current, [suggestion.id]: 'applied' }))
-      setApplicationMessage((current) => ({ ...current, [suggestion.id]: 'Suggestion appliquée' }))
+      setApplicationMessage((current) => ({
+        ...current,
+        [suggestion.id]: body.status === 'ALREADY_APPLIED'
+          ? 'Cette suggestion était déjà appliquée. Aucune nouvelle modification.'
+          : 'Suggestion appliquée',
+      }))
       setSimulation((current) => Object.fromEntries(Object.keys(current).map((id) => [id, id === suggestion.id ? 'valid' : 'stale'])))
       await onApplied?.()
     } catch {
@@ -108,7 +119,7 @@ export function GerardSuggestionsPanel({ weekStart, compact = false, onApplied, 
         {analysis ? <div className="mt-5 space-y-4"><div className="grid grid-cols-3 gap-2 text-center"><Metric value={analysis.summary.analyzedMissions} label="missions" /><Metric value={analysis.summary.validAlternatives} label="alternatives" /><Metric value={analysis.summary.suggestions} label="suggestions" /></div>
           {!analysis.suggestions.length ? <div className="rounded-2xl bg-white p-5"><p className="font-bold">Le planning est déjà bien optimisé.</p><p className="mt-1 text-sm text-[#687064]">Aucune amélioration significative et applicable n’a été détectée sur cette semaine.</p></div> : analysis.suggestions.map((suggestion) => {
             const km = Math.max(0, -suggestion.impact.emptyKm.delta), cost = Math.max(0, -(suggestion.impact.estimatedCost.delta ?? 0)), margin = Math.max(0, suggestion.impact.estimatedMargin.delta ?? 0), state = simulation[suggestion.id], applyState = application[suggestion.id]
-            return <article key={suggestion.id} className="rounded-[22px] border border-black/[0.06] bg-white p-5 shadow-[0_10px_30px_rgba(17,18,15,0.06)]"><p className="text-[11px] font-bold uppercase tracking-wider text-[#729525]">Une affectation plus efficace</p><h3 className="mt-1 text-base font-black">{suggestion.proposedState.missionReference}</h3><p className="mt-2 text-sm"><b>{suggestion.proposedState.driverName}</b> à la place de <b>{suggestion.currentState.driverName}</b></p><div className="mt-4 space-y-1.5 text-sm"><Impact value={`${km.toFixed(1)} km`} label="à vide en moins" /><Impact value={`${cost.toFixed(2)} €`} label="de coût estimé en moins" /><Impact value={`+${margin.toFixed(2)} €`} label="de marge estimée" /></div><p className="mt-3 text-xs text-[#72786e]">Temporalité et ressources compatibles · Confiance {suggestion.confidence === 'MEDIUM' ? 'moyenne' : 'haute'}</p>
+            return <article key={suggestion.id} className="rounded-[22px] border border-black/[0.06] bg-white p-5 shadow-[0_10px_30px_rgba(17,18,15,0.06)]"><p className="text-[11px] font-bold uppercase tracking-wider text-[#729525]">Une affectation plus efficace</p><h3 className="mt-1 text-base font-black">{suggestion.proposedState.missionReference}</h3><p className="mt-2 text-sm"><b>{suggestion.proposedState.driverName}</b> à la place de <b>{suggestion.currentState.driverName}</b></p><div className="mt-4 space-y-1.5 text-sm"><Impact value={`${km.toFixed(1)} km`} label="à vide en moins" /><Impact value={`${cost.toFixed(2)} €`} label="de coût estimé en moins" /><Impact value={`+${margin.toFixed(2)} €`} label="de marge estimée" /></div><Reason suggestion={suggestion} />
               <div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setExpanded(expanded === suggestion.id ? null : suggestion.id)} className="rounded-xl bg-black/[0.05] px-3 py-2 text-xs font-bold">Voir pourquoi</button><button type="button" disabled={state === 'loading' || applyState === 'applied'} onClick={() => void simulate(suggestion)} className="rounded-xl bg-[#171814] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{state === 'loading' ? 'Simulation…' : 'Simuler'}</button>{state === 'valid' && applyState !== 'applied' ? <button type="button" onClick={() => setConfirming(suggestion.id)} className="rounded-xl bg-[#b9ed55] px-3 py-2 text-xs font-black text-[#1d2810]">Appliquer</button> : null}</div>
               {state === 'valid' ? <p className="mt-3 rounded-xl bg-lime-50 p-3 text-xs font-bold text-[#49630b]">Suggestion toujours valide</p> : null}{state === 'stale' ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800">Le planning a changé depuis l’analyse. Relancez l’analyse.</p> : null}
               {confirming === suggestion.id ? <div className="mt-3 rounded-2xl border border-[#cce98e] bg-[#f4ffe0] p-4"><p className="text-sm font-black">Appliquer cette suggestion ?</p><p className="mt-1 text-xs text-[#59634d]">{suggestion.currentState.driverName} → {suggestion.proposedState.driverName} · {km.toFixed(1)} km à vide estimés en moins · +{margin.toFixed(2)} € de marge estimée</p><div className="mt-3 flex gap-2"><button type="button" onClick={() => setConfirming(null)} className="rounded-lg bg-white px-3 py-2 text-xs font-bold">Annuler</button><button type="button" disabled={applyState === 'loading'} onClick={() => void applySuggestion(suggestion)} className="rounded-lg bg-[#171814] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{applyState === 'loading' ? 'Application…' : 'Appliquer'}</button></div></div> : null}
@@ -126,3 +137,20 @@ function Metric({ value, label }: { value: number; label: string }) { return <di
 function Impact({ value, label }: { value: string; label: string }) { return <p><b className="text-[#567d12]">{value}</b> <span className="text-[#5f665b]">{label}</span></p> }
 function SuggestionDetails({ suggestion }: { suggestion: GerardSuggestion }) { return <div className="mt-4 border-t border-black/10 pt-4 text-xs text-[#555d51]"><div className="grid grid-cols-2 gap-3"><State title="Situation actuelle" state={suggestion.currentState} /><State title="Proposition Gerard" state={suggestion.proposedState} /></div><h4 className="mt-4 font-black text-[#24271f]">Vérifications</h4><p className="mt-1">Disponibilité, compatibilité, temporalité, réglementation et routes vérifiées.</p><h4 className="mt-3 font-black text-[#24271f]">Hypothèses</h4><p className="mt-1">{suggestion.evidence.assumptions.length ? suggestion.evidence.assumptions.join(' · ') : 'Aucune hypothèse bloquante.'}</p><p className="mt-3">Calcul basé sur les routes Google, les disponibilités et les paramètres de coût actuels.</p></div> }
 function State({ title, state }: { title: string; state: GerardSuggestion['currentState'] }) { return <div className="rounded-xl bg-[#f5f6f2] p-3"><b className="text-[#24271f]">{title}</b><p className="mt-2">{state.driverName}</p><p>{state.truckPlateNumber}</p><p>{state.trailerPlateNumber ?? 'Sans remorque'}</p><p className="mt-2">{state.emptyKm.toFixed(1)} km à vide</p><p>{state.estimatedCost?.toFixed(2) ?? '—'} € coût</p><p>{state.estimatedMargin?.toFixed(2) ?? '—'} € marge</p></div> }
+
+/**
+ * Raison concise affichée sur la carte. Elle reprend la composante qui a
+ * réellement emporté le classement et dit honnêtement d'où viennent les
+ * chiffres économiques. Le score interne n'est pas montré : il n'aurait pas de
+ * sens opérationnel pour un répartiteur.
+ */
+function Reason({ suggestion }: { suggestion: GerardSuggestion }) {
+  const breakdown = suggestion.scoreBreakdown
+  const primary = breakdown?.components.find((item) => item.code === breakdown.primaryReason)
+  return <div className="mt-3 space-y-1 text-xs text-[#72786e]">
+    <p>Temporalité et ressources compatibles · Confiance des données {suggestion.confidence === 'MEDIUM' ? 'moyenne' : 'haute'}</p>
+    {primary ? <p className="font-semibold text-[#5c6354]">{primary.detail}</p> : null}
+    {breakdown?.economicBasis === 'ESTIMATED' ? <p>Économie estimée à partir des paramètres de coût par défaut.</p> : null}
+    {breakdown?.economicBasis === 'UNAVAILABLE' ? <p>Comparaison économique indisponible sur cette mission.</p> : null}
+  </div>
+}

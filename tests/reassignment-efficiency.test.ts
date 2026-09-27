@@ -195,13 +195,24 @@ assert.equal(
 )
 console.log('G confiance inférieure: OK')
 
-// H — la marge prime, puis coût, kilomètres, score.
+// H1 — un gain opérationnel nettement supérieur ne se fait plus renverser par
+// une marge estimée un peu meilleure : l'économie repose sur des paramètres de
+// coût par défaut et pèse structurellement moins que les kilomètres mesurés.
 const ranked = detect([
   candidate({ id: 'more-km', emptyKm: 5, cost: 190, margin: 490 }),
   candidate({ id: 'more-margin', emptyKm: 30, cost: 195, margin: 510 }),
 ])
-assert.equal(ranked?.proposedState.candidateId, 'more-margin')
-console.log('H classement déterministe: OK')
+assert.equal(ranked?.proposedState.candidateId, 'more-km')
+assert.equal(ranked?.scoreBreakdown.primaryReason, 'EMPTY_DISTANCE')
+console.log('H1 le gain opérationnel prime sur une marge estimée voisine: OK')
+
+// H2 — à kilomètres quasi équivalents, la marge départage.
+const marginDecides = detect([
+  candidate({ id: 'equal-km-low-margin', emptyKm: 30, cost: 245, margin: 460 }),
+  candidate({ id: 'equal-km-high-margin', emptyKm: 31, cost: 185, margin: 520 }),
+])
+assert.equal(marginDecides?.proposedState.candidateId, 'equal-km-high-margin')
+console.log('H2 à kilomètres voisins, la marge départage: OK')
 
 // I — égalité parfaite résolue par l’identifiant.
 const tied = detect([

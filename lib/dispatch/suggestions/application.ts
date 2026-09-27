@@ -90,6 +90,27 @@ function replayResult(value: Prisma.JsonValue): SuggestionApplicationResult | nu
   }
 }
 
+/**
+ * Une clé d'idempotence déjà employée ne redéclenche jamais une écriture. Si le
+ * résultat conservé est rejouable, il est rendu tel quel ; sinon — clé d'un
+ * autre utilisateur, ou enregistrement écrit par un autre flux — le refus est
+ * explicite. Rien ne doit retomber sur une violation d'unicité opaque.
+ */
+function replayOrConflict(
+  record: { actorId: string; resultSummary: Prisma.JsonValue },
+  userId: string
+): SuggestionApplicationResult {
+  if (record.actorId !== userId) {
+    throw new SuggestionApplicationError('CONFLICT', 'Cette clé d’idempotence appartient à un autre utilisateur.')
+  }
+  const replay = replayResult(record.resultSummary)
+  if (replay) return replay
+  throw new SuggestionApplicationError(
+    'CONFLICT',
+    'Cette clé d’idempotence est déjà utilisée par une application sans résultat rejouable. Relancez la simulation.'
+  )
+}
+
 async function buildMutationPlan(input: {
   suggestion: GerardSuggestion
   requestedFingerprint: string
@@ -163,13 +184,7 @@ export async function applyPlanningSuggestion(input: {
   const existing = await prisma.dispatchOptimizationApplication.findFirst({
     where: { idempotencyKey: input.idempotencyKey },
   })
-  if (existing) {
-    if (existing.actorId !== input.userId) {
-      throw new SuggestionApplicationError('CONFLICT', 'Cette clé d’idempotence appartient à un autre utilisateur.')
-    }
-    const replay = replayResult(existing.resultSummary)
-    if (replay) return replay
-  }
+  if (existing) return replayOrConflict(existing, input.userId)
 
   const analysis = await analyzePlanningForSuggestions(weekStart)
   const suggestion = analysis.suggestions.find(
@@ -190,13 +205,7 @@ export async function applyPlanningSuggestion(input: {
     const replayRecord = await tx.dispatchOptimizationApplication.findFirst({
       where: { idempotencyKey: input.idempotencyKey },
     })
-    if (replayRecord) {
-      if (replayRecord.actorId !== input.userId) {
-        throw new SuggestionApplicationError('CONFLICT', 'Cette clé d’idempotence appartient à un autre utilisateur.')
-      }
-      const replay = replayResult(replayRecord.resultSummary)
-      if (replay) return replay
-    }
+    if (replayRecord) return replayOrConflict(replayRecord, input.userId)
 
     const [assignment, targetRow, driver, truck, trailer] = await Promise.all([
       tx.missionAssignment.findUnique({

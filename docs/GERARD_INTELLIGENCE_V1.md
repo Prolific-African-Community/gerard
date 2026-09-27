@@ -1,9 +1,9 @@
 # Gerard Intelligence — contrat V1
 
-Figé au Run 1 (2026-09-27), étendu au Run 2 (2026-09-27) : l'assistant peut
-désormais appliquer une suggestion, uniquement après confirmation structurée. Ce
-document décrit l'état réel du code, pas une cible produit. Toute évolution passe
-par un Run explicite.
+Figé au Run 1 (2026-09-27), étendu au Run 2 (l'assistant applique une suggestion
+après confirmation structurée) puis au Run 3 (durcissement et classement
+multicritère déterministe). Ce document décrit l'état réel du code, pas une cible
+produit. Toute évolution passe par un Run explicite.
 
 ## Architecture actuelle
 
@@ -221,6 +221,119 @@ Règles :
 9. Les défaillances de route ou de provider sont remontées dans les diagnostics.
 10. Aucune application automatique en arrière-plan en V1.
 
+## Contraintes dures
+
+Une contrainte dure décide si un candidat a le **droit d'exister**. Elle est
+appliquée avant tout score, dans `hasUsableAlternative`
+(`lib/dispatch/suggestions/reassignment-efficiency.ts`), et n'est **jamais**
+compensée par un bénéfice économique :
+
+- compatibilité `COMPATIBLE` sans aucun autre code,
+- faisabilité temporelle `FEASIBLE`,
+- aucune occupation concurrente de chauffeur, camion ou remorque,
+- aucune donnée manquante sur la mission, la compatibilité ou la temporalité,
+- routes connues, de source fiable et de confiance non basse,
+- confiance d'optimisation non basse, et au moins égale à celle de la baseline.
+
+La baseline elle-même doit être exploitable (`hasUsableBaseline`), sinon aucune
+comparaison n'est tentée. Un candidat écarté ici ne reçoit aucun score et
+n'apparaît jamais, quelle que soit son économie apparente.
+
+## Modèle de classement V1
+
+Les critères souples classent uniquement des candidats déjà valides. Toutes les
+composantes sont normalisées avant pondération : aucune grandeur brute, euro ou
+kilomètre, ne peut écraser les autres. Poids et références sont centralisés dans
+`lib/dispatch/suggestions/scoring.ts`.
+
+```
+score = 1.00 × distanceÀVide        (composante dans [-1, 1])
+      + 0.50 × marge × amortissement (composante dans [-1, 1])
+      + 0.20 × continuité            (composante dans [0, 1])
+      − 0.25 × incertitude           (composante dans [0, 1])
+```
+
+| Composante | Calcul | Unité d'origine |
+| --- | --- | --- |
+| `EMPTY_DISTANCE` | `gainKm / max(kmÀVideActuels, 25)`, borné à [-1, 1] | kilomètres mesurés |
+| `MARGIN` | `gainMarge / 150 €`, borné, puis multiplié par l'amortissement économique | euros estimés |
+| `CONTINUITY` | part des ressources conservées parmi chauffeur, camion, remorque, moins 1/3 si un changement de remorque est planifié | identités observables |
+| `UNCERTAINTY` | moyenne de trois pénalités : routes non Google/non hautes, confiances d'optimisation non hautes, base économique | — |
+
+Amortissement économique : `MEASURED` 1,0 · `ESTIMATED` 0,6 · `UNAVAILABLE` 0.
+
+Aujourd'hui Gerard ne dispose que de paramètres de coût constants
+(`defaultOptimizationCostParameters` : 0,60 €/km, 25 €/h). Une marge disponible
+est donc toujours `ESTIMATED`, jamais `MEASURED` : son poids effectif est
+0,50 × 0,6 = **0,30**, contre 1,00 pour la distance à vide. Une estimation
+économique ne peut pas renverser un avantage opérationnel net ; elle départage
+des candidats proches.
+
+Classement : score décroissant, puis gain de kilomètres, puis marge, puis score
+du moteur d'optimisation, puis identifiant de candidat. L'ordre est total et
+indépendant de l'ordre d'entrée.
+
+Le contrat produit reste **une suggestion par mission**. Les trois meilleures
+alternatives sont exposées dans `rankedAlternatives` comme métadonnée : aucune
+expansion d'interface n'est imposée.
+
+## Matérialité
+
+Une réaffectation n'est proposée que si elle franchit **deux** filtres :
+
+1. un seuil d'amélioration : `gainKm ≥ 20 km`, ou — seulement si la comparaison
+   économique est disponible — `économieCoût ≥ 20 €` ou `gainMarge ≥ 20 €`
+   (`defaultGerardApplication.policies.assignmentScoring`, surchargeable par une
+   application Custom) ;
+2. un gain composite minimal : `score ≥ 0,15`
+   (`reassignmentScoringReferences.minimumScoreImprovement`).
+
+Le second filtre est l'apport du Run 3. L'ancienne règle était un simple OU :
+un candidat pouvait passer sur la seule économie estimée d'un gain de temps
+valorisé au tarif par défaut, sans bénéfice opérationnel réel.
+
+## Sémantique de la confiance
+
+La confiance décrit la **fiabilité des données et de l'analyse**, pas une
+probabilité que Gerard ait raison.
+
+- `HIGH` — routes et entrées opérationnelles disponibles des deux côtés, aucune
+  donnée manquante, comparaison économique disponible.
+- `MEDIUM` — faisabilité opérationnelle vérifiée, mais une partie des entrées est
+  estimée ou la comparaison économique manque.
+- `LOW` — n'est jamais proposé : une entrée matérielle absente est une contrainte
+  dure, donc le candidat est écarté en amont.
+
+`scoreBreakdown.economicBasis` porte la nuance que la confiance seule ne dit
+pas, et l'interface comme l'assistant l'énoncent : « économie estimée à partir
+des paramètres de coût par défaut ».
+
+## Explicabilité
+
+`GerardSuggestion.scoreBreakdown` expose `total`, les quatre composantes avec
+leur valeur normalisée, leur poids, leur contribution signée et une formulation
+factuelle, plus `primaryReason`. `describeSuggestion` et la carte de suggestion
+en dérivent leur texte : aucune explication n'est reconstruite à partir des
+seuls chiffres d'impact, et le modèle de langage ne recalcule jamais le
+classement.
+
+Le score interne n'est pas affiché au répartiteur : un « 82/100 » n'aurait pas
+de sens opérationnel.
+
+## Critères différés
+
+Gerard **n'optimise pas encore**, faute de données structurées fiables :
+
+- préférence chauffeur ou client,
+- qualité du temps de travail au-delà des contraintes réglementaires déjà dures,
+- positionnement futur du véhicule pour les missions suivantes,
+- coûts réels par ressource (consommation, coût horaire réel du chauffeur),
+- équilibrage de charge entre chauffeurs sur la semaine,
+- apprentissage des décisions du répartiteur.
+
+Chacun exige une source de données ou une règle métier qui n'existe pas
+aujourd'hui. Aucun n'est approximé par une heuristique inventée.
+
 ## Validation manuelle
 
 `scripts/qa-intelligence-chat-apply.ts` monte une organisation jetable avec son
@@ -236,16 +349,16 @@ npm run qa:intelligence-chat:cleanup
 Aucune donnée opérationnelle n'est touchée : tout porte le préfixe
 `QA_CHAT_APPLY_` et vit dans sa propre organisation.
 
-## Périmètre du Run 3
+## Périmètre du Run 4
 
-1. T3 : couvrir la route `simulate`, y compris sa sélection par
-   `(missionId, proposedPairRowId)` et son nouveau statut d'erreur.
-2. A5 : unifier l'émission de la clé d'idempotence entre le panneau de
-   suggestions et le chat, ou documenter définitivement l'écart.
-3. B2 : rendre explicite le rejeu d'une application dont `resultSummary` est
-   incomplète, au lieu d'une violation d'unicité en 500.
-4. D3 : distinguer un rejeu d'un succès dans le panneau de suggestions.
-5. T4 : première couverture de rendu pour le bloc de confirmation du chat.
+1. C2 : l'empreinte Intelligence exclut les routes ; décider si une suggestion
+   doit se périmer quand ses distances changent, ou documenter le choix inverse.
+2. D1 : première surface proactive, si et seulement si le Run 4 la cadre.
+3. B3 : éprouver le `CONFLICT` de course entre la réanalyse et la transaction.
+4. T2 : couvrir `getMissionContext` et `getResourceAvailability` sur données
+   jetables, indépendamment du jeu de données `gerard`.
+5. Économie mesurée : introduire des coûts par ressource permettrait de passer
+   `economicBasis` à `MEASURED` et de relever le poids de la composante marge.
 
 ## Hors périmètre V1
 

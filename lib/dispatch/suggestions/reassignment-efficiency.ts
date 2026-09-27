@@ -4,6 +4,13 @@ import type {
   OptimizationDataSource,
 } from '../optimization'
 import { reassignmentEfficiencyConfig } from './config'
+import {
+  compareScoredCandidates,
+  reassignmentScoringReferences,
+  scoreReassignment,
+  type EconomicBasis,
+  type ReassignmentScore,
+} from './scoring'
 import type {
   GerardSuggestion,
   GerardSuggestionConfidence,
@@ -15,6 +22,8 @@ export type DetectReassignmentEfficiencyInput = {
   alternatives: readonly OptimizationCandidate[]
   weekStart: string
   snapshotFingerprint: string
+  /** Gain composite minimal exigé. Centralisé dans scoring.ts. */
+  minimumScoreImprovement?: number
   scoringPolicy?: {
     minimumEmptyKmSaving: number
     minimumCostSaving: number
@@ -28,6 +37,8 @@ type CandidateDelta = {
   costSaving: number | null
   marginGain: number | null
   economicComparisonAvailable: boolean
+  economicBasis: EconomicBasis
+  score: ReassignmentScore
 }
 
 type AssignmentScoringPolicy = {
@@ -134,46 +145,75 @@ function economicComparison(
   }
 }
 
+/**
+ * Les paramètres de coût de l'optimisation sont aujourd'hui des constantes
+ * (prix au kilomètre, coût horaire). Une comparaison économique disponible reste
+ * donc une estimation, jamais une mesure, et le score l'amortit en conséquence.
+ */
+function economicBasisOf(available: boolean): EconomicBasis {
+  return available ? 'ESTIMATED' : 'UNAVAILABLE'
+}
+
+/**
+ * Matérialité V1 : un gain opérationnel ou économique minimal ET un gain
+ * composite minimal. L'ancienne règle acceptait un candidat sur un seul seuil,
+ * ce qui laissait passer des réaffectations dont l'intérêt réel tenait à une
+ * estimation de coût.
+ */
+function isMaterial(input: {
+  emptyKmSaving: number
+  costSaving: number | null
+  marginGain: number | null
+  economicComparisonAvailable: boolean
+  scoreTotal: number
+  scoringPolicy: AssignmentScoringPolicy
+  minimumScoreImprovement: number
+}) {
+  const reachesThreshold =
+    input.emptyKmSaving >= input.scoringPolicy.minimumEmptyKmSaving ||
+    (input.economicComparisonAvailable &&
+      ((input.costSaving ?? -Infinity) >= input.scoringPolicy.minimumCostSaving ||
+        (input.marginGain ?? -Infinity) >= input.scoringPolicy.minimumMarginGain))
+  return reachesThreshold && input.scoreTotal >= input.minimumScoreImprovement
+}
+
 function candidateDelta(
   currentCandidate: OptimizationCandidate,
   candidate: OptimizationCandidate,
   scoringPolicy: AssignmentScoringPolicy = reassignmentEfficiencyConfig,
+  minimumScoreImprovement: number = reassignmentScoringReferences.minimumScoreImprovement,
 ): CandidateDelta | null {
+  // Contrainte dure d'abord : un candidat rejeté ici ne reçoit jamais de score.
   if (!hasUsableAlternative(candidate, currentCandidate)) return null
   const economics = economicComparison(currentCandidate, candidate)
+  const economicBasis = economicBasisOf(economics.available)
   const emptyKmSaving =
     currentCandidate.cost.emptyDistanceKm - candidate.cost.emptyDistanceKm
-  const significant =
-    emptyKmSaving >= scoringPolicy.minimumEmptyKmSaving ||
-    (economics.costSaving ?? -Infinity) >=
-      scoringPolicy.minimumCostSaving ||
-    (economics.marginGain ?? -Infinity) >=
-      scoringPolicy.minimumMarginGain
-  if (!significant) return null
+  const score = scoreReassignment({
+    currentCandidate,
+    candidate,
+    emptyKmSaving,
+    marginGain: economics.marginGain,
+    economicBasis,
+  })
+  if (!isMaterial({
+    emptyKmSaving,
+    costSaving: economics.costSaving,
+    marginGain: economics.marginGain,
+    economicComparisonAvailable: economics.available,
+    scoreTotal: score.total,
+    scoringPolicy,
+    minimumScoreImprovement,
+  })) return null
   return {
     candidate,
     emptyKmSaving,
     costSaving: economics.costSaving,
     marginGain: economics.marginGain,
     economicComparisonAvailable: economics.available,
+    economicBasis,
+    score,
   }
-}
-
-function compareNullableDescending(left: number | null, right: number | null) {
-  if (left === null && right === null) return 0
-  if (left === null) return 1
-  if (right === null) return -1
-  return right - left
-}
-
-function rankDeltas(left: CandidateDelta, right: CandidateDelta) {
-  return (
-    compareNullableDescending(left.marginGain, right.marginGain) ||
-    compareNullableDescending(left.costSaving, right.costSaving) ||
-    right.emptyKmSaving - left.emptyKmSaving ||
-    right.candidate.score - left.candidate.score ||
-    left.candidate.id.localeCompare(right.candidate.id)
-  )
 }
 
 function elapsedMinutes(candidate: OptimizationCandidate) {
@@ -259,6 +299,13 @@ function scoreFactorEvidence(
     })
 }
 
+/**
+ * La confiance décrit la FIABILITÉ DES DONNÉES, pas une probabilité que Gerard
+ * ait raison. HAUTE exige des routes sûres des deux côtés, aucune donnée
+ * manquante et une comparaison économique disponible. Tant que l'économie
+ * repose sur des paramètres par défaut, la nuance est portée par
+ * `scoreBreakdown.economicBasis`, que l'explication énonce explicitement.
+ */
 function suggestionConfidence(
   currentCandidate: OptimizationCandidate,
   candidate: OptimizationCandidate,
@@ -298,10 +345,11 @@ export function detectReassignmentEfficiency(
   input: DetectReassignmentEfficiencyInput
 ): GerardSuggestion | null {
   if (!hasUsableBaseline(input.currentCandidate)) return null
-  const best = input.alternatives
-    .map((candidate) => candidateDelta(input.currentCandidate, candidate, input.scoringPolicy))
+  const ranked = input.alternatives
+    .map((candidate) => candidateDelta(input.currentCandidate, candidate, input.scoringPolicy, input.minimumScoreImprovement))
     .filter((delta): delta is CandidateDelta => delta !== null)
-    .sort(rankDeltas)[0]
+    .sort(compareScoredCandidates)
+  const best = ranked[0]
   if (!best) return null
 
   const candidate = best.candidate
@@ -369,6 +417,22 @@ export function detectReassignmentEfficiency(
       },
     },
     confidence,
+    scoreBreakdown: best.score,
+    /**
+     * Classement interne des alternatives retenues. Le contrat produit reste
+     * une suggestion par mission ; cette métadonnée sert l'explication et les
+     * évolutions ultérieures, sans imposer d'écran supplémentaire.
+     */
+    rankedAlternatives: ranked.slice(0, 3).map((item, index) => ({
+      rank: index + 1,
+      candidateId: item.candidate.id,
+      pairRowId: item.candidate.pair.pair.rowId,
+      driverName: item.candidate.pair.driverName,
+      truckPlateNumber: item.candidate.pair.truckPlateNumber,
+      score: item.score.total,
+      emptyKmSaving: item.emptyKmSaving,
+      marginGain: item.marginGain,
+    })),
     evidence: {
       candidateIds: [input.currentCandidate.id, candidate.id],
       routeKeys: unique(

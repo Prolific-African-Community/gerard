@@ -3,6 +3,7 @@ import type {
   OptimizationConfidence,
   OptimizationDataSource,
 } from '../optimization'
+import type { ReassignmentScore } from './scoring'
 
 export type GerardSuggestionType = 'REASSIGNMENT_EFFICIENCY'
 export type GerardSuggestionSeverity = 'INFO' | 'WARNING' | 'CRITICAL'
@@ -73,6 +74,22 @@ export type GerardSuggestion = {
     }
   }
   confidence: GerardSuggestionConfidence
+  /**
+   * Décomposition du score de classement. Toute explication rendue à un
+   * répartiteur doit dériver d'ici, et jamais d'une reconstruction narrative.
+   */
+  scoreBreakdown: ReassignmentScore
+  /** Classement interne des meilleures alternatives valides, best-first. */
+  rankedAlternatives: Array<{
+    rank: number
+    candidateId: string
+    pairRowId: string
+    driverName: string
+    truckPlateNumber: string
+    score: number
+    emptyKmSaving: number
+    marginGain: number | null
+  }>
   evidence: {
     candidateIds: string[]
     routeKeys: string[]

@@ -1,5 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto'
 
+import type { GerardAssistantConfirmApplyAction } from './types'
+
 /**
  * Une action d'application proposée par l'assistant est signée côté serveur,
  * comme le jeton de simulation d'auto-planning. Le client ne transporte qu'un
@@ -47,6 +49,39 @@ export function createPendingApplyToken(
   }
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url')
   return { token: `${body}.${sign(body)}`, payload }
+}
+
+/**
+ * Primitive unique d'émission d'une action d'application. Le panneau de
+ * suggestions et l'assistant passent tous les deux par ici : la clé
+ * d'idempotence est donc toujours émise par le serveur, et les paramètres
+ * d'écriture voyagent dans le jeton signé, pas dans le corps de la requête.
+ */
+export function buildPendingApplyAction(input: {
+  userId: string
+  weekStart: string
+  suggestionId: string
+  snapshotFingerprint: string
+  missionReference: string
+  summary: string
+  label?: string
+}): GerardAssistantConfirmApplyAction {
+  const { token, payload } = createPendingApplyToken({
+    userId: input.userId,
+    suggestionId: input.suggestionId,
+    weekStart: input.weekStart,
+    snapshotFingerprint: input.snapshotFingerprint,
+  })
+  return {
+    type: 'CONFIRM_APPLY',
+    label: input.label ?? `Appliquer cette suggestion sur ${input.missionReference}`,
+    suggestionId: input.suggestionId,
+    missionReference: input.missionReference,
+    snapshotFingerprint: input.snapshotFingerprint,
+    idempotencyKey: payload.idempotencyKey,
+    summary: input.summary,
+    token,
+  }
 }
 
 export function verifyPendingApplyToken(
