@@ -5,15 +5,17 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 
 import { AdminShell, Avatar, Badge, Drawer, Modal, Notice, SectionHeader, Surface, TextField, Toast, auditLabel, buttonClass, formatDate, formatRelative, headerLinkClass, inputClass, roleDescriptions, roleLabels } from '../../components/admin/ui'
 import { LogoutButton } from '../../components/site/LogoutButton'
 import { getCurrentUser } from '../../lib/auth/authorization'
+import { brandAssetAcceptAttribute } from '../../lib/tenant/brand-assets'
 
 const roles = ['ORG_ADMIN', 'MANAGER', 'DISPATCHER', 'SECRETARY', 'ACCOUNTING', 'DRIVER', 'VIEWER'] as const
-const sections = [{ id: 'overview', label: 'Aperçu' }, { id: 'members', label: 'Membres' }] as const
+const sections = [{ id: 'overview', label: 'Aperçu' }, { id: 'members', label: 'Membres' }, { id: 'identity', label: 'Identité & facturation' }] as const
 type Section = (typeof sections)[number]['id']
 const INACTIVE_DAYS = 30
 
 type Member = { id: string; role: string; createdAt: string; user: { id: string; firstName: string; lastName: string; username: string; email: string | null; isActive: boolean; mustChangePassword: boolean; lastLoginAt: string | null; createdAt: string; sessionVersion: number } }
 type Activity = { id: string; action: string; metadata: Record<string, unknown> | null; createdAt: string; actor: { firstName: string; lastName: string; username: string } }
-type Organization = { id: string; name: string; status: string; displayName: string | null; logoUrl: string | null; users: Member[]; platformAuditLogs: Activity[] }
+type BillingConfig = { legalName: string; legalAddress: string | null; vatNumber: string | null; billingEmail: string | null; iban: string | null; bic: string | null; bankName: string | null; beneficiary: string | null; invoicePrefix: string | null; paymentTermsDays: number | null }
+type Organization = { id: string; name: string; status: string; displayName: string | null; logoUrl: string | null; faviconUrl: string | null; billingConfig: BillingConfig | null; users: Member[]; platformAuditLogs: Activity[] }
 type Request = (url: string, init: RequestInit) => Promise<Record<string, unknown>>
 type Confirmation = { title: string; body: ReactNode; confirm: string; destructive?: boolean; run: () => Promise<void> }
 type Attention = { member: Member; reason: string; tone: 'warning' | 'neutral' }
@@ -86,9 +88,10 @@ export default function OrganizationAdminPage({ accessDenied = false, platformAd
     <AdminShell mark={mark} title={orgName} context="Administration des accès"
       badge={organization.status !== 'ACTIVE' ? <span className="rounded-full bg-amber-300 px-2 py-0.5 text-[11px] font-semibold text-black">{organization.status === 'SUSPENDED' ? 'Suspendue' : 'Archivée'}</span> : undefined}
       actions={<>{platformAdmin && <a href="/admin" className={`${headerLinkClass} hidden sm:inline-flex`}>Plateforme</a>}<a href="/dispatch" className={headerLinkClass}>Dispatch</a><LogoutButton tone="dark" className="!h-8 !w-8 !rounded-md !shadow-none hover:!translate-y-0" /></>}
-      tabs={[{ id: 'overview', label: 'Aperçu' }, { id: 'members', label: 'Membres', count: stats.active }]} active={section} onTab={navigate}>
+      tabs={[{ id: 'overview', label: 'Aperçu' }, { id: 'members', label: 'Membres', count: stats.active }, { id: 'identity', label: 'Identité & facturation' }]} active={section} onTab={navigate}>
       {section === 'overview' && <Overview organization={organization} stats={stats} attention={attention} openMember={openMember} addMember={() => setAddOpen(true)} openActivity={() => setActivityOpen(true)} navigate={navigate} />}
       {section === 'members' && <Members members={members} currentUserId={currentUserId} openMember={openMember} addMember={() => setAddOpen(true)} />}
+      {section === 'identity' && <Identity organization={organization} reload={load} notify={setToast} />}
     </AdminShell>
 
     {selected && <MemberDrawer key={selected.id} member={selected} isSelf={selected.user.id === currentUserId} activeAdmins={stats.admins} activity={organization.platformAuditLogs.filter((item) => item.metadata?.userId === selected.user.id)} close={() => setSelectedId(null)} request={request} confirm={setConfirmation} notify={setToast} reveal={setCredential} />}
@@ -98,6 +101,139 @@ export default function OrganizationAdminPage({ accessDenied = false, platformAd
     {credential && <CredentialModal value={credential} close={() => setCredential(null)} />}
     {toast && <Toast text={toast} />}
   </>
+}
+
+// ─── Identité & facturation ──────────────────────────────────────────────────
+
+const billingFields = [
+  { key: 'legalName', label: 'Raison sociale', required: true, hint: 'Nom légal de la société, tel qu’il doit apparaître sur les factures.' },
+  { key: 'vatNumber', label: 'Numéro de TVA' },
+  { key: 'legalAddress', label: 'Adresse légale' },
+  { key: 'billingEmail', label: 'E-mail de facturation', type: 'email' },
+  { key: 'iban', label: 'IBAN' },
+  { key: 'bic', label: 'BIC' },
+  { key: 'bankName', label: 'Banque' },
+  { key: 'beneficiary', label: 'Bénéficiaire' },
+  { key: 'invoicePrefix', label: 'Préfixe des factures', hint: 'Lettres, chiffres, tiret ou souligné.' },
+  { key: 'paymentTermsDays', label: 'Délai de paiement (jours)', type: 'number' },
+] as const
+
+type BillingDraft = Record<(typeof billingFields)[number]['key'], string>
+
+function billingDraftOf(config: BillingConfig | null): BillingDraft {
+  return {
+    legalName: config?.legalName ?? '', vatNumber: config?.vatNumber ?? '', legalAddress: config?.legalAddress ?? '',
+    billingEmail: config?.billingEmail ?? '', iban: config?.iban ?? '', bic: config?.bic ?? '',
+    bankName: config?.bankName ?? '', beneficiary: config?.beneficiary ?? '', invoicePrefix: config?.invoicePrefix ?? '',
+    paymentTermsDays: config?.paymentTermsDays === null || config?.paymentTermsDays === undefined ? '' : String(config.paymentTermsDays),
+  }
+}
+
+function Identity({ organization, reload, notify }: { organization: Organization; reload: () => Promise<void>; notify: (text: string) => void }) {
+  const initial = useMemo(() => billingDraftOf(organization.billingConfig), [organization.billingConfig])
+  const [draft, setDraft] = useState<BillingDraft>(initial)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => setDraft(initial), [initial])
+  const dirty = (Object.keys(initial) as (keyof BillingDraft)[]).some((key) => initial[key] !== draft[key])
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const response = await fetch('/api/admin/organization/billing', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...draft, paymentTermsDays: draft.paymentTermsDays.trim() === '' ? null : Number(draft.paymentTermsDays) }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Enregistrement impossible')
+      await reload()
+      notify('Identité de facturation enregistrée.')
+    } catch (cause) {
+      setError(message(cause, 'Enregistrement impossible'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="space-y-4">
+    <SectionHeader title="Identité & facturation" description="Ces informations sont utilisées sur les nouvelles factures. Les factures déjà émises conservent les informations enregistrées au moment de leur création." />
+    <OrganizationLogoCard organization={organization} reload={reload} notify={notify} />
+    <form onSubmit={submit}>
+      <Surface title="Identité légale et facturation" description="Société émettrice, coordonnées bancaires et paramètres de facturation." footer={<div className="flex items-center justify-end gap-2 px-4 py-3">{dirty && <span className="mr-auto text-xs font-medium text-amber-800">Non enregistré</span>}<button type="button" onClick={() => setDraft(initial)} disabled={!dirty || busy} className={buttonClass.secondary}>Réinitialiser</button><button disabled={!dirty || busy || !draft.legalName.trim()} className={buttonClass.primary}>{busy ? 'Enregistrement…' : 'Enregistrer'}</button></div>}>
+        <div className="grid gap-3 p-4 sm:grid-cols-2">
+          {billingFields.map((field) => <TextField key={field.key} label={field.label} type={'type' in field ? field.type : 'text'} value={draft[field.key]} set={(value) => setDraft({ ...draft, [field.key]: value })} required={'required' in field ? field.required : false} hint={'hint' in field ? field.hint : undefined} placeholder={'required' in field && field.required ? undefined : 'Facultatif'} />)}
+        </div>
+        {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+      </Surface>
+    </form>
+  </div>
+}
+
+// The organization logo is the invoice logo: same field and same upload as the rest of the branding.
+function OrganizationLogoCard({ organization, reload, notify }: { organization: Organization; reload: () => Promise<void>; notify: (text: string) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [storageUnavailable, setStorageUnavailable] = useState(false)
+
+  async function save(logoUrl: string | null) {
+    setBusy(true)
+    setError('')
+    try {
+      const response = await fetch('/api/admin/organization/branding', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ logoUrl }) })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Enregistrement impossible')
+      await reload()
+      notify(logoUrl ? 'Logo mis à jour.' : 'Logo retiré.')
+    } catch (cause) {
+      setError(message(cause, 'Enregistrement impossible'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function upload(file: File) {
+    setBusy(true)
+    setError('')
+    try {
+      const body = new FormData()
+      body.append('kind', 'logo')
+      body.append('file', file)
+      const response = await fetch('/api/admin/organization/branding-asset', { method: 'POST', body })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (result?.code === 'BRAND_ASSET_STORAGE_UNAVAILABLE') setStorageUnavailable(true)
+        throw new Error(result?.error || 'Téléversement impossible.')
+      }
+      await save(result.url as string)
+    } catch (cause) {
+      setError(message(cause, 'Téléversement impossible'))
+      setBusy(false)
+    }
+  }
+
+  return <Surface title="Logo" description="Utilisé dans l’application et sur les factures. Sans logo, le logo Gerard par défaut est utilisé.">
+    <div className="flex flex-wrap items-center gap-4 p-4">
+      <div className="flex h-16 w-32 shrink-0 items-center justify-center rounded-lg border border-black/[.08] bg-white p-2">
+        {organization.logoUrl ? <img src={organization.logoUrl} alt="" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-black/40">Logo par défaut</span>}
+      </div>
+      <div className="min-w-[220px] flex-1 space-y-2">
+        <TextField label="URL du logo" value={organization.logoUrl ?? ''} set={() => undefined} disabled placeholder="Aucun logo configuré" />
+        <div className="flex items-center gap-2">
+          {storageUnavailable
+            ? <span className="text-xs font-medium text-black/50">Téléversement indisponible ici</span>
+            : <>
+                <input id="organization-logo-upload" type="file" accept={brandAssetAcceptAttribute} disabled={busy} className="hidden" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void upload(file) }} />
+                <label htmlFor="organization-logo-upload" className={buttonClass.secondary + (busy ? ' pointer-events-none opacity-50' : ' cursor-pointer')}>{busy ? 'Envoi…' : 'Téléverser un logo'}</label>
+              </>}
+          {organization.logoUrl && <button type="button" onClick={() => void save(null)} disabled={busy} className={buttonClass.ghost}>Retirer</button>}
+        </div>
+        {error && <span className="block text-xs font-medium text-red-700">{error}</span>}
+      </div>
+    </div>
+  </Surface>
 }
 
 // ─── Overview ────────────────────────────────────────────────────────────────

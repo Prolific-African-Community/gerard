@@ -1,5 +1,3 @@
-import { existsSync } from 'fs'
-import path from 'path'
 
 import { InvoiceDirection, InvoiceStatus, Prisma } from '@prisma/client'
 import PDFDocument from 'pdfkit'
@@ -92,7 +90,12 @@ export function getInvoicePdfFilename(invoice: {
   return `Facture-${safeNumber || 'Gerard'}.pdf`
 }
 
-export async function buildInvoicePdf(invoice: InvoicePdfData) {
+export type InvoicePdfOptions = {
+  /** Logo of the organization that issues the invoice; falls back to the Gerard logo when absent. */
+  logo?: Buffer | null
+}
+
+export async function buildInvoicePdf(invoice: InvoicePdfData, options: InvoicePdfOptions = {}) {
   if (invoice.direction !== InvoiceDirection.ISSUED) {
     throw new Error('PDF fournisseur non disponible dans cette phase.')
   }
@@ -118,7 +121,7 @@ export async function buildInvoicePdf(invoice: InvoicePdfData) {
     )
   })
 
-  drawHeader(doc, invoice)
+  drawHeader(doc, invoice, options.logo ?? null)
   drawParties(doc, invoice)
   drawReferences(doc, invoice)
   drawMissionServices(doc, invoice)
@@ -132,11 +135,11 @@ export async function buildInvoicePdf(invoice: InvoicePdfData) {
   return done
 }
 
-function drawHeader(doc: PDFKit.PDFDocument, invoice: InvoicePdfData) {
-  const logoPath = path.join(process.cwd(), 'public', 'logo_gerard_texte.png')
-
-  if (existsSync(logoPath)) {
-    doc.image(logoPath, page.margin, 42, {
+// The logo comes from the organization that issues the invoice (resolved by the caller, Gerard only as a
+// fallback). Without any usable image the issuer's legal name is printed instead.
+function drawHeader(doc: PDFKit.PDFDocument, invoice: InvoicePdfData, logo: Buffer | null) {
+  if (logo) {
+    doc.image(logo as unknown as Buffer, page.margin, 42, {
       fit: [160, 58],
     })
   } else {

@@ -8,6 +8,7 @@ import {
   getInvoicePdfFilename,
 } from '../../../../../lib/dispatch/invoice-pdf'
 import { prisma } from '../../../../../lib/prisma'
+import { resolveOrganizationLogo } from '../../../../../lib/tenant/brand-logo'
 
 function getInvoiceId(queryValue: string | string[] | undefined) {
   return typeof queryValue === 'string' && queryValue.trim().length > 0
@@ -56,7 +57,10 @@ async function handler(
       return res.status(404).json({ error: 'Facture introuvable.' })
     }
 
-    const pdfBuffer = await buildInvoicePdf(invoice)
+    // The issuer's own logo; the invoice's legal data is the snapshot already stored on the row.
+    const organization = await prisma.organization.findUnique({ where: { id: invoice.organizationId }, select: { logoUrl: true } })
+    const logo = await resolveOrganizationLogo(organization?.logoUrl)
+    const pdfBuffer = await buildInvoicePdf(invoice, { logo: logo?.bytes ?? null })
     const filename = getInvoicePdfFilename(invoice)
 
     res.setHeader('Content-Type', 'application/pdf')

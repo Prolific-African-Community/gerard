@@ -112,16 +112,37 @@ export async function getOrganizationDetail(id: string) {
 
 function optionalText(value: unknown) { return typeof value === 'string' && value.trim() ? value.trim() : null }
 
+// Shared by the platform (SUPER_ADMIN, any organization) and by the organization admin route, which passes the
+// organization of the authenticated session. Validation and audit live here so both callers behave identically.
+export const BILLING_TEXT_MAX_LENGTH = 200
+export const BILLING_ADDRESS_MAX_LENGTH = 400
+
+function boundedText(value: unknown, field: string, max = BILLING_TEXT_MAX_LENGTH) {
+  const text = optionalText(value)
+  if (text && text.length > max) throw new Error(`BILLING_FIELD_TOO_LONG:${field}`)
+  return text
+}
+
+export function isBillingEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= BILLING_TEXT_MAX_LENGTH
+}
+
 export async function upsertOrganizationBillingConfig(input: { actorUserId: string; organizationId: string; value: Record<string, unknown> }) {
-  const legalName = optionalText(input.value.legalName)
+  const legalName = boundedText(input.value.legalName, 'legalName')
   if (!legalName) throw new Error('LEGAL_NAME_REQUIRED')
-  const days = input.value.paymentTermsDays === null || input.value.paymentTermsDays === '' ? null : Number(input.value.paymentTermsDays)
+  // Absent, null or empty all mean "no payment term", like every other optional field here.
+  const rawDays = input.value.paymentTermsDays
+  const days = rawDays === null || rawDays === undefined || rawDays === '' ? null : Number(rawDays)
   if (days !== null && (!Number.isInteger(days) || days < 0 || days > 365)) throw new Error('PAYMENT_TERMS_INVALID')
+  const billingEmail = boundedText(input.value.billingEmail, 'billingEmail')
+  if (billingEmail && !isBillingEmail(billingEmail)) throw new Error('BILLING_EMAIL_INVALID')
   const data = {
-    legalName, legalAddress: optionalText(input.value.legalAddress), vatNumber: optionalText(input.value.vatNumber),
-    iban: optionalText(input.value.iban), bic: optionalText(input.value.bic), bankName: optionalText(input.value.bankName),
-    beneficiary: optionalText(input.value.beneficiary), invoicePrefix: normalizeInvoicePrefix(input.value.invoicePrefix),
-    paymentTermsDays: days, billingEmail: optionalText(input.value.billingEmail),
+    legalName, legalAddress: boundedText(input.value.legalAddress, 'legalAddress', BILLING_ADDRESS_MAX_LENGTH),
+    vatNumber: boundedText(input.value.vatNumber, 'vatNumber'),
+    iban: boundedText(input.value.iban, 'iban'), bic: boundedText(input.value.bic, 'bic'),
+    bankName: boundedText(input.value.bankName, 'bankName'),
+    beneficiary: boundedText(input.value.beneficiary, 'beneficiary'), invoicePrefix: normalizeInvoicePrefix(input.value.invoicePrefix),
+    paymentTermsDays: days, billingEmail,
   }
   const config = await prisma.organizationBillingConfig.upsert({ where: { organizationId: input.organizationId }, create: { organizationId: input.organizationId, ...data }, update: data })
   await prisma.platformAuditLog.create({ data: { actorUserId: input.actorUserId, organizationId: input.organizationId, action: PlatformAuditAction.BILLING_CONFIG_CHANGED } })

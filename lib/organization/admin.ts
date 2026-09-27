@@ -10,7 +10,8 @@ export async function getOrganizationAdminWorkspace(organizationId: string) {
   const organization = await prisma.organization.findUnique({
     where: { id: organizationId },
     select: {
-      id: true, name: true, status: true, displayName: true, logoUrl: true,
+      id: true, name: true, status: true, displayName: true, logoUrl: true, faviconUrl: true,
+      billingConfig: true,
       users: {
         orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
         select: {
