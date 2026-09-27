@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/router'
 
 import {
@@ -333,6 +333,8 @@ export function MobileDispatchView({
   const [isAssistantOpen, setIsAssistantOpen] = useState(false)
   /** Relance la surface proactive après une modification du planning. */
   const [insightsRefreshKey, setInsightsRefreshKey] = useState(0)
+  /** Ouvre le panneau de résultats depuis un insight, comme sur le poste fixe. */
+  const openSuggestionsRef = useRef<(() => void) | null>(null)
   const { requestHighlight } = useLocatorHighlight()
   const [autoPlanningNotice, setAutoPlanningNotice] = useState<string | null>(
     null
@@ -771,7 +773,10 @@ export function MobileDispatchView({
         onClose={() => setIsAssistantOpen(false)}
         weekStart={formatDateParam(selectedWeekStartDate)}
         missionReference={selectedMission?.reference}
-        onApplied={() => refreshOverview()}
+        onApplied={() => {
+          setInsightsRefreshKey((current) => current + 1)
+          return refreshOverview()
+        }}
       />
 
       {activeTab === 'missions' && capabilities.canViewPlanning ? (
@@ -780,10 +785,13 @@ export function MobileDispatchView({
             weekStart={formatDateParam(selectedWeekStartDate)}
             refreshKey={insightsRefreshKey}
             compact
+            onSimulate={() => openSuggestionsRef.current?.()}
           />
           <GerardSuggestionsPanel
             weekStart={formatDateParam(selectedWeekStartDate)}
             compact
+            hideTrigger
+            analyzeRef={openSuggestionsRef}
             onApplied={() => {
               setInsightsRefreshKey((current) => current + 1)
               return refreshOverview()

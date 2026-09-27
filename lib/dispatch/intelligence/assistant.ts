@@ -2,6 +2,7 @@ import { routeAssistantIntent } from './intent-router'
 import { classifyIntentWithConfiguredModel } from './llm-router'
 import { explainSuggestion, getMissionContext, getPlanningInsights, getPlanningSuggestions, getPlanningSummary, getResourceAvailability, resolveMissionReference, simulateSuggestion } from './facade'
 import { buildPendingApplyAction, verifyPendingApplyToken } from './pending-action'
+import { logIntelligenceEvent } from './observability'
 import type { GerardAssistantAction, GerardAssistantApplicationOutcome, GerardAssistantConfirmation, GerardAssistantContext, GerardAssistantIntentResult, GerardAssistantReply } from './types'
 import { SuggestionApplicationError, applyPlanningSuggestion } from '../suggestions/application'
 import { formatDateParam } from '../date-utils'
@@ -176,12 +177,28 @@ export async function answerAssistantQuestion(input: {
     const classified = await classifyIntentWithConfiguredModel(input.message, input.conversationContext)
     routing = { source: classified.intent ? 'OPENAI' : 'FALLBACK', providerCalls: 1, providerDurationMs: classified.durationMs, providerStatus: classified.status }
     if (classified.intent) intent = classified.intent
-    if (classified.status !== 'SUCCESS') console.warn(`[GerardAssistant] providerStatus=${classified.status} providerMs=${classified.durationMs}`)
+    if (classified.status !== 'SUCCESS') {
+      logIntelligenceEvent('provider.degraded', {
+        userId: input.userId,
+        providerStatus: classified.status,
+        providerDurationMs: classified.durationMs,
+      })
+    }
   }
   const explicitMissionReference = intent.missionReference
   if (!intent.missionReference && !/\bdemain\b/i.test(input.message)) intent.missionReference = input.conversationContext?.missionReference
   intent.suggestionId ??= input.conversationContext?.suggestionId
-  console.info(`[GerardAssistant] intent=${intent.intent} source=${routing.source} providerMs=${routing.providerDurationMs ?? 0}`)
+  // Le routage déterministe et le repli fournisseur restent distinguables : le
+  // message de l'utilisateur, lui, n'est jamais journalisé.
+  logIntelligenceEvent('assistant.routed', {
+    week: formatDateParam(input.weekStart),
+    userId: input.userId,
+    result: intent.intent,
+    providerSource: routing.source,
+    providerStatus: routing.providerStatus ?? undefined,
+    providerCalls: routing.providerCalls,
+    providerDurationMs: routing.providerDurationMs ?? undefined,
+  })
   // Un message libre ne vaut jamais confirmation. Au mieux il fait réapparaître
   // l'action confirmable de la suggestion déjà désignée dans la conversation.
   if (intent.requestsMutation) {

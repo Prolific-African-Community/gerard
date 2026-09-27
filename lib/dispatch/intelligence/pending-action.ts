@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto'
 
+import { logIntelligenceEvent } from './observability'
 import type { GerardAssistantConfirmApplyAction } from './types'
 
 /**
@@ -80,6 +81,13 @@ export function buildPendingApplyAction(input: {
     weekStart: input.weekStart,
     snapshotFingerprint: input.snapshotFingerprint,
     evidenceFingerprint: input.evidenceFingerprint,
+  })
+  // Le jeton lui-même n'est jamais journalisé.
+  logIntelligenceEvent('confirmation.offered', {
+    week: input.weekStart,
+    suggestionId: input.suggestionId,
+    missionId: input.missionReference,
+    userId: input.userId,
   })
   return {
     type: 'CONFIRM_APPLY',

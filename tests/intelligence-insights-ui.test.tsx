@@ -57,8 +57,8 @@ const report: GerardInsightReport = {
 // A — le décompte est rendu tel quel, au singulier comme au pluriel.
 assert.equal(insightHeadline(report), '3 points à vérifier')
 assert.equal(insightHeadline({ total: 1 }), '1 point à vérifier')
-assert.equal(insightHeadline({ total: 0 }), 'Rien à signaler sur cette semaine')
-assert.equal(insightHeadline(null), 'Rien à signaler sur cette semaine')
+assert.equal(insightHeadline({ total: 0 }), 'Rien de particulier à signaler sur cette semaine')
+assert.equal(insightHeadline(null), 'Rien de particulier à signaler sur cette semaine')
 console.log('A décompte rendu correctement: OK')
 
 // B — les libellés de gravité apparaissent, et rien d'autre ne se déclenche au
@@ -109,7 +109,9 @@ console.log('D aucune application directe depuis un insight: OK')
 const empty: GerardInsightReport = { ...report, total: 0, insights: [], bySeverity: { CRITICAL: 0, ATTENTION: 0, OPPORTUNITY: 0, INFO: 0 } }
 const emptyHeadline = insightHeadline(empty)
 assert.ok(!/alerte|problème|erreur|urgent|risque/i.test(emptyHeadline), `état vide alarmant : ${emptyHeadline}`)
-assert.match(emptyHeadline, /Rien à signaler/)
+assert.match(emptyHeadline, /Rien de particulier à signaler/)
+// La formulation ne promet pas un optimum : le moteur ne le démontre pas.
+assert.ok(!/optimal|optimis[ée]|parfait|meilleur/i.test(emptyHeadline))
 console.log('E état vide calme: OK')
 
 // F — une opportunité résolue disparaît du rapport suivant : le composant ne

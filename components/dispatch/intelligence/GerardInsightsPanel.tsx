@@ -17,7 +17,7 @@ const severityStyles: Record<GerardInsightSeverity, { label: string; chip: strin
 }
 
 export function insightHeadline(report: Pick<GerardInsightReport, 'total'> | null) {
-  if (!report || report.total === 0) return 'Rien à signaler sur cette semaine'
+  if (!report || report.total === 0) return 'Rien de particulier à signaler sur cette semaine'
   return report.total === 1 ? '1 point à vérifier' : `${report.total} points à vérifier`
 }
 
@@ -77,7 +77,7 @@ export function GerardInsightsPanel({
       <p className="text-xs font-bold text-[#4e554a]">{insightHeadline(report)}</p>
     </div>
     {report.total === 0
-      ? <p className="mt-2 text-xs text-[#7a8074]">Le planning de la semaine ne présente ni conflit, ni mission à planifier, ni amélioration matérielle.</p>
+      ? <p className="mt-2 text-xs text-[#7a8074]">Aucun conflit, aucune mission à planifier et aucune amélioration matérielle détectée sur les missions analysables de la semaine.</p>
       : <ul className="mt-3 space-y-2">
           {visible.map((insight) => <InsightRow key={insight.id} insight={insight} onSimulate={onSimulate} onOpenMission={onOpenMission} />)}
         </ul>}

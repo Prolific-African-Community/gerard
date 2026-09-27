@@ -1,6 +1,6 @@
 import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
-import { analyzePlanningForSuggestions, buildPendingApplyAction, describeSuggestion } from '@prolific/gerard-core/intelligence'
+import { analyzePlanningForSuggestions, buildPendingApplyAction, describeSuggestion, logIntelligenceEvent } from '@prolific/gerard-core/intelligence'
 import { requireOrganizationModule, requirePermission } from '../../../../lib/auth/authorization'
 import { hasPermission, permissions } from '../../../../lib/auth/permissions'
 import { parseWeekStartParam } from '../../../../lib/dispatch/date-utils'
@@ -18,10 +18,12 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
   const missionId = typeof req.body?.missionId === 'string' ? req.body.missionId : null
   const proposedPairRowId = typeof req.body?.proposedPairRowId === 'string' ? req.body.proposedPairRowId : null
   if (!weekStart || !missionId || !proposedPairRowId) return res.status(400).json({ status: 'INVALID', error: 'Simulation invalide' })
+  logIntelligenceEvent('simulation.requested', { week: rawWeekStart, missionId, userId: user.id })
   try {
     const analysis = await analyzePlanningForSuggestions(weekStart)
     const suggestion = analysis.suggestions.find((item) => item.affectedMissionIds.includes(missionId) && item.proposedState.pairRowId === proposedPairRowId)
     if (!suggestion) {
+      logIntelligenceEvent('simulation.completed', { week: rawWeekStart, missionId, userId: user.id, result: 'STALE' })
       return res.status(200).json({ status: 'STALE', analyzedAt: analysis.analyzedAt, snapshotFingerprint: analysis.snapshotFingerprint })
     }
     // L'action d'application est émise ici, par le serveur, sur la suggestion
@@ -38,6 +40,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
           summary: describeSuggestion(suggestion),
         })
       : null
+    logIntelligenceEvent('simulation.completed', { week: rawWeekStart, missionId, userId: user.id, result: 'VALID', suggestionId: suggestion.id })
     return res.status(200).json({
       status: 'VALID',
       suggestion,
@@ -47,7 +50,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     })
   } catch (error) {
     // Une simulation qui échoue ne doit jamais ressembler à une simulation valide.
-    console.error('Planning intelligence simulation failed', error instanceof Error ? error.message : error)
+    logIntelligenceEvent('simulation.failed', { week: rawWeekStart, missionId, userId: user.id, reason: error instanceof Error ? error.message : 'UNKNOWN' })
     return res.status(503).json({ status: 'ERROR', error: 'Gerard n’a pas pu revérifier cette suggestion.' })
   }
 }

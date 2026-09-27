@@ -35,7 +35,6 @@ export function DispatchToolbar({
   onWeekChange,
   onOpenSearch,
   onOpenAutoPlanning,
-  onAnalyzePlanning,
   onOpenAssistant,
   onCompletePlanningRows,
   completePlanningRowsLabel,
@@ -51,7 +50,6 @@ export function DispatchToolbar({
   onWeekChange?: (weekStartDate: Date) => void;
   onOpenSearch?: () => void;
   onOpenAutoPlanning?: () => void;
-  onAnalyzePlanning?: () => void;
   onOpenAssistant?: () => void;
   onCompletePlanningRows?: () => void;
   completePlanningRowsLabel?: string;
@@ -110,7 +108,7 @@ export function DispatchToolbar({
           <ControlButton label="Assistant Gerard" icon={<Icons.assistant />} onClick={onOpenAssistant} />
         ) : null}
 
-        {onOpenAutoPlanning || onAnalyzePlanning || onCompletePlanningRows ? (
+        {onOpenAutoPlanning || onCompletePlanningRows ? (
           <>
             <ControlDivider />
             <ControlGroup>
@@ -120,13 +118,6 @@ export function DispatchToolbar({
                   icon={<Icons.autoPlan />}
                   tone="solid"
                   onClick={onOpenAutoPlanning}
-                />
-              ) : null}
-              {onAnalyzePlanning ? (
-                <ControlButton
-                  label="Analyser le planning"
-                  icon={<Icons.analyze />}
-                  onClick={onAnalyzePlanning}
                 />
               ) : null}
               {onCompletePlanningRows ? (

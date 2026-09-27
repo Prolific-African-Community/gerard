@@ -1,10 +1,32 @@
 # Gerard Intelligence — contrat V1
 
-Figé au Run 1 (2026-09-27), étendu au Run 2 (l'assistant applique une suggestion
-après confirmation structurée), au Run 3 (durcissement et classement
-multicritère déterministe) puis au Run 4 (fraîcheur des routes et surface
-proactive). Ce document décrit l'état réel du code, pas une cible produit. Toute
-évolution passe par un Run explicite.
+Version finale V1, close au Run 5. Construite au Run 1 (architecture et cycle de
+vie), Run 2 (application depuis l'assistant après confirmation structurée),
+Run 3 (classement multicritère déterministe), Run 4 (fraîcheur des routes et
+surface proactive), Run 5 (simplification produit et observabilité). Ce document
+décrit l'état réel du code, pas une cible produit.
+
+## Modèle utilisateur
+
+Le cockpit dispatch expose **deux** entrées, pas trois :
+
+| Entrée | Intention | Portée |
+| --- | --- | --- |
+| **Affectation automatique** | « Fais le planning » | Flux de planification lourd, pouvant toucher de nombreuses missions. Action explicite et séparée. |
+| **Assistant Gerard** | « Aide-moi à comprendre et à améliorer » | Analyse, explication, simulation, puis application d'**une** suggestion après confirmation. |
+
+À côté, **Gerard Intelligence** est la surface proactive : elle se charge avec le
+planning et ne demande aucun clic pour exister.
+
+L'entrée autonome « Analyser le planning » a été **retirée de l'interface** au
+Run 5. Sa capacité n'a pas disparu : l'analyse arrive d'elle-même par la surface
+proactive, reste interrogeable par l'assistant, et l'API `analyze` ainsi que le
+moteur d'analyse sont inchangés. Le panneau de résultats « Gerard suggère »
+existe toujours et s'ouvre depuis un insight d'optimisation.
+
+Vocabulaire exposé : « Affectation automatique », « Assistant Gerard »,
+« Gerard Intelligence ». Les notions internes — score, empreinte de snapshot,
+empreinte de preuve, fraîcheur de route — ne sont jamais montrées.
 
 ## Architecture actuelle
 
@@ -24,13 +46,22 @@ routes API n'importent jamais `lib/` directement — contrainte vérifiée par
 | Application | `lib/dispatch/suggestions/application.ts` | Seule écriture métier du périmètre Intelligence. |
 | Snapshot partagé | `lib/dispatch/auto-planning/snapshot.ts` | `buildAutoPlanningSnapshot` + `fingerprintSnapshot`, réutilisés tels quels. |
 
-Routes (`pages/api/dispatch/intelligence/`) : `analyze`, `simulate`, `assistant`,
-`apply`. Toutes sous `withTenantApiRoute`.
+| Surface proactive | `lib/dispatch/intelligence/insights.ts` | Insights déterministes, lecture seule, calculés depuis les moteurs existants. |
+| Observabilité | `lib/dispatch/intelligence/observability.ts` | Journaux structurés d'analyse, simulation, confirmation et application. |
 
-UI : `components/dispatch/intelligence/GerardSuggestionsPanel.tsx` et
-`GerardAssistantPanel.tsx` suivent tous deux analyse → simulation →
-confirmation explicite → application, montés par `WeeklyDispatchBoard.tsx` et
-`MobileDispatchView.tsx`. Les deux rafraîchissent le planning via `onApplied`.
+Routes (`pages/api/dispatch/intelligence/`) : `analyze`, `insights`, `simulate`,
+`assistant`, `apply`. Toutes sous `withTenantApiRoute`.
+
+UI, montée par `WeeklyDispatchBoard.tsx` et `MobileDispatchView.tsx` :
+
+- `GerardInsightsPanel.tsx` — surface proactive, chargée avec le planning.
+- `GerardSuggestionsPanel.tsx` — panneau de résultats, **sans entrée autonome**
+  depuis le Run 5 : il s'ouvre depuis un insight d'optimisation
+  (`hideTrigger` + `analyzeRef`).
+- `GerardAssistantPanel.tsx` — conversation, simulation et confirmation.
+
+Les deux chemins d'application rafraîchissent le planning **et** la surface
+proactive via `onApplied`.
 
 ## Capacités existantes
 
@@ -86,53 +117,31 @@ confirmation explicite → application, montés par `WeeklyDispatchBoard.tsx` et
 | Réversibilité d'une application | **MISSING** | aucun chemin d'annulation ; l'état précédent n'est conservé que dans `MissionEvent.metadata.previousAssignment` | — |
 | Traçabilité d'une simulation | **MISSING** | aucune persistance : une simulation ne laisse aucune trace | — |
 
-## Lacunes actuelles
+## Lacunes suivies, et leur sort
 
-**A. Intégration assistant** — A1, A2, A3 et B1 sont fermées par le Run 2.
+Toutes les lacunes ouvertes pendant la construction ont ete closes, sauf celles
+listees dans "Limites connues de la V1".
 
-- A4 — `getPlanningSuggestions` est un alias de `getPlanningSummary` : l'intention
-  suggestions et l'intention résumé exécutent la même analyse.
-- A5 — la route `/api/dispatch/intelligence/apply` et la confirmation depuis le
-  chat sont deux entrées vers le même `applyPlanningSuggestion`. C'est voulu (le
-  panneau de suggestions reste inchangé), mais la clé d'idempotence est générée
-  côté client sur la première et côté serveur sur la seconde.
-
-**B. Sûreté**
-
-- B2 — une `DispatchOptimizationApplication` dont `resultSummary` n'est pas
-  `APPLIED` fait échouer le rejeu en 500 (violation d'unicité) au lieu d'un statut
-  explicite.
-- B3 — le `CONFLICT` de ressource pure n'est atteignable qu'en course entre la
-  réanalyse serveur et la transaction : toute invalidation observable modifie
-  aussi le snapshot et sort donc en `STALE`. Le code est couvert par la
-  vérification en transaction, pas par un test de course dédié.
-
-**C. Règles métier**
-
-- C1 — un seul type de suggestion ; aucune détection de mission non affectée, de
-  risque réglementaire ou de rotation remorque côté Intelligence.
-- C2 — l'empreinte Intelligence exclut volontairement les routes ; une
-  suggestion peut donc rester « valide » alors que ses distances ont changé.
-
-**D. UX** — D2 est fermée par le Run 2.
-
-- D1 — aucune surface proactive : l'analyse est toujours déclenchée manuellement.
-- D3 — dans le panneau de suggestions, un `ALREADY_APPLIED` s'affiche comme un
-  succès sans indiquer le rejeu. Le chat, lui, le dit explicitement.
-
-**E. Observabilité** — E1 et E2 sont fermées par le Run 2.
-
-- E3 — aucune métrique de durée d'analyse ni de consommation de routes exposée
-  aux appelants.
-
-**F. Tests** — T1 est fermée par le Run 2.
-
-- T2 — `getMissionContext` / `getResourceAvailability` ne sont testés qu'à
-  travers l'assistant, sur le jeu de données `gerard` (test sauté si absent).
-- T3 — aucun test de la route `simulate` elle-même ; sa logique de sélection
-  `(missionId, proposedPairRowId)` n'est couverte qu'indirectement.
-- T4 — aucun test de rendu React : le parcours d'interface a été validé
-  manuellement (voir `scripts/qa-intelligence-chat-apply.ts`).
+| Lacune | Sort |
+| --- | --- |
+| A1, A2, A3 assistant non applicateur | closes au Run 2 |
+| B1 absence de jeton signe | close au Run 2 |
+| A5 cle d'idempotence cliente | close au Run 3 : une seule primitive serveur |
+| B2 rejeu opaque en 500 | close au Run 3 : conflit explicite |
+| D2 pas d'action d'application dans le chat | close au Run 2 |
+| D3 rejeu indistinct dans le panneau | close au Run 3 |
+| E1 erreurs de `simulate` non structurees | close au Run 3 |
+| E2 statut fournisseur invisible | close au Run 3 |
+| E3 aucune metrique exploitable | close au Run 5 : voir "Observabilite" |
+| T1 chemin d'ecriture non teste | close au Run 2 |
+| T2 facade testee seulement via l'assistant | close au Run 4 |
+| T3 route `simulate` non testee | close au Run 3 |
+| T4 aucun test de rendu | close au Run 3, etendu au Run 4 et au Run 5 |
+| C2 derive de route | close au Run 4 : empreinte de preuve |
+| D1 aucune surface proactive | close au Run 4 |
+| A4 `getPlanningSuggestions` aliase | close au Run 5 : l'entree autonome disparait, l'intention reste servie par la meme analyse |
+| C1 un seul type de suggestion | reste ouverte, assumee |
+| B3 course en transaction | reste ouverte, assumee |
 
 ## Cycle de vie V1 d'une suggestion
 
@@ -447,6 +456,46 @@ Une action d'insight ne peut pas écrire : elle ouvre une mission ou lance la
 - `INCOMPLETE_CRITICAL_DATA` ne couvre que les champs exigés par l'analyse de
   réaffectation, pas l'exhaustivité métier d'une mission.
 
+## Séparation avec l'affectation automatique
+
+Les deux flux restent distincts, et c'est délibéré : l'auto-planification peut
+toucher de nombreuses missions d'un coup, Gerard Intelligence applique **une**
+suggestion à la fois après confirmation nominative.
+
+| | Gerard Intelligence | Affectation automatique |
+| --- | --- | --- |
+| Déclenchement | proactif (lecture) ou question | action explicite de l'utilisateur |
+| Portée d'écriture | une affectation, confirmée | un lot de missions |
+| Jeton | `pending-action.ts` | `auto-planning/token.ts` |
+| Écriture | `applyPlanningSuggestion` | `applyAutoPlanning` |
+
+Aucun module Intelligence n'appelle `applyAutoPlanning`, `simulateAutoPlanning`
+ni `persistValidatedAutoPlanning`, et aucun insight ne peut la déclencher —
+vérifié par `tests/intelligence-entry-points.test.tsx` (cas G).
+
+## Observabilité
+
+Journaux structurés, une ligne par évènement, préfixe `[gerard.intelligence]`,
+charge utile JSON. Aucun modèle de base ajouté :
+`lib/dispatch/intelligence/observability.ts`.
+
+| Évènement | Portée |
+| --- | --- |
+| `analysis.started` / `analysis.completed` / `analysis.failed` | durée, missions analysées, missions incomplètes, suggestions, métriques de routes |
+| `insights.completed` | volume et répartition par gravité |
+| `simulation.requested` / `simulation.completed` / `simulation.failed` | issue `VALID` ou `STALE` |
+| `confirmation.offered` | action proposée, sans jeton ni clé |
+| `application.attempted` / `application.completed` / `application.refused` / `application.failed` | issue `APPLIED`, `ALREADY_APPLIED`, `STALE`, `CONFLICT`, `INVALID` |
+| `assistant.routed` | routage déterministe ou repli fournisseur |
+| `provider.degraded` | panne ou sortie inexploitable du fournisseur (niveau `warn`) |
+
+Chaque évènement porte l'organisation — lue dans le contexte serveur, jamais
+fournie par l'appelant — et, selon le cas, la semaine, la suggestion, la
+mission et l'utilisateur. Ne sont **jamais** journalisés : jetons, clés
+d'idempotence, secrets, messages d'utilisateur, charges utiles de fournisseur.
+Les métriques de routes viennent de l'opération déjà mesurée : aucun appel payant
+n'est ajouté pour observer.
+
 ## Validation manuelle
 
 `scripts/qa-intelligence-chat-apply.ts` monte une organisation jetable avec son
@@ -462,18 +511,34 @@ npm run qa:intelligence-chat:cleanup
 Aucune donnée opérationnelle n'est touchée : tout porte le préfixe
 `QA_CHAT_APPLY_` et vit dans sa propre organisation.
 
-## Périmètre du Run 5
+## Limites connues de la V1
 
-1. Observabilité : durées d'analyse, consommation de routes, statut fournisseur
-   et refus d'application exposés de façon exploitable (lacune E3).
-2. B3 : le `CONFLICT` de course reste non testé, faute de couture non invasive
-   (voir ci-dessous).
-3. Économie mesurée : des coûts par ressource permettraient `economicBasis:
-   MEASURED`, un poids de marge plus élevé, et rouvriraient
-   `LOW_OR_NEGATIVE_MARGIN`.
-4. Persistance éventuelle des insights si le rejet mémorisé devient nécessaire.
+- **Économie jamais mesurée.** Les coûts sont des constantes (0,60 €/km, 25 €/h),
+  donc `economicBasis` vaut toujours `ESTIMATED`, la composante marge reste
+  amortie et `LOW_OR_NEGATIVE_MARGIN` reste hors périmètre.
+- **Course en transaction (B3)** non testée : voir ci-dessous.
+- **Aucune persistance d'insight** : pas de rejet mémorisé, un insight
+  réapparaît tant que sa cause existe.
+- **Aucune exécution différée** : pas d'analyse planifiée, pas de notification,
+  pas de tâche de fond. Tout est calculé à l'ouverture de la semaine.
+- `PLANNING_CONFLICT` ne couvre que les chevauchements de ressources entre deux
+  affectations de la semaine analysée.
+- `INCOMPLETE_CRITICAL_DATA` ne couvre que les champs exigés par l'analyse de
+  réaffectation, pas l'exhaustivité métier d'une mission.
+- Un seul type de suggestion : `REASSIGNMENT_EFFICIENCY`.
+- **Couverture d'interface légère** : rendu serveur et machine d'états, pas de
+  simulation de clic réelle.
+- L'observabilité est un journal structuré, sans agrégation ni tableau de bord.
 
-## Course en transaction (B3)
+## Reporté explicitement
+
+Économie mesurée nécessitant un changement de modèle, insights de marge fondés
+sur des estimations seules, persistance des rejets, notifications, tâches de
+fond, apprentissage des décisions du répartiteur ou des préférences client,
+application automatique, annulation, nouvelles familles de suggestions,
+refonte d'interface, tableau de bord analytique.
+
+## Course en transaction (B3) — risque résiduel assumé
 
 Le `CONFLICT` de ressource pure n'est atteignable qu'entre la réanalyse serveur
 et la transaction. Toute invalidation observable modifie aussi le snapshot

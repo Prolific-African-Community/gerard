@@ -230,14 +230,6 @@ export const Icons = {
       <circle cx="3.6" cy="17" r="1.4" />
     </svg>
   ),
-  /** Analyser le planning. */
-  analyze: () => (
-    <svg {...iconProps}>
-      <path d="M4 19V5" />
-      <path d="M4 19h16" />
-      <path d="m7.5 14.5 3.2-4 3 2.4 4-5.4" />
-    </svg>
-  ),
   assistant: () => (
     <svg {...iconProps}>
       <path d="M5 5.5h14v10H9l-4 3v-13Z" />

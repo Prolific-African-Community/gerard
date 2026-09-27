@@ -1,9 +1,10 @@
 import { createHash } from 'crypto'
 
 import { prisma } from '../../prisma'
-import { getWeekEndDate } from '../date-utils'
+import { formatDateParam, getWeekEndDate } from '../date-utils'
 import { findResourceOccupationConflicts } from '../resource-availability'
 import { analyzePlanningForSuggestions } from '../suggestions/planning-service'
+import { logIntelligenceEvent } from './observability'
 import type { GerardSuggestion } from '../suggestions/types'
 
 /**
@@ -290,6 +291,13 @@ export async function buildPlanningInsights(input: {
   const bySeverity: Record<GerardInsightSeverity, number> = { CRITICAL: 0, ATTENTION: 0, OPPORTUNITY: 0, INFO: 0 }
   for (const insight of ordered) bySeverity[insight.severity] += 1
 
+  logIntelligenceEvent('insights.completed', {
+    week: formatDateParam(input.weekStart),
+    insights: ordered.length,
+    bySeverity,
+    suggestions: analysis.summary.suggestions,
+    incompleteMissions: analysis.diagnostics.incomplete,
+  })
   return {
     weekStart: input.weekStart.toISOString(),
     analyzedAt: analysis.analyzedAt,

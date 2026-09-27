@@ -1255,7 +1255,12 @@ export function WeeklyDispatchBoard({
     }
   }, [viewMode, viewOptions])
   // L'analyse Gerard est déclenchée depuis la barre : le panneau expose son action.
-  const analyzePlanningRef = useRef<(() => void) | null>(null)
+  /**
+   * Ouvre le panneau de résultats « Gerard suggère ». Il n'a plus d'entrée
+   * autonome dans la barre de contrôles : l'analyse arrive d'elle-même par la
+   * surface proactive, qui utilise cette référence pour montrer le détail.
+   */
+  const openSuggestionsRef = useRef<(() => void) | null>(null)
   /** Relance la surface proactive après une modification du planning. */
   const [insightsRefreshKey, setInsightsRefreshKey] = useState(0)
   const [isPlanningFullscreen, setIsPlanningFullscreen] = useState(false)
@@ -3315,11 +3320,6 @@ export function WeeklyDispatchBoard({
               ? () => setIsAutoPlanningOpen(true)
               : undefined
           }
-          onAnalyzePlanning={
-            viewMode === 'planning' && capabilities.canViewPlanning
-              ? () => analyzePlanningRef.current?.()
-              : undefined
-          }
           onCompletePlanningRows={
             viewMode === 'planning' &&
             capabilities.canAssign &&
@@ -3345,7 +3345,7 @@ export function WeeklyDispatchBoard({
             <GerardInsightsPanel
               weekStart={formatDateParam(selectedWeekStartDate)}
               refreshKey={insightsRefreshKey}
-              onSimulate={() => analyzePlanningRef.current?.()}
+              onSimulate={() => openSuggestionsRef.current?.()}
             />
             <GerardSuggestionsPanel
               weekStart={formatDateParam(selectedWeekStartDate)}
@@ -3354,7 +3354,7 @@ export function WeeklyDispatchBoard({
                 return loadOverview()
               }}
               hideTrigger
-              analyzeRef={analyzePlanningRef}
+              analyzeRef={openSuggestionsRef}
             />
           </>
         ) : null}
@@ -3630,7 +3630,10 @@ export function WeeklyDispatchBoard({
         onClose={() => setIsAssistantOpen(false)}
         weekStart={formatDateParam(selectedWeekStartDate)}
         missionReference={selectedMission?.reference}
-        onApplied={() => loadOverview()}
+        onApplied={() => {
+          setInsightsRefreshKey((current) => current + 1)
+          return loadOverview()
+        }}
       />
 
       {(isLoadingOverview || overviewError) && (

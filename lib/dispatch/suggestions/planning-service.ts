@@ -1,9 +1,10 @@
-import { getWeekEndDate } from '../date-utils'
+import { formatDateParam, getWeekEndDate } from '../date-utils'
 import { prisma } from '../../prisma'
 import { buildAutoPlanningSnapshot, fingerprintSnapshot } from '../auto-planning/snapshot'
 import { analyzeExistingPlanningMission } from './planning-analysis'
 import type { GerardSuggestion } from './types'
-import { withRouteOperation } from '../maps/route-control'
+import { measureRouteOperation } from '../maps/route-control'
+import { observeIntelligenceOperation } from '../intelligence/observability'
 
 export type PlanningSuggestionAnalysis = {
   analyzedAt: string
@@ -111,5 +112,27 @@ async function analyzePlanningForSuggestionsInternal(weekStart: Date): Promise<P
 }
 
 export async function analyzePlanningForSuggestions(weekStart: Date): Promise<PlanningSuggestionAnalysis> {
-  return withRouteOperation('Gerard Intelligence analyze', () => analyzePlanningForSuggestionsInternal(weekStart))
+  const week = formatDateParam(weekStart)
+  return observeIntelligenceOperation(
+    { started: 'analysis.started', completed: 'analysis.completed', failed: 'analysis.failed' },
+    { week },
+    async () => {
+      const { result, metrics } = await measureRouteOperation(
+        'Gerard Intelligence analyze',
+        () => analyzePlanningForSuggestionsInternal(weekStart)
+      )
+      return {
+        value: result,
+        completedFields: {
+          analyzedMissions: result.summary.analyzedMissions,
+          incompleteMissions: result.diagnostics.incomplete,
+          suggestions: result.summary.suggestions,
+          routeLookups: metrics.lookups,
+          routeCacheHits: metrics.cacheHits,
+          routeProviderCalls: metrics.googleCalls,
+          routeBlocked: metrics.blockedByLimit,
+        },
+      }
+    }
+  )
 }

@@ -12,6 +12,7 @@ import { requireActiveOrganizationId } from '../../auth/organization-context'
 import { parseWeekStartParam } from '../date-utils'
 import { findResourceOccupationConflicts } from '../resource-availability'
 import { analyzePlanningForSuggestions } from './planning-service'
+import { logIntelligenceEvent } from '../intelligence/observability'
 import type { GerardSuggestion, SuggestionMutationPlan } from './types'
 
 export type SuggestionApplicationStatus =
@@ -167,7 +168,7 @@ async function buildMutationPlan(input: {
   }
 }
 
-export async function applyPlanningSuggestion(input: {
+export type ApplyPlanningSuggestionInput = {
   userId: string
   suggestionId: string
   weekStart: string
@@ -175,7 +176,38 @@ export async function applyPlanningSuggestion(input: {
   /** Empreinte des faits confirmés. Fournie par le jeton signé. */
   evidenceFingerprint?: string
   idempotencyKey: string
-}): Promise<SuggestionApplicationResult> {
+}
+
+/**
+ * Chaque issue d'application est journalisée de façon distincte — appliquée,
+ * rejouée, périmée, en conflit, invalide — avec de quoi la tracer : semaine,
+ * suggestion, mission, utilisateur. Jamais de jeton ni de clé d'idempotence.
+ */
+export async function applyPlanningSuggestion(
+  input: ApplyPlanningSuggestionInput
+): Promise<SuggestionApplicationResult> {
+  const traced = { week: input.weekStart, suggestionId: input.suggestionId, userId: input.userId }
+  logIntelligenceEvent('application.attempted', traced)
+  try {
+    const result = await applyPlanningSuggestionInternal(input)
+    logIntelligenceEvent('application.completed', { ...traced, result: result.status, missionId: result.missionId })
+    return result
+  } catch (error) {
+    if (error instanceof SuggestionApplicationError) {
+      logIntelligenceEvent('application.refused', { ...traced, result: error.status, reason: error.message })
+    } else {
+      logIntelligenceEvent('application.failed', {
+        ...traced,
+        reason: error instanceof Error && 'code' in error ? String(error.code) : 'UNKNOWN',
+      })
+    }
+    throw error
+  }
+}
+
+async function applyPlanningSuggestionInternal(
+  input: ApplyPlanningSuggestionInput
+): Promise<SuggestionApplicationResult> {
   const organizationId = requireActiveOrganizationId()
   const weekStart = parseWeekStartParam(input.weekStart)
   if (!weekStart || !input.suggestionId || !input.snapshotFingerprint || !input.idempotencyKey) {
