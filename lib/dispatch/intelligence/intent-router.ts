@@ -1,6 +1,13 @@
 import type { GerardAssistantIntentResult } from './types'
 
 const missionPattern = /\b(?:GRD|QA)[-_][A-Z0-9-]+\b/i
+const mutationRequestPattern = /^(?:(?:ok|d'accord|oui)[,\s]+)?(?:(?:peux[- ]tu|merci de|je veux que tu)\s+)?(?:applique|appliquer|affecte|affecter|déplace|deplace|change|modifie|modifier|crée|cree)\b/
+/**
+ * Accords brefs : ils demandent une écriture sans nommer l'action. Les
+ * reconnaître ici les fait passer par le chemin gardé de l'assistant, qui exige
+ * une confirmation structurée, au lieu de finir en intention indéterminée.
+ */
+const goAheadPattern = /^(?:ok[,\s]+)?(?:vas[- ]y|fais[- ]le|c['’]est bon|valide|confirme)\b/
 
 function normalize(value: string) {
   return value.trim().replace(/\s+/g, ' ')
@@ -19,7 +26,7 @@ export function routeAssistantIntent(message: string): GerardAssistantIntentResu
   const lower = clean.toLocaleLowerCase('fr-FR')
   const missionReference = clean.match(missionPattern)?.[0]?.toUpperCase()
 
-  if (/^(?:(?:ok|d'accord|oui)[,\s]+)?(?:(?:peux[- ]tu|merci de|je veux que tu)\s+)?(?:applique|appliquer|affecte|affecter|déplace|deplace|change|modifie|modifier|crée|cree)\b/.test(lower)) {
+  if (mutationRequestPattern.test(lower) || goAheadPattern.test(lower)) {
     return { intent: 'UNKNOWN', missionReference, requestsMutation: true }
   }
   if (/\b(simule|simuler|simulation|toujours valide|revalide|revérifie|reverifie)\b/.test(lower)) {

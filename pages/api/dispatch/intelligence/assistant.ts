@@ -2,7 +2,7 @@ import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { answerAssistantQuestion } from '@prolific/gerard-core/intelligence'
 import { requireOrganizationModule, requirePermission } from '../../../../lib/auth/authorization'
-import { permissions } from '../../../../lib/auth/permissions'
+import { hasPermission, permissions } from '../../../../lib/auth/permissions'
 import { parseWeekStartParam } from '../../../../lib/dispatch/date-utils'
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -18,8 +18,25 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     missionReference: typeof rawContext.missionReference === 'string' ? rawContext.missionReference : undefined,
     suggestionId: typeof rawContext.suggestionId === 'string' ? rawContext.suggestionId : undefined,
   } : undefined
+  const rawConfirmation = req.body?.confirmation
+  const confirmation = rawConfirmation && typeof rawConfirmation === 'object' && !Array.isArray(rawConfirmation) && typeof rawConfirmation.token === 'string' && rawConfirmation.token
+    ? { token: rawConfirmation.token }
+    : undefined
+  // La lecture s'arrête à dispatchView. Une confirmation écrit dans le planning :
+  // elle exige explicitement la permission d'affectation et le module Intelligence.
+  if (confirmation) {
+    if (!(await requirePermission(req, res, permissions.dispatchAssign))) return
+    if (!(await requireOrganizationModule(req, res, 'INTELLIGENCE'))) return
+  }
   try {
-    return res.status(200).json(await answerAssistantQuestion({ message, weekStart, conversationContext }))
+    return res.status(200).json(await answerAssistantQuestion({
+      message,
+      weekStart,
+      userId: user.id,
+      canApply: hasPermission(user, permissions.dispatchAssign) && user.enabledModules.includes('INTELLIGENCE'),
+      conversationContext,
+      confirmation,
+    }))
   } catch (error) {
     console.error('Gerard assistant failed', error instanceof Error ? error.message : error)
     return res.status(503).json({ error: 'Gerard ne peut pas consulter le planning pour le moment.' })

@@ -31,6 +31,10 @@ async function main() {
   assert.equal(routeAssistantIntent('Tu vois quelque chose à optimiser ?').intent, 'PLANNING_SUGGESTIONS')
   assert.equal(routeAssistantIntent('Applique-la').requestsMutation, true)
   assert.equal(routeAssistantIntent('OK applique-la.').requestsMutation, true)
+  for (const goAhead of ['Vas-y', 'Vas y', 'Fais-le', 'C’est bon', 'Valide', 'Confirme', 'OK vas-y']) {
+    assert.equal(routeAssistantIntent(goAhead).requestsMutation, true, `accord bref non reconnu : ${goAhead}`)
+  }
+  assert.equal(routeAssistantIntent('Analyse mon planning').requestsMutation, undefined)
   assert.equal(routeAssistantIntent('Pourquoi Julien est refusé sans modifier le planning ?').requestsMutation, undefined)
   assert.equal(parseModelIntent({ intent: 'INVALID' }), null)
   assert.equal(parseModelIntent('not-json'), null)
@@ -56,13 +60,14 @@ async function main() {
   if (originalModel === undefined) delete process.env.OPENAI_MODEL
   else process.env.OPENAI_MODEL = originalModel
   assert.equal(safeFallback.routing.source, 'FALLBACK')
+  assert.equal(safeFallback.routing.providerStatus, 'INVALID_OUTPUT', 'une panne de provider reste distinguable d’un repli déterministe')
   assert.match(safeFallback.answer, /suffisamment de précision/)
   ok('Routeur, ambiguïté et sortie modèle invalide')
 
   const before = await mutationFingerprint()
   const summary = await answerAssistantQuestion({ message: 'Analyse mon planning de cette semaine', weekStart })
   assert.equal(summary.intent, 'PLANNING_SUMMARY')
-  assert.deepEqual(summary.routing, { source: 'ROUTER', providerCalls: 0, providerDurationMs: null })
+  assert.deepEqual(summary.routing, { source: 'ROUTER', providerCalls: 0, providerDurationMs: null, providerStatus: null })
   // Les routes Google restent une dépendance d'intégration : leurs erreurs
   // transitoires doivent être visibles dans les compteurs, pas rendre ce test
   // fonctionnel du routeur dépendant du réseau.
@@ -95,11 +100,15 @@ async function main() {
   assert.match(describeSuggestion(fixture), /62\.0 km à vide et 48\.00 € de marge/)
   ok('F explication suggestion structurée')
 
-  const stale = await simulateSuggestion(weekStart)
+  assert.equal((await simulateSuggestion(weekStart, '')).status, 'UNDESIGNATED')
+  const stale = await simulateSuggestion(weekStart, 'reassignment:inexistante')
   assert.equal(stale.status, 'STALE')
   const simulateReply = await answerAssistantQuestion({ message: 'Simule la meilleure suggestion', weekStart })
-  assert.match(simulateReply.answer, /aucune suggestion valide à simuler/)
-  ok('G/H simulation sans suggestion et stale')
+  assert.match(simulateReply.answer, /Indique la suggestion à simuler/)
+  const simulateUnknown = await answerAssistantQuestion({ message: 'Simule cette proposition', weekStart, conversationContext: { suggestionId: 'reassignment:inexistante' } })
+  assert.match(simulateUnknown.answer, /n’est plus valide/)
+  assert.deepEqual(simulateUnknown.actions, [])
+  ok('G/H simulation désignée obligatoire et suggestion périmée')
 
   const ambiguous = await answerAssistantQuestion({ message: 'Pourquoi pas M sur GRD-260916-06 ?', weekStart })
   assert.ok(ambiguous.answer.includes('ambigu'))
@@ -117,10 +126,13 @@ async function main() {
   assert.match(estimated.answer, /estimation/)
   ok('Anti-hallucination coût estimé')
 
-  const mutation = await answerAssistantQuestion({ message: 'Applique-la', weekStart })
-  assert.match(mutation.answer, /application depuis l’assistant n’est pas activée/)
-  assert.deepEqual(mutation.routing, { source: 'ROUTER', providerCalls: 0, providerDurationMs: null })
-  ok('J tentative application refusée')
+  const mutation = await answerAssistantQuestion({ message: 'Applique-la', weekStart, userId: 'user-test', canApply: true })
+  assert.equal(mutation.intent, 'APPLY_SUGGESTION')
+  assert.match(mutation.answer, /Je ne modifie rien sur un message seul/)
+  assert.deepEqual(mutation.actions, [], 'aucune action confirmable sans suggestion désignée')
+  assert.equal(mutation.application, null)
+  assert.deepEqual(mutation.routing, { source: 'ROUTER', providerCalls: 0, providerDurationMs: null, providerStatus: null })
+  ok('J tentative application par texte libre refusée')
 
   let statusCode = 200
   let payload: unknown

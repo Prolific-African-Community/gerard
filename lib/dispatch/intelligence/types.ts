@@ -8,6 +8,7 @@ export type GerardAssistantIntent =
   | 'PLANNING_SUGGESTIONS'
   | 'SUGGESTION_EXPLANATION'
   | 'SIMULATE_SUGGESTION'
+  | 'APPLY_SUGGESTION'
   | 'UNKNOWN'
 
 export type GerardAssistantFact = {
@@ -17,10 +18,39 @@ export type GerardAssistantFact = {
   confidence?: 'HIGH' | 'MEDIUM' | 'LOW'
 }
 
-export type GerardAssistantAction = {
+export type GerardAssistantSimulateAction = {
   type: 'SIMULATE'
   label: string
   suggestionId: string
+}
+
+/**
+ * Action d'application en attente. Les champs lisibles servent uniquement à
+ * l'affichage : seule la confirmation explicite renvoyée avec `token` autorise
+ * une écriture, et le serveur relit les valeurs dans le jeton signé.
+ */
+export type GerardAssistantConfirmApplyAction = {
+  type: 'CONFIRM_APPLY'
+  label: string
+  suggestionId: string
+  missionReference: string
+  snapshotFingerprint: string
+  idempotencyKey: string
+  summary: string
+  token: string
+}
+
+export type GerardAssistantAction =
+  | GerardAssistantSimulateAction
+  | GerardAssistantConfirmApplyAction
+
+export type GerardAssistantConfirmation = { token: string }
+
+export type GerardAssistantApplicationOutcome = {
+  status: 'APPLIED' | 'ALREADY_APPLIED' | 'STALE' | 'CONFLICT' | 'INVALID' | 'FORBIDDEN'
+  missionId?: string
+  assignmentId?: string
+  applicationId?: string
 }
 
 export type GerardAssistantContext = {
@@ -52,9 +82,22 @@ export type GerardAssistantReply = {
   data: GerardAssistantContext | null
   actions: GerardAssistantAction[]
   warnings: string[]
+  application: GerardAssistantApplicationOutcome | null
   routing: {
     source: 'ROUTER' | 'OPENAI' | 'FALLBACK'
     providerCalls: 0 | 1
     providerDurationMs: number | null
+    /**
+     * Statut brut du fournisseur, pour distinguer une panne de provider d'un
+     * repli déterministe volontaire. `null` quand aucun appel n'a eu lieu.
+     */
+    providerStatus:
+      | 'SUCCESS'
+      | 'UNCONFIGURED'
+      | 'HTTP_ERROR'
+      | 'INVALID_OUTPUT'
+      | 'TIMEOUT'
+      | 'PROVIDER_ERROR'
+      | null
   }
 }

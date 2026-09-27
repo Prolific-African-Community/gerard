@@ -3617,6 +3617,7 @@ export function WeeklyDispatchBoard({
         onClose={() => setIsAssistantOpen(false)}
         weekStart={formatDateParam(selectedWeekStartDate)}
         missionReference={selectedMission?.reference}
+        onApplied={() => loadOverview()}
       />
 
       {(isLoadingOverview || overviewError) && (

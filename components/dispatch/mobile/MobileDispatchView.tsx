@@ -768,6 +768,7 @@ export function MobileDispatchView({
         onClose={() => setIsAssistantOpen(false)}
         weekStart={formatDateParam(selectedWeekStartDate)}
         missionReference={selectedMission?.reference}
+        onApplied={() => refreshOverview()}
       />
 
       {activeTab === 'missions' && capabilities.canViewPlanning ? (

@@ -133,10 +133,18 @@ export async function explainSuggestion(weekStart: Date, suggestionId: string): 
   return analysis.suggestions.find((item) => item.id === suggestionId) ?? null
 }
 
-export async function simulateSuggestion(weekStart: Date, suggestionId?: string) {
+/**
+ * Une simulation cible toujours une suggestion désignée. Aucun repli sur « la
+ * première suggestion » : ce flux mène à une application, et Gerard ne doit
+ * jamais choisir à la place du répartiteur ce qui sera modifié.
+ */
+export async function simulateSuggestion(weekStart: Date, suggestionId: string) {
+  if (!suggestionId) return { status: 'UNDESIGNATED' as const, suggestion: null, snapshotFingerprint: null }
   const analysis = await analyzePlanningForSuggestions(weekStart)
-  const suggestion = suggestionId ? analysis.suggestions.find((item) => item.id === suggestionId) : analysis.suggestions[0]
-  return suggestion ? { status: 'VALID' as const, suggestion, snapshotFingerprint: analysis.snapshotFingerprint } : { status: 'STALE' as const, suggestion: null, snapshotFingerprint: analysis.snapshotFingerprint }
+  const suggestion = analysis.suggestions.find((item) => item.id === suggestionId)
+  return suggestion
+    ? { status: 'VALID' as const, suggestion, snapshotFingerprint: analysis.snapshotFingerprint }
+    : { status: 'STALE' as const, suggestion: null, snapshotFingerprint: analysis.snapshotFingerprint }
 }
 
 export function compatibilityReason(code: keyof typeof compatibilityMessages) {
