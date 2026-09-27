@@ -4,19 +4,23 @@ import { useState } from 'react'
 import type { GerardInsight, GerardInsightReport, GerardInsightSeverity } from '../../../lib/dispatch/intelligence/insights'
 
 /**
- * Présentation des insights. Depuis la refonte, ils ne sont plus posés dans le
- * flux du planning : la grille reste la vue reine et cette section vit dans
- * l'assistant, repliée par défaut dès qu'une conversation commence.
+ * Présentation des points d'attention. Ils vivent dans l'assistant, jamais dans
+ * le flux du planning : la grille reste la vue reine.
  *
- * Aucune action d'écriture ici : ouvrir une mission ou lancer une simulation,
- * rien d'autre.
+ * Parti pris visuel : aucune bordure. Les surfaces se distinguent par le fond,
+ * l'espacement et le rayon. La gravité est portée par un filet vertical aligné
+ * sur toute la hauteur du contenu, ce qui supprime le point flottant mal calé.
+ *
+ * Aucune action d'écriture ici : ouvrir une mission ou lancer une simulation.
  */
-const severityStyles: Record<GerardInsightSeverity, { label: string; dot: string; chip: string }> = {
-  CRITICAL: { label: 'Critique', dot: 'bg-[#d4503f]', chip: 'bg-[#fdecea] text-[#8d2f22]' },
-  ATTENTION: { label: 'Attention', dot: 'bg-[#d79a2b]', chip: 'bg-[#fdf3e0] text-[#7a551a]' },
-  OPPORTUNITY: { label: 'Opportunité', dot: 'bg-[#8fc63d]', chip: 'bg-[#eefad7] text-[#42600f]' },
-  INFO: { label: 'Info', dot: 'bg-[#a8b0a0]', chip: 'bg-black/[0.05] text-[#5b6153]' },
+const severityStyles: Record<GerardInsightSeverity, { label: string; rail: string; text: string }> = {
+  CRITICAL: { label: 'Critique', rail: 'bg-[#d4503f]', text: 'text-[#a33a2c]' },
+  ATTENTION: { label: 'Attention', rail: 'bg-[#e8760d]', text: 'text-[#9a5407]' },
+  OPPORTUNITY: { label: 'Opportunité', rail: 'bg-[#7fb833]', text: 'text-[#4d7317]' },
+  INFO: { label: 'Information', rail: 'bg-[#b9bfb1]', text: 'text-[#78806f]' },
 }
+
+const severityOrder = ['CRITICAL', 'ATTENTION', 'OPPORTUNITY', 'INFO'] as const
 
 export function insightHeadline(report: Pick<GerardInsightReport, 'total'> | null) {
   if (!report || report.total === 0) return 'Rien de particulier à signaler sur cette semaine'
@@ -29,8 +33,8 @@ export type InsightActionHandlers = {
 }
 
 /**
- * Section « Points d'attention » de l'assistant : compacte, repliable, jamais
- * bloquante. Elle résume d'abord, détaille ensuite.
+ * Section « Points à vérifier » : un en-tête cliquable sans cadre, puis la liste.
+ * Repliée, elle n'occupe qu'une ligne.
  */
 export function GerardInsightsSection({
   report,
@@ -48,90 +52,107 @@ export function GerardInsightsSection({
   const [open, setOpen] = useState(defaultOpen)
 
   if (loading && !report) {
-    return <section aria-label="Points d’attention" className="rounded-2xl border border-black/[0.06] bg-white px-4 py-3">
-      <p className="text-[12px] font-medium text-[#8a9080]">Analyse de la semaine…</p>
-    </section>
+    return <p className="px-1 py-1 text-[13px] text-[#8a9080]">Analyse de la semaine…</p>
   }
   if (error) {
-    return <section aria-label="Points d’attention" className="rounded-2xl border border-black/[0.06] bg-white px-4 py-3">
-      <p className="text-[12px] font-medium text-[#8a9080]">Gerard n’a pas pu analyser cette semaine.</p>
-    </section>
+    return <p className="px-1 py-1 text-[13px] text-[#8a9080]">Gerard n’a pas pu analyser cette semaine.</p>
   }
   if (!report) return null
 
   const counts = report.bySeverity
-  return <section aria-label="Points d’attention" className="overflow-hidden rounded-2xl border border-black/[0.06] bg-white shadow-[0_1px_2px_rgba(17,18,15,0.04)]">
+  const present = severityOrder.filter((severity) => counts[severity] > 0)
+
+  return <section aria-label="Points à vérifier">
     <button
       type="button"
       onClick={() => setOpen((current) => !current)}
       aria-expanded={open}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-black/[0.02]"
+      className="group flex w-full items-center gap-3 rounded-[14px] border-0 bg-transparent px-2 py-2 text-left transition-colors hover:bg-black/[0.03]"
     >
-      <span className="flex min-w-0 flex-1 items-center gap-2">
-        <span className="text-[13px] font-semibold tracking-[-0.01em] text-[#16180f]">{insightHeadline(report)}</span>
+      <span className="flex-1 text-[15px] font-semibold tracking-[-0.015em] text-[#14160f]">
+        {insightHeadline(report)}
       </span>
-      {report.total > 0 ? <span className="flex shrink-0 items-center gap-1">
-        {(['CRITICAL', 'ATTENTION', 'OPPORTUNITY', 'INFO'] as const)
-          .filter((severity) => counts[severity] > 0)
-          .map((severity) => <span key={severity} className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${severityStyles[severity].chip}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${severityStyles[severity].dot}`} />{counts[severity]}
-          </span>)}
+      {present.length ? <span className="flex shrink-0 items-center gap-1.5" aria-hidden>
+        {present.map((severity) => <span key={severity} className="flex items-center gap-1">
+          <span className={`h-[7px] w-[7px] rounded-full ${severityStyles[severity].rail}`} />
+          <span className="text-[12.5px] font-medium tabular-nums text-[#6d7466]">{counts[severity]}</span>
+        </span>)}
       </span> : null}
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className={`h-3.5 w-3.5 shrink-0 text-[#9aa192] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}>
+      <svg
+        viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+        className={`h-4 w-4 shrink-0 text-[#a6ad9d] transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+        aria-hidden
+      >
         <path d="m6 9 6 6 6-6" />
       </svg>
     </button>
 
-    {open ? <div className="border-t border-black/[0.05] px-3 pb-3 pt-2">
+    {open ? <div className="pt-1">
       {report.total === 0
-        ? <p className="px-1 py-2 text-[12px] leading-5 text-[#7c8374]">
+        ? <p className="px-2 pb-1 pt-1 text-[13px] leading-[21px] text-[#7c8374]">
             Aucun conflit, aucune mission à planifier et aucune amélioration matérielle détectée sur les missions analysables de la semaine.
           </p>
-        : <ul className="space-y-1.5">
+        : <ul className="list-none space-y-1">
             {report.insights.map((insight) => <InsightRow key={insight.id} insight={insight} onSimulate={onSimulate} onOpenMission={onOpenMission} />)}
           </ul>}
       {report.total > report.insights.length
-        ? <p className="px-1 pt-2 text-[11px] text-[#9aa192]">{report.total - report.insights.length} autre(s) point(s) non affiché(s).</p>
+        ? <p className="px-2 pt-2 text-[12.5px] text-[#9aa192]">{report.total - report.insights.length} autre(s) point(s) non affiché(s).</p>
         : null}
     </div> : null}
   </section>
 }
 
 /**
- * Ligne d'un insight : gravité, fait, actions de lecture. Une action n'est
- * désactivée que si la surface hôte ne sait pas l'exécuter.
+ * Ligne d'un insight. Le filet de gravité court sur toute la hauteur : titre,
+ * détail et action restent alignés sur une seule colonne de texte.
  */
 export function InsightRow({ insight, onSimulate, onOpenMission }: { insight: GerardInsight } & InsightActionHandlers) {
   const style = severityStyles[insight.severity]
-  return <li className="rounded-xl px-2.5 py-2 transition-colors hover:bg-black/[0.02]">
-    <div className="flex items-start gap-2.5">
-      <span className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${style.dot}`} aria-hidden />
+  return <li className="rounded-[14px] px-2 py-2.5 transition-colors hover:bg-black/[0.025]">
+    <div className="flex gap-3">
+      <span className={`w-[3px] shrink-0 self-stretch rounded-full ${style.rail}`} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-baseline gap-x-2 text-[12.5px] font-semibold leading-5 tracking-[-0.01em] text-[#16180f]">
-          {insight.title}
-          <span className={`rounded-full px-1.5 py-px text-[9.5px] font-semibold uppercase tracking-wide ${style.chip}`}>{style.label}</span>
-        </p>
-        <p className="mt-0.5 text-[11.5px] leading-[17px] text-[#71786a]">{insight.summary}</p>
-        {insight.availableActions.length ? <div className="mt-2 flex flex-wrap gap-1.5">
+        <p className={`text-[12px] font-medium uppercase tracking-[0.07em] ${style.text}`}>{style.label}</p>
+        <p className="mt-1 text-[14px] font-semibold leading-[20px] tracking-[-0.01em] text-[#14160f]">{insight.title}</p>
+        <p className="mt-1 text-[13px] leading-[20px] text-[#6d7466]">{insight.summary}</p>
+
+        {insight.availableActions.length ? <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+          {/* Le libellé vient du moteur : il porte la référence de mission, que
+              le titre ne répète pas toujours. Seule sa forme change ici. */}
           {insight.availableActions.map((action) => action.type === 'SIMULATE'
-            ? <button
+            ? <InsightAction
                 key={action.suggestionId}
-                type="button"
-                disabled={!onSimulate}
-                title={onSimulate ? undefined : 'Simulation indisponible depuis cette vue'}
+                label={action.label}
+                disabledReason={onSimulate ? null : 'Simulation indisponible depuis cette vue'}
                 onClick={() => onSimulate?.({ suggestionId: action.suggestionId, missionId: action.missionId, proposedPairRowId: action.proposedPairRowId })}
-                className="rounded-lg bg-[#16180f] px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-35"
-              >{action.label}</button>
-            : <button
+              />
+            : <InsightAction
                 key={`${action.type}-${action.missionId}`}
-                type="button"
-                disabled={!onOpenMission}
-                title={onOpenMission ? undefined : 'Ouverture indisponible depuis cette vue'}
+                label={action.label}
+                disabledReason={onOpenMission ? null : 'Ouverture indisponible depuis cette vue'}
                 onClick={() => onOpenMission?.({ missionId: action.missionId, missionReference: action.missionReference })}
-                className="rounded-lg bg-black/[0.055] px-2.5 py-1 text-[11px] font-semibold text-[#3f4539] transition-colors hover:bg-black/[0.085] disabled:cursor-not-allowed disabled:opacity-35"
-              >{action.label}</button>)}
+              />)}
         </div> : null}
       </div>
     </div>
   </li>
+}
+
+/**
+ * Action d'insight : un lien affirmé plutôt qu'un petit bouton encadré. La zone
+ * de clic déborde du texte pour rester confortable.
+ */
+function InsightAction({ label, onClick, disabledReason }: { label: string; onClick: () => void; disabledReason: string | null }) {
+  return <button
+    type="button"
+    onClick={onClick}
+    disabled={Boolean(disabledReason)}
+    title={disabledReason ?? undefined}
+    className="group -mx-1.5 inline-flex items-center gap-1 rounded-lg border-0 bg-transparent px-1.5 py-1 text-[13px] font-semibold text-[#4a6b12] transition-colors hover:bg-[#f1f8e2] hover:text-[#3b5a0c] disabled:cursor-not-allowed disabled:bg-transparent disabled:text-[#a6ad9d]"
+  >
+    {label}
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5 group-disabled:translate-x-0" aria-hidden>
+      <path d="M5 12h13M13 6l6 6-6 6" />
+    </svg>
+  </button>
 }

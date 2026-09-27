@@ -128,9 +128,14 @@ export function ControlButton({
     >
       <span className="flex h-[18px] w-[18px] items-center justify-center">{icon}</span>
       {showLabel ? <span className="whitespace-nowrap">{label}</span> : null}
+      {/* Pastille de notification : orange, lisible, cerclée de la couleur de
+          la barre pour se détacher du bouton qu'elle chevauche. */}
       {typeof badge === "number" && badge > 0 ? (
-        <span className="absolute -right-0.5 -top-0.5 flex h-[15px] min-w-[15px] items-center justify-center rounded-full bg-[var(--brand-accent)] px-1 text-[9px] font-bold text-[#11130f]">
-          {badge}
+        <span
+          aria-hidden
+          className="absolute -right-1 -top-1 flex h-[19px] min-w-[19px] items-center justify-center rounded-full bg-[#e8760d] px-[5px] text-[11px] font-semibold leading-none text-white shadow-[0_1px_3px_rgba(232,118,13,0.45)] ring-[2.5px] ring-[#f4f5f1]"
+        >
+          {badge > 99 ? "99+" : badge}
         </span>
       ) : null}
     </button>

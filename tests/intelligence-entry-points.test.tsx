@@ -128,3 +128,58 @@ for (const file of [
   )
 }
 console.log('G aucune entrée Intelligence ne déclenche l auto-planification: OK')
+
+// H — pastille de notification : absente à zéro, orange et lisible au-delà.
+const withoutBadge = renderToStaticMarkup(
+  <DispatchToolbar
+    viewMode="planning" viewOptions={viewOptions} onViewChange={() => {}}
+    selectedWeekStartDate={weekStart} onWeekChange={() => {}}
+    onOpenAssistant={() => {}} assistantBadge={null}
+  />
+)
+assert.ok(!/e8760d/.test(withoutBadge), 'aucune pastille quand il n’y a rien à signaler')
+assert.ok(!/>0</.test(withoutBadge), 'un « 0 » ne doit jamais s’afficher')
+assert.match(withoutBadge, /aria-label="Assistant Gerard"/)
+
+const withBadge = renderToStaticMarkup(
+  <DispatchToolbar
+    viewMode="planning" viewOptions={viewOptions} onViewChange={() => {}}
+    selectedWeekStartDate={weekStart} onWeekChange={() => {}}
+    onOpenAssistant={() => {}} assistantBadge={4}
+  />
+)
+assert.match(withBadge, /bg-\[#e8760d\]/, 'la pastille doit être orange')
+assert.match(withBadge, />4</, 'la pastille doit porter le nombre')
+assert.match(withBadge, /rounded-full/)
+assert.match(withBadge, /items-center justify-center/, 'le chiffre doit être centré')
+assert.match(withBadge, /title="Assistant Gerard — 4 points à vérifier"/)
+// Au-delà de 99, on tronque plutôt que de déformer le bouton.
+assert.match(
+  renderToStaticMarkup(
+    <DispatchToolbar
+      viewMode="planning" viewOptions={viewOptions} onViewChange={() => {}}
+      selectedWeekStartDate={weekStart} onWeekChange={() => {}}
+      onOpenAssistant={() => {}} assistantBadge={120}
+    />
+  ),
+  />99\+</
+)
+console.log('H pastille absente à zéro, orange et centrée au-delà: OK')
+
+// I — le poste fixe et le mobile portent la même pastille orange.
+const mobileHeader = readFileSync('components/dispatch/mobile/MobileDispatchHeader.tsx', 'utf8')
+assert.match(mobileHeader, /bg-\[#e8760d\]/, 'le mobile doit porter la même tonalité orange')
+assert.match(mobileHeader, /assistantBadge \? \(/, 'aucune pastille mobile sans point à vérifier')
+console.log('I même pastille sur poste fixe et mobile: OK')
+
+// J — la zone assistant ne s'appuie plus sur des cadres : les surfaces se
+// distinguent par le fond, l'espacement et le rayon.
+for (const file of [
+  'components/dispatch/intelligence/GerardAssistantPanel.tsx',
+  'components/dispatch/intelligence/GerardInsightsPanel.tsx',
+]) {
+  const source = readFileSync(file, 'utf8')
+  const borders = source.match(/\bborder(-[trbl])?(-\[|\s|"|`)/g) ?? []
+  assert.equal(borders.length, 0, `${file} ne doit plus dessiner de cadre : ${borders.join(', ')}`)
+}
+console.log('J plus aucun cadre dans la zone assistant: OK')

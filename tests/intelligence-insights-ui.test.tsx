@@ -76,7 +76,7 @@ assert.match(rows[0], />Ouvrir GRD-01</)
 assert.match(rows[1], />Opportunité</)
 assert.match(rows[1], />62 km à vide peuvent être évités</)
 assert.match(rows[1], />Simuler GRD-02</)
-assert.match(rows[2], />Info</)
+assert.match(rows[2], />Information</)
 assert.match(rows[2], />Données manquantes : durée de route non calculée\.</)
 assert.match(
   renderToStaticMarkup(<InsightRow insight={insight({ id: 'x', type: 'PLANNING_CONFLICT', severity: 'CRITICAL', title: 'Conflit' })} />),
@@ -133,7 +133,7 @@ const sectionMarkup = renderToStaticMarkup(
 )
 assert.match(sectionMarkup, /3 points à vérifier/)
 assert.match(sectionMarkup, /aria-expanded="true"/, 'la section est dépliable')
-assert.match(sectionMarkup, /aria-label="Points d’attention"/)
+assert.match(sectionMarkup, /aria-label="Points à vérifier"/)
 assert.match(sectionMarkup, />Ouvrir GRD-01</)
 assert.match(sectionMarkup, />Simuler GRD-02</)
 assert.ok(!/role="dialog"/.test(markup + sectionMarkup), 'la surface proactive n’ouvre aucune modale')

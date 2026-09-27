@@ -64,7 +64,10 @@ console.log('B ouvrir la confirmation n envoie aucune requête: OK')
 const markup = renderToStaticMarkup(
   <AssistantApplyConfirmation action={action} onCancel={() => {}} onConfirm={() => {}} />
 )
-assert.match(markup, /Cette action modifiera l’affectation de QA-CHAT-01\. Confirmer \?/)
+// La question est désormais portée par les deux boutons ; le texte nomme la
+// mission et annonce clairement qu'une confirmation est attendue.
+assert.match(markup, /Confirmation requise/)
+assert.match(markup, /Cette action modifiera l’affectation de QA-CHAT-01\./)
 assert.match(markup, /aria-label="Confirmer l’application"/)
 assert.match(markup, />Annuler</)
 assert.match(markup, />Confirmer</)

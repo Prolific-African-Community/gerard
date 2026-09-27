@@ -91,9 +91,14 @@ export function MobileDispatchHeader({
               className="relative flex h-11 w-11 items-center justify-center rounded-full border-0 bg-[#eaffc8] text-sm font-black text-[#2d3d14] shadow-[0_10px_24px_rgba(120,170,40,0.16)] outline-none transition active:scale-95"
             >
               G
+              {/* Même pastille orange que sur le poste fixe, cerclée du fond de
+                  l'en-tête pour se détacher du bouton qu'elle chevauche. */}
               {assistantBadge ? (
-                <span className="absolute -right-0.5 -top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-[#16180f] px-1 text-[10px] font-bold text-white ring-2 ring-white">
-                  {assistantBadge}
+                <span
+                  aria-hidden
+                  className="absolute -right-1 -top-1 flex h-[20px] min-w-[20px] items-center justify-center rounded-full bg-[#e8760d] px-[5px] text-[11px] font-semibold leading-none text-white shadow-[0_1px_3px_rgba(232,118,13,0.45)] ring-[2.5px] ring-[#f4f5f1]"
+                >
+                  {assistantBadge > 99 ? '99+' : assistantBadge}
                 </span>
               ) : null}
             </button>
