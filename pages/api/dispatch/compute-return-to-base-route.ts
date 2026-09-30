@@ -3,7 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { requirePermission } from '../../../lib/auth/authorization'
 import { permissions } from '../../../lib/auth/permissions'
 
-import { configuredOperatingBase } from '../../../lib/dispatch/base-location'
+import { resolveOperatingBase } from '../../../lib/dispatch/operating-base'
 import { computeGoogleRoute } from '../../../lib/dispatch/maps/google'
 import { prisma } from '../../../lib/prisma'
 
@@ -160,7 +160,7 @@ async function handler(
       })
     }
 
-    const operatingBase = configuredOperatingBase()
+    const operatingBase = await resolveOperatingBase()
     if (!operatingBase) {
       return res.status(409).json({
         error: 'Operating base is not configured',

@@ -14,7 +14,6 @@ export type TrailerRemovalFacts = {
 
 export type TrailerRemovalDecision =
   | { action: 'BLOCK'; reason: string }
-  | { action: 'ARCHIVE'; reason: string }
   | { action: 'DELETE'; reason: null }
 
 export function decideTrailerRemoval(
@@ -46,19 +45,22 @@ export function decideTrailerRemoval(
       reason: `Impossible de supprimer : cette remorque possède ${facts.activeMaintenanceCount} intervention(s) de maintenance active(s).`,
     }
   }
-  const history =
-    facts.historicalAssignmentCount +
-    facts.custodyEventCount +
-    facts.maintenanceCount +
-    facts.inspectionCount +
-    facts.movementCount +
-    facts.missionEventCount +
-    facts.historicalPlanningCount
-  if (history > 0) {
-    return {
-      action: 'ARCHIVE',
-      reason: `Remorque retirée du parc actif : ${history} relation(s) historique(s) ont été conservées.`,
-    }
-  }
+  // Historical references do not keep an explicitly deleted fleet resource
+  // alive. The API preserves the business records and removes/detaches only
+  // their nullable trailer link.
   return { action: 'DELETE', reason: null }
 }
+
+/** Detach durable history and remove trailer-only history in one transaction. */
+export async function hardDeleteTrailer(tx: Prisma.TransactionClient, trailerId: string) {
+  await tx.parkSpot.updateMany({ where: { trailerId }, data: { trailerId: null, occupiedAt: null, placedById: null } })
+  await tx.planningRow.updateMany({ where: { trailerId }, data: { trailerId: null } })
+  await tx.missionAssignment.updateMany({ where: { trailerId }, data: { trailerId: null, trailerChangePlanned: false } })
+  await tx.missionEvent.updateMany({ where: { trailerId }, data: { trailerId: null } })
+  await tx.maintenanceRequest.updateMany({ where: { trailerId }, data: { trailerId: null } })
+  await tx.parkInspection.updateMany({ where: { trailerId }, data: { trailerId: null } })
+  await tx.parkMovement.updateMany({ where: { trailerId }, data: { trailerId: null } })
+  await tx.trailerCustodyEvent.deleteMany({ where: { trailerId } })
+  await tx.trailer.delete({ where: { id: trailerId } })
+}
+import type { Prisma } from '@prisma/client'

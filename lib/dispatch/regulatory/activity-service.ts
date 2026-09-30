@@ -15,9 +15,9 @@ import {
 import { presentDriverRegulatoryState } from './presentation'
 import { buildDriverRegulatoryAssessment } from './assessment'
 import {
-  configuredOperatingBase,
   resolveDriverPosition,
 } from '../driver-position'
+import { resolveOperatingBase } from '../operating-base'
 
 type AssignmentWithMission = MissionAssignment & { mission: Mission }
 
@@ -170,7 +170,7 @@ export async function getDriverActivityState(driverId: string, at = new Date()) 
             completedAt: completedAssignment.mission.deliveryDate,
           }
         : null,
-    operatingBase: configuredOperatingBase(),
+    operatingBase: await resolveOperatingBase(),
   })
   return {
     driver,

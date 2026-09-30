@@ -374,6 +374,10 @@ model Organization {
   accentColor    String?
   faviconUrl     String?
   applicationTitle String?
+  operatingBaseAddress String?
+  operatingBasePlaceId String?
+  operatingBaseLat     Float?
+  operatingBaseLng     Float?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
@@ -588,6 +592,11 @@ model Trailer {
   notes                        String?
   capacityKg                   Int?
   couplingType                 String?
+  currentLocationAddress       String?
+  currentLocationPlaceId       String?
+  currentLocationLat           Float?
+  currentLocationLng           Float?
+  currentLocationUpdatedAt     DateTime?
   custodyState                 TrailerCustodyState @default(EMPTY)
   custodyVersion               Int                 @default(0)
   createdAt                    DateTime            @default(now())
@@ -930,7 +939,7 @@ model TrailerCustodyEvent {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   trailerId String
-  trailer   Trailer @relation(fields: [trailerId], references: [id], onDelete: Restrict)
+  trailer   Trailer @relation(fields: [trailerId], references: [id], onDelete: Cascade)
 
   missionId String?
   mission   Mission? @relation(fields: [missionId], references: [id], onDelete: SetNull)
@@ -1224,7 +1233,7 @@ model MaintenanceRequest {
   updatedAt              DateTime                    @updatedAt
 
   truck   Truck?   @relation(fields: [truckId], references: [id], onDelete: Restrict)
-  trailer Trailer? @relation(fields: [trailerId], references: [id], onDelete: Restrict)
+  trailer Trailer? @relation(fields: [trailerId], references: [id], onDelete: SetNull)
 
   statusHistory     MaintenanceStatusHistory[]
   interventionLines MaintenanceInterventionLine[]
@@ -1422,7 +1431,7 @@ model ParkInspection {
   updatedAt      DateTime                     @updatedAt
 
   truck     Truck?                 @relation(fields: [truckId], references: [id], onDelete: Restrict)
-  trailer   Trailer?               @relation(fields: [trailerId], references: [id], onDelete: Restrict)
+  trailer   Trailer?               @relation(fields: [trailerId], references: [id], onDelete: SetNull)
   inspector User?                  @relation("ParkInspectionInspector", fields: [inspectorId], references: [id], onDelete: SetNull)
   results   ParkInspectionResult[]
 

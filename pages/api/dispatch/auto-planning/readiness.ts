@@ -17,6 +17,7 @@ import { buildPreparedDriverTruckPairs } from '../../../../lib/dispatch/driver-t
 import { evaluateMissionPrerequisites } from '../../../../lib/dispatch/mission-prerequisites'
 import { getDriverActivityState } from '../../../../lib/dispatch/regulatory'
 import { prisma } from '../../../../lib/prisma'
+import { resolveOperatingBase } from '../../../../lib/dispatch/operating-base'
 
 const unavailableTrucks = new Set<TruckStatus>([
   TruckStatus.IN_MAINTENANCE,
@@ -41,7 +42,7 @@ async function handler(
     return res.status(400).json({ error: 'Semaine invalide.' })
   }
   const weekEnd = getWeekEndDate(weekStart)
-  const [missions, pairs] = await Promise.all([
+  const [missions, pairs, operatingBase] = await Promise.all([
     prisma.mission.findMany({
       orderBy: [{ pickupDate: 'asc' }, { id: 'asc' }],
       include: {
@@ -49,6 +50,7 @@ async function handler(
       },
     }),
     buildPreparedDriverTruckPairs(weekStart),
+    resolveOperatingBase(),
   ])
   const missionScope = classifyPlanningMissions({
     missions,
@@ -81,20 +83,6 @@ async function handler(
       .filter((state): state is NonNullable<typeof state> => Boolean(state))
       .map((state) => [state.driver.id, state])
   )
-  const regulatedDriverIds = new Set(
-    regulatoryStates
-      .filter(
-        (state): state is NonNullable<typeof state> =>
-          Boolean(state) &&
-          !state!.assessment.controls.some(
-            (control) =>
-              (control.key === 'HISTORY' ||
-                control.key === 'DRIVING_AVAILABLE') &&
-              control.status === 'AVERTISSEMENT'
-          )
-      )
-      .map((state) => state.driver.id)
-  )
   const missionItems = included.map((mission) => {
     const assignedDriverId = mission.assignment?.driverId ?? null
     return {
@@ -107,7 +95,7 @@ async function handler(
       prerequisites: evaluateMissionPrerequisites(mission, {
         assigned: Boolean(assignedDriverId),
         regulatoryStateKnown: Boolean(
-          assignedDriverId && regulatedDriverIds.has(assignedDriverId)
+          assignedDriverId && regulatoryByDriverId.has(assignedDriverId)
         ),
       }),
       pickupResolutionStatus: mission.pickupResolutionStatus,
@@ -136,9 +124,9 @@ async function handler(
         pair.assignedTruck &&
           !regulatory?.position.usable
       ),
-      missingRegulatoryState: Boolean(
-        pair.driver && !regulatedDriverIds.has(pair.driver.id)
-      ),
+      // A partial history is a reservation presented by the assessment, not a
+      // prerequisite blocker. Only a wholly missing calculated state is absent.
+      missingRegulatoryState: Boolean(pair.driver && !regulatory),
       regulatoryStatus: regulatory?.assessment.status ?? 'AVERTISSEMENT',
       regulatoryControls: regulatory?.assessment.controls ?? [],
       unavailable: Boolean(
@@ -149,19 +137,13 @@ async function handler(
       ),
     }
   })
-  // §10 : la base opérationnelle est configurée exclusivement par variables
-  // d'environnement (source de vérité unique, modification par redéploiement).
-  const baseLatitude = Number(process.env.DISPATCH_BASE_LATITUDE)
-  const baseLongitude = Number(process.env.DISPATCH_BASE_LONGITUDE)
-  const baseConfigured =
-    Number.isFinite(baseLatitude) && Number.isFinite(baseLongitude)
   return res.status(200).json({
     missionScope,
     base: {
-      configured: baseConfigured,
-      latitude: baseConfigured ? baseLatitude : null,
-      longitude: baseConfigured ? baseLongitude : null,
-      source: 'ENVIRONMENT',
+      configured: Boolean(operatingBase),
+      latitude: operatingBase?.latitude ?? null,
+      longitude: operatingBase?.longitude ?? null,
+      source: operatingBase?.source ?? 'NONE',
     },
     missions: missionItems,
     pairs: pairItems,

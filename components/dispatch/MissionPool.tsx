@@ -43,6 +43,7 @@ import { TrailerCard as ResourceTrailerCard } from './TrailerCard'
 import { TruckCard } from './TruckCard'
 import { useResourceCardActivation } from './useResourceCardActivation'
 import { VehicleMaintenanceSection } from './VehicleMaintenanceSection'
+import { AddressAutocomplete, type AddressPlace } from './AddressAutocomplete'
 import { MaintenanceRequestDialog } from './MaintenanceRequestDialog'
 import type { MaintenanceTarget } from './MaintenanceRequestDialog'
 import { ResourcePoolControlPanel } from './ResourcePoolPrimitives'
@@ -194,6 +195,10 @@ export type TrailerFormData = {
   technicalInspectionDate?: string | null
   capacityKg?: number | null
   couplingType?: string | null
+  currentLocationAddress?: string | null
+  currentLocationPlaceId?: string | null
+  currentLocationLat?: number | null
+  currentLocationLng?: number | null
 }
 
 const truckStatusOptions: TruckStatus[] = [
@@ -322,6 +327,11 @@ const emptyTrailerForm = {
   technicalInspectionDate: '',
   capacityKg: '',
   couplingType: '',
+  locationMode: 'BASE' as 'BASE' | 'OTHER',
+  currentLocationAddress: '',
+  currentLocationPlaceId: '',
+  currentLocationLat: '',
+  currentLocationLng: '',
 }
 
 function generateDriverUsername(name: string) {
@@ -1385,7 +1395,7 @@ function DriverFormModal({
     }
 
     const confirmed = window.confirm(
-      'Supprimer cette remorque si elle est inutilisée, ou la retirer du parc actif si son historique doit être conservé ?'
+      'Supprimer cet élément ? Cette action est définitive.'
     )
 
     if (!confirmed) {
@@ -1603,6 +1613,11 @@ function TrailerFormModal({
               ? String(trailer.capacityKg)
               : '',
           couplingType: trailer.couplingType ?? '',
+          locationMode: trailer.currentLocationLat != null && trailer.currentLocationLng != null ? 'OTHER' as const : 'BASE' as const,
+          currentLocationAddress: trailer.currentLocationAddress ?? '',
+          currentLocationPlaceId: trailer.currentLocationPlaceId ?? '',
+          currentLocationLat: trailer.currentLocationLat != null ? String(trailer.currentLocationLat) : '',
+          currentLocationLng: trailer.currentLocationLng != null ? String(trailer.currentLocationLng) : '',
         }
       : emptyTrailerForm
   )
@@ -1674,6 +1689,10 @@ function TrailerFormModal({
         // Compatibilité technique : null = « Non renseigné » (jamais zéro).
         capacityKg,
         couplingType: formState.couplingType ? formState.couplingType : null,
+        currentLocationAddress: formState.locationMode === 'OTHER' ? getOptionalValue(formState.currentLocationAddress) : null,
+        currentLocationPlaceId: formState.locationMode === 'OTHER' ? getOptionalValue(formState.currentLocationPlaceId) : null,
+        currentLocationLat: formState.locationMode === 'OTHER' && formState.currentLocationLat ? Number(formState.currentLocationLat) : null,
+        currentLocationLng: formState.locationMode === 'OTHER' && formState.currentLocationLng ? Number(formState.currentLocationLng) : null,
       })
     } catch (submitError) {
       console.error('Unable to save trailer', submitError)
@@ -1693,7 +1712,7 @@ function TrailerFormModal({
     }
 
     const confirmed = window.confirm(
-      'Supprimer cet élément ? Cette action est définitive.'
+      `Supprimer ${trailer?.plateNumber ?? 'cette remorque'} ?\nLa remorque disparaîtra du parc et de la planification.\nLes missions/factures historiques sont conservées.`
     )
 
     if (!confirmed) {
@@ -1784,6 +1803,14 @@ function TrailerFormModal({
               ))}
             </select>
           </label>
+          <label>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">Localisation</span>
+            <select value={formState.locationMode} onChange={(event) => updateField('locationMode', event.target.value)} className="focus:ring-lime-200/35 mt-2 h-12 w-full rounded-2xl border border-black/10 bg-black/[0.025] px-4 text-sm font-semibold text-[#171814] outline-none transition focus:border-lime-300 focus:bg-white focus:ring-4">
+              <option value="BASE">À la base</option>
+              <option value="OTHER">Autre adresse</option>
+            </select>
+          </label>
+          {formState.locationMode === 'OTHER' ? <div className="sm:col-span-2"><AddressAutocomplete label="Localisation actuelle" value={formState.currentLocationAddress} placeId={formState.currentLocationPlaceId} onChange={(value) => updateField('currentLocationAddress', value)} onSelect={(place: AddressPlace) => setFormState((current) => ({ ...current, currentLocationAddress: place.label, currentLocationPlaceId: place.placeId, currentLocationLat: place.lat == null ? '' : String(place.lat), currentLocationLng: place.lng == null ? '' : String(place.lng) }))} /></div> : null}
           <label>
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">
               Statut
@@ -2008,7 +2035,7 @@ function TrailerFormModal({
 
         <FormActions
           canDelete={Boolean(onDelete)}
-          deleteLabel="Supprimer / retirer du parc actif"
+          deleteLabel="Supprimer la remorque"
           isDeleting={isDeleting}
           isSubmitting={isSubmitting}
           submitLabel={trailer ? 'Enregistrer' : 'Créer'}

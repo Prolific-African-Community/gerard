@@ -40,6 +40,11 @@ type TrailerPayload = {
   technicalInspectionDate?: Date | null;
   capacityKg?: number | null;
   couplingType?: string | null;
+  currentLocationAddress?: string | null;
+  currentLocationPlaceId?: string | null;
+  currentLocationLat?: number | null;
+  currentLocationLng?: number | null;
+  currentLocationUpdatedAt?: Date | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -78,6 +83,15 @@ function isTrailerLoadStatus(value: unknown): value is TrailerLoadStatus {
 
 function isTrailerCargoType(value: unknown): value is TrailerCargoType {
   return Object.values(TrailerCargoType).some((type) => type === value);
+}
+
+function parseLocation(body: Record<string, unknown>) {
+  const address = getOptionalString(body.currentLocationAddress);
+  const placeId = getOptionalString(body.currentLocationPlaceId);
+  const lat = body.currentLocationLat == null || body.currentLocationLat === "" ? null : Number(body.currentLocationLat);
+  const lng = body.currentLocationLng == null || body.currentLocationLng === "" ? null : Number(body.currentLocationLng);
+  if ((lat === null) !== (lng === null) || (lat !== null && (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng! < -180 || lng! > 180))) return null;
+  return { address, placeId, lat, lng };
 }
 
 type ParseResult = { payload: TrailerPayload } | { error: string };
@@ -167,6 +181,8 @@ function parsePayload(body: unknown): ParseResult {
     loadStatus === TrailerLoadStatus.LOADED && normalizedCargoType
       ? normalizedCargoType
       : null;
+  const location = parseLocation(body);
+  if (!location) return { error: "Localisation actuelle invalide." };
 
   return {
     payload: {
@@ -188,6 +204,11 @@ function parsePayload(body: unknown): ParseResult {
       technicalInspectionDate,
       capacityKg: toPrismaValue(capacityKg),
       couplingType: toPrismaValue(couplingType),
+      currentLocationAddress: location.address,
+      currentLocationPlaceId: location.placeId,
+      currentLocationLat: location.lat,
+      currentLocationLng: location.lng,
+      currentLocationUpdatedAt: location.lat === null ? null : new Date(),
     },
   };
 }

@@ -104,6 +104,11 @@ export type Trailer = {
   notes?: string | null
   capacityKg?: number | null
   couplingType?: string | null
+  currentLocationAddress?: string | null
+  currentLocationPlaceId?: string | null
+  currentLocationLat?: number | null
+  currentLocationLng?: number | null
+  currentLocationUpdatedAt?: string | null
   custodyState?: TrailerCustodyState
   custodyVersion?: number
   activeMaintenance?: MaintenanceSummary | null

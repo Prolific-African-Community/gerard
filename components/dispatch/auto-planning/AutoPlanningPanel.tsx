@@ -1691,10 +1691,11 @@ function Unassigned({
       </h3>
       <div className="mt-3 space-y-2">
         {items.map((item) => {
-          const category = translateReasonCode(item.category)
-          const codeLabels = (item.codes ?? [])
-            .filter((code) => code !== item.category)
-            .map((code) => translateReasonCode(code))
+          const labels = (item.codes ?? []).map((code) => translateReasonCode(code))
+          const category = labels.find((label) => label.severity === 'BLOCKING' && label.demonstrated) ?? translateReasonCode(item.category)
+          const codeLabels = labels
+            .filter((label) => label.code !== category.code)
+            .filter((label) => label.severity !== 'BLOCKING')
           return (
             <div
               key={item.missionId}
@@ -1715,6 +1716,7 @@ function Unassigned({
               <p className="mt-0.5 text-[10px] text-[#6a7166]">
                 {category.explanation}
               </p>
+              {codeLabels.length ? <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.12em] text-[#777d72]">Réserves</p> : null}
               {codeLabels.map((label) => (
                 <p
                   key={label.code}

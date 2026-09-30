@@ -29,10 +29,8 @@ import { classifyPlanningMissions } from './mission-scope'
 import { prepareCandidateApproachRoutes } from './approach-routes'
 import { withRouteOperation } from '../maps/route-control'
 import { COUPLING_TYPE_VALUES } from '../technical-attributes'
-import {
-  configuredOperatingBase,
-  resolveDriverPosition,
-} from '../driver-position'
+import { resolveDriverPosition } from '../driver-position'
+import { resolveOperatingBase } from '../operating-base'
 import { resolveTrailerPosition } from '../trailer-position'
 
 const snapshotLifetimeMs = 15 * 60 * 1000
@@ -367,7 +365,7 @@ async function buildAutoPlanningSnapshotInternal(input: {
     current.push(event)
     activityByDriverId.set(event.driverId, current)
   }
-  const operatingBase = configuredOperatingBase()
+  const operatingBase = await resolveOperatingBase()
   const positionByPairRowId = new Map<
     string,
     ReturnType<typeof resolveDriverPosition>['location']
@@ -597,6 +595,18 @@ async function buildAutoPlanningSnapshotInternal(input: {
       attachedTruckPosition: item.truckId
         ? positionByTruckId.get(item.truckId) ?? null
         : null,
+      explicitPosition:
+        typeof item.currentLocationLat === 'number' &&
+        typeof item.currentLocationLng === 'number'
+          ? {
+              id:
+                item.currentLocationPlaceId ??
+                `TRAILER:${item.id}:${item.currentLocationLat},${item.currentLocationLng}`,
+              label: item.currentLocationAddress ?? 'Localisation actuelle',
+              latitude: item.currentLocationLat,
+              longitude: item.currentLocationLng,
+            }
+          : null,
       parkSpotCode: item.parkSpot?.code ?? null,
       status: item.status,
       lastMissionDelivery: prior?.position

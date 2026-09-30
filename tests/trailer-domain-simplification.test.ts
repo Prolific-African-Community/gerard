@@ -245,7 +245,7 @@ const maintenance = evaluateMissionCompatibility({
 })
 assert.equal(maintenance.codes.includes('TRAILER_UNAVAILABLE'), true)
 
-// I/J/K/L — only active dependencies block; history archives; unused deletes.
+// I/J/K/L — only active dependencies block; history never turns Delete into archive.
 const emptyFacts = {
   attachedTruckPlate: null,
   activeMissionReferences: [],
@@ -271,11 +271,11 @@ assert.match(
 )
 assert.equal(
   decideTrailerRemoval({ ...emptyFacts, historicalAssignmentCount: 12 }).action,
-  'ARCHIVE'
+  'DELETE'
 )
 assert.equal(
   decideTrailerRemoval({ ...emptyFacts, custodyEventCount: 2 }).action,
-  'ARCHIVE'
+  'DELETE'
 )
 
 // N/O — detached needs truck→trailer→pickup; already attached skips pickup leg.

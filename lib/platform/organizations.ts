@@ -253,6 +253,10 @@ export async function updateOrganization(input: {
   accentColor?: string | null
   faviconUrl?: string | null
   applicationTitle?: string | null
+  operatingBaseAddress?: string | null
+  operatingBasePlaceId?: string | null
+  operatingBaseLat?: number | null
+  operatingBaseLng?: number | null
 }) {
   return prisma.$transaction(async (tx) => {
     const current = await tx.organization.findUniqueOrThrow({ where: { id: input.organizationId } })
@@ -268,11 +272,15 @@ export async function updateOrganization(input: {
         ...(input.accentColor !== undefined ? { accentColor: input.accentColor } : {}),
         ...(input.faviconUrl !== undefined ? { faviconUrl: input.faviconUrl } : {}),
         ...(input.applicationTitle !== undefined ? { applicationTitle: input.applicationTitle } : {}),
+        ...(input.operatingBaseAddress !== undefined ? { operatingBaseAddress: input.operatingBaseAddress } : {}),
+        ...(input.operatingBasePlaceId !== undefined ? { operatingBasePlaceId: input.operatingBasePlaceId } : {}),
+        ...(input.operatingBaseLat !== undefined ? { operatingBaseLat: input.operatingBaseLat } : {}),
+        ...(input.operatingBaseLng !== undefined ? { operatingBaseLng: input.operatingBaseLng } : {}),
       },
     })
     const statusChanged = input.status && input.status !== current.status
     const modulesChanged = input.enabledModules && JSON.stringify([...input.enabledModules].sort()) !== JSON.stringify([...current.enabledModules].sort())
-    const generalChanged = (input.name && input.name !== current.name) || (input.slug && input.slug !== current.slug)
+    const generalChanged = (input.name && input.name !== current.name) || (input.slug && input.slug !== current.slug) || ['operatingBaseAddress', 'operatingBasePlaceId', 'operatingBaseLat', 'operatingBaseLng'].some((key) => input[key as keyof typeof input] !== undefined && input[key as keyof typeof input] !== current[key as keyof typeof current])
     const brandingChanged = ['displayName', 'logoUrl', 'accentColor', 'faviconUrl', 'applicationTitle'].some((key) => input[key as keyof typeof input] !== undefined && input[key as keyof typeof input] !== current[key as keyof typeof current])
     const events: Array<{ action: PlatformAuditAction; metadata: Prisma.InputJsonValue }> = []
     if (generalChanged) events.push({ action: PlatformAuditAction.ORGANIZATION_UPDATED, metadata: { before: { name: current.name, slug: current.slug }, after: { name: updated.name, slug: updated.slug } } })

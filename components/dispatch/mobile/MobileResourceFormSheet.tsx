@@ -313,7 +313,7 @@ function DriverSheet({
   async function handleDelete() {
     if (!onDelete) return;
     const confirmed = window.confirm(
-      "Supprimer cette remorque si elle est inutilisée, ou la retirer du parc actif si son historique doit être conservé ?",
+      "Supprimer cet élément ? Cette action est définitive.",
     );
 
     if (!confirmed) {
@@ -610,7 +610,7 @@ function TrailerSheet({
   async function handleDelete() {
     if (!onDelete) return;
     const confirmed = window.confirm(
-      "Supprimer cet élément ? Cette action est définitive.",
+      `Supprimer ${trailer.plateNumber} ?\nLa remorque disparaîtra du parc et de la planification.\nLes missions/factures historiques sont conservées.`,
     );
 
     if (!confirmed) {
@@ -738,7 +738,7 @@ function TrailerSheet({
         <Textarea label="Notes" value={notes} onChange={setNotes} />
       </div>
       <Submit
-        deleteLabel="Supprimer / retirer du parc actif"
+        deleteLabel="Supprimer la remorque"
         error={error}
         isDeleting={isDeleting}
         isSaving={isSaving}

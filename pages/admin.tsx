@@ -47,7 +47,7 @@ const workspaceTabs = [{ id: 'overview', label: 'Aperçu' }, { id: 'identity', l
 type WorkspaceTab = (typeof workspaceTabs)[number]['id']
 
 type Metrics = { missions: number; drivers: number; trucks: number; trailers: number; invoices: number }
-type Organization = { id: string; name: string; slug: string; status: string; enabledModules: string[]; displayName: string | null; logoUrl: string | null; accentColor: string | null; faviconUrl: string | null; applicationTitle: string | null; createdAt: string; updatedAt: string; memberCount: number; primaryAdmin: { firstName: string; lastName: string; username: string } | null; metrics: Metrics }
+type Organization = { id: string; name: string; slug: string; status: string; enabledModules: string[]; displayName: string | null; logoUrl: string | null; accentColor: string | null; faviconUrl: string | null; applicationTitle: string | null; operatingBaseAddress: string | null; operatingBasePlaceId: string | null; operatingBaseLat: number | null; operatingBaseLng: number | null; createdAt: string; updatedAt: string; memberCount: number; primaryAdmin: { firstName: string; lastName: string; username: string } | null; metrics: Metrics }
 type Domain = { id: string; hostname: string; pathPrefix: string; isPrimary: boolean; isActive: boolean }
 type Member = { id: string; role: string; createdAt: string; user: { id: string; firstName: string; lastName: string; username: string; email: string | null; isActive: boolean; createdAt: string } }
 type Audit = { id: string; action: string; metadata: Record<string, unknown> | null; createdAt: string; actor: { firstName: string; lastName: string; username: string } }
@@ -230,7 +230,7 @@ function StandardWorkspace({ id, instance, tab, canWrite, notify, refreshDirecto
     <WorkspaceHeader title={detail.displayName || detail.name} type="Standard" status={detail.status} subtitle={`/${detail.slug}`} />
     {!canWrite && <div className="mb-4"><Notice tone="info">Mode support : consultation uniquement.</Notice></div>}
     {tab === 'overview' && <Overview configuration={configuration} instance={instance} detail={detail} canWrite={canWrite} availableUsers={availableUsers} mutate={mutate} recovery={<AdminRecoveryPanel key={id} canWrite={canWrite} notify={notify} list={async () => (await call(`/api/platform/organizations/${id}/admins`, { method: 'GET' })).admins} act={(action, userId) => call(`/api/platform/organizations/${id}/admins`, { method: 'POST', body: JSON.stringify({ action, userId }) })} />} />}
-    {tab === 'identity' && <><IdentityForm {...shared} /><BillingForm detail={detail} canWrite={canWrite} mutate={mutate} /></>}
+    {tab === 'identity' && <><IdentityForm {...shared} /><OperatingBaseForm detail={detail} canWrite={canWrite} mutate={mutate} /><BillingForm detail={detail} canWrite={canWrite} mutate={mutate} /></>}
     {tab === 'branding' && <BrandingForm {...shared} />}
     {tab === 'modules' && <ModulesForm {...shared} />}
     {tab === 'integrations' && <IntegrationsList {...shared} />}
@@ -318,6 +318,19 @@ function IdentityForm({ configuration, canWrite, custom, save }: FormProps) {
       <TextField label="Nom affiché" value={draft.displayName} set={(displayName) => setDraft({ ...draft, displayName })} disabled={!canWrite} placeholder={configuration.name} />
       <TextField label="Titre de l’application" value={draft.applicationTitle} set={(applicationTitle) => setDraft({ ...draft, applicationTitle })} disabled={!canWrite} placeholder="Titre par défaut de l’application" hint="Affiché dans l’onglet du navigateur." />
     </div>
+    {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
+  </Surface></form>
+}
+
+function OperatingBaseForm({ detail, canWrite, mutate }: { detail: Detail; canWrite: boolean; mutate: (url: string, init: RequestInit, success: string) => Promise<void> }) {
+  const initial = { address: detail.operatingBaseAddress ?? '', placeId: detail.operatingBasePlaceId ?? '', lat: detail.operatingBaseLat == null ? '' : String(detail.operatingBaseLat), lng: detail.operatingBaseLng == null ? '' : String(detail.operatingBaseLng) }
+  const [draft, setDraft] = useState(initial)
+  useEffect(() => setDraft(initial), [detail.operatingBaseAddress, detail.operatingBasePlaceId, detail.operatingBaseLat, detail.operatingBaseLng]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
+  const valid = (!draft.lat && !draft.lng) || (Number.isFinite(Number(draft.lat)) && Number.isFinite(Number(draft.lng)))
+  const { busy, error, submit } = useSubmit(() => mutate(`/api/platform/organizations/${detail.id}`, { method: 'PATCH', body: JSON.stringify({ operatingBaseAddress: draft.address || null, operatingBasePlaceId: draft.placeId || null, operatingBaseLat: draft.lat ? Number(draft.lat) : null, operatingBaseLng: draft.lng ? Number(draft.lng) : null }) }, 'Base d’exploitation enregistrée.'))
+  return <form onSubmit={submit} className="mt-5"><Surface title="Base d’exploitation" description="Position de référence utilisée par la planification pour cette organisation." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={() => setDraft(initial)} disabled={!valid} />}>
+    <div className="grid gap-3 p-4 sm:grid-cols-2"><div className="sm:col-span-2"><TextField label="Adresse" value={draft.address} set={(address) => setDraft({ ...draft, address })} disabled={!canWrite} placeholder="Adresse résolue de la base" hint="Les coordonnées enregistrées ci-dessous sont la source de vérité du moteur." /></div><TextField label="Latitude" type="number" value={draft.lat} set={(lat) => setDraft({ ...draft, lat })} disabled={!canWrite} /><TextField label="Longitude" type="number" value={draft.lng} set={(lng) => setDraft({ ...draft, lng })} disabled={!canWrite} /></div>
     {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
   </Surface></form>
 }

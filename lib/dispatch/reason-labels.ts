@@ -771,12 +771,11 @@ export function translateReasonCode(code: string): ReasonLabel {
   }
   return {
     code,
-    title: 'Raison technique non reconnue',
-    explanation:
-      'Le moteur a renvoyé une raison non reconnue par l’interface. Le code technique est conservé pour analyse.',
+    title: "Mission non évaluée",
+    explanation: "Gerard n’a pas pu évaluer cette mission. Réessayez l’analyse.",
     nature: 'UNKNOWN',
     severity: 'CONDITIONAL',
-    action: null,
+    action: 'RERUN_SIMULATION',
     demonstrated: false,
   }
 }

@@ -28,9 +28,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const status = req.body?.status
   const modules = req.body?.enabledModules === undefined ? undefined : parseModules(req.body.enabledModules)
   const branding = parseBranding(req.body || {})
-  if ((name !== undefined && !name) || (slug !== undefined && !slug) || (status !== undefined && !isOrganizationStatus(status)) || modules === null || !branding) return res.status(400).json({ error: 'Modification invalide' })
+  const operatingBaseAddress = req.body?.operatingBaseAddress === undefined ? undefined : text(req.body.operatingBaseAddress) || null
+  const operatingBasePlaceId = req.body?.operatingBasePlaceId === undefined ? undefined : text(req.body.operatingBasePlaceId) || null
+  const coordinate = (value: unknown) => value === null || value === '' ? null : typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  const operatingBaseLat = req.body?.operatingBaseLat === undefined ? undefined : coordinate(req.body.operatingBaseLat)
+  const operatingBaseLng = req.body?.operatingBaseLng === undefined ? undefined : coordinate(req.body.operatingBaseLng)
+  const invalidBase = operatingBaseLat === undefined && req.body?.operatingBaseLat !== undefined || operatingBaseLng === undefined && req.body?.operatingBaseLng !== undefined || (operatingBaseLat === null) !== (operatingBaseLng === null) || typeof operatingBaseLat === 'number' && (operatingBaseLat < -90 || operatingBaseLat > 90 || operatingBaseLng! < -180 || operatingBaseLng! > 180)
+  if ((name !== undefined && !name) || (slug !== undefined && !slug) || (status !== undefined && !isOrganizationStatus(status)) || modules === null || !branding || invalidBase) return res.status(400).json({ error: 'Modification invalide' })
   try {
-    const organization = await updateOrganization({ actorUserId: actor.id, organizationId: id, name, slug, status, enabledModules: modules, ...branding })
+    const organization = await updateOrganization({ actorUserId: actor.id, organizationId: id, name, slug, status, enabledModules: modules, ...branding, operatingBaseAddress, operatingBasePlaceId, operatingBaseLat, operatingBaseLng })
     return res.status(200).json({ organization })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') return res.status(404).json({ error: 'Organisation introuvable' })

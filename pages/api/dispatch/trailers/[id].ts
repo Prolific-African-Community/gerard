@@ -31,7 +31,7 @@ import {
 import { prisma } from "../../../../lib/prisma";
 import { synchronizeParkPresence } from "../../../../lib/park/service";
 import { getWeekStartDate } from "../../../../lib/dispatch/date-utils";
-import { decideTrailerRemoval } from "../../../../lib/dispatch/trailer-lifecycle";
+import { decideTrailerRemoval, hardDeleteTrailer } from "../../../../lib/dispatch/trailer-lifecycle";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -98,6 +98,11 @@ type ParseResult =
         technicalInspectionDate: Date | null | undefined;
         capacityKg: number | null | undefined;
         couplingType: string | null | undefined;
+        currentLocationAddress: string | null | undefined;
+        currentLocationPlaceId: string | null | undefined;
+        currentLocationLat: number | null | undefined;
+        currentLocationLng: number | null | undefined;
+        currentLocationUpdatedAt: Date | null | undefined;
       };
     }
   | { error: string };
@@ -193,6 +198,10 @@ export function parsePayload(body: unknown): ParseResult {
         : body.cargoType === null || body.cargoType === ""
           ? null
           : undefined;
+  const locationProvided = ["currentLocationAddress", "currentLocationPlaceId", "currentLocationLat", "currentLocationLng"].some((key) => Object.prototype.hasOwnProperty.call(body, key));
+  const latitude = body.currentLocationLat === null || body.currentLocationLat === "" ? null : body.currentLocationLat === undefined ? undefined : Number(body.currentLocationLat);
+  const longitude = body.currentLocationLng === null || body.currentLocationLng === "" ? null : body.currentLocationLng === undefined ? undefined : Number(body.currentLocationLng);
+  if (locationProvided && ((latitude === null) !== (longitude === null) || (typeof latitude === "number" && (!Number.isFinite(latitude) || !Number.isFinite(longitude) || latitude < -90 || latitude > 90 || longitude! < -180 || longitude! > 180)))) return { error: "Localisation actuelle invalide." };
 
   return {
     payload: {
@@ -212,6 +221,11 @@ export function parsePayload(body: unknown): ParseResult {
       technicalInspectionDate,
       capacityKg: toPrismaValue(capacityKg),
       couplingType: toPrismaValue(couplingType),
+      currentLocationAddress: getOptionalString(body.currentLocationAddress),
+      currentLocationPlaceId: getOptionalString(body.currentLocationPlaceId),
+      currentLocationLat: latitude,
+      currentLocationLng: longitude,
+      currentLocationUpdatedAt: locationProvided ? latitude === null ? null : new Date() : undefined,
     },
   };
 }
@@ -278,6 +292,11 @@ async function handler(
           notes: payload.notes,
           capacityKg: payload.capacityKg,
           couplingType: payload.couplingType,
+          currentLocationAddress: payload.currentLocationAddress,
+          currentLocationPlaceId: payload.currentLocationPlaceId,
+          currentLocationLat: payload.currentLocationLat,
+          currentLocationLng: payload.currentLocationLng,
+          currentLocationUpdatedAt: payload.currentLocationUpdatedAt,
         },
         include: {
           truck: true,
@@ -387,48 +406,15 @@ async function handler(
           .json({ error: decision.reason, disposition: 'BLOCKED' })
       }
 
-      if (decision.action === 'ARCHIVE') {
-        await prisma.$transaction(async (tx) => {
-          await tx.parkSpot.updateMany({
-            where: { trailerId },
-            data: { trailerId: null, occupiedAt: null, placedById: null },
-          })
-          await tx.trailer.update({
-            where: { id: trailerId },
-            data: { status: TrailerStatus.OUT_OF_SERVICE, truckId: null },
-          })
-        })
-        return res
-          .status(200)
-          .json({
-            success: true,
-            disposition: 'ARCHIVED',
-            message: decision.reason,
-          })
-      }
-
       await prisma.$transaction(async (tx) => {
-        await tx.planningRow.updateMany({
-          where: {
-            trailerId,
-          },
-          data: {
-            trailerId: null,
-          },
-        })
-        await tx.trailer.delete({
-          where: {
-            id: trailerId,
-          },
-        })
+        await hardDeleteTrailer(tx, trailerId)
       })
 
       return res.status(200).json({ success: true, disposition: 'DELETED' })
     } catch (error) {
       if (isDeleteConflictError(error)) {
         return res.status(409).json({
-          error:
-            'Impossible de supprimer cette remorque car elle possède des missions ou interventions liées.',
+          error: 'Impossible de supprimer : une dépendance active de cette remorque doit d’abord être libérée.',
         })
       }
 

@@ -88,9 +88,12 @@ export function classifyPlanningMissions(input: {
     const assignmentInPeriod =
       assignmentDate !== null &&
       missionIntersectsPeriod(occupation, input.periodStart, input.periodEnd)
+    // The pool and the optimizer share this exact temporal boundary. A pending
+    // mission outside the displayed week must not appear in that week's pool.
     const visible =
-      mission.status === 'PENDING' ||
-      (mission.status === 'ASSIGNED' && assignmentInPeriod)
+      missionIntersectsPeriod(occupation, input.periodStart, input.periodEnd) &&
+      (mission.status === 'PENDING' ||
+        (mission.status === 'ASSIGNED' && assignmentInPeriod))
     if (visible) visibleMissionIds.push(mission.id)
     if (
       mission.assignment &&
@@ -151,7 +154,7 @@ export function classifyPlanningMissions(input: {
         pickupDate,
         deliveryDate,
         code: 'OUTSIDE_PERIOD',
-        reason: `Chargement prévu le ${pickupDate}, hors de la semaine sélectionnée.`,
+        reason: `Enlèvement : ${pickupDate}. Semaine affichée : ${input.periodStart.toISOString()} - ${input.periodEnd.toISOString()}.`,
       })
       continue
     }
