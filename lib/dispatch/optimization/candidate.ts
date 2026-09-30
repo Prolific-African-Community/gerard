@@ -368,6 +368,11 @@ export function buildOptimizationCandidate(input: {
   currentPosition?: OptimizationPair['initialPosition']
   workload: number
 }): OptimizationCandidate {
+  const effectiveAvailableAt =
+    input.trailer &&
+    new Date(input.trailer.availableAt) > new Date(input.availableAt)
+      ? input.trailer.availableAt
+      : input.availableAt
   const compatibility = evaluateMissionCompatibility({
     pair: { ...input.pair, regulatoryState: input.state },
     mission: input.mission,
@@ -382,10 +387,12 @@ export function buildOptimizationCandidate(input: {
     currentPositionId: input.currentPositionId,
   })
   const certainStart = new Date(
-    new Date(input.availableAt) >
-    new Date(input.mission.temporalPlan.earliestStartAt ?? input.availableAt)
-      ? input.availableAt
-      : input.mission.temporalPlan.earliestStartAt ?? input.availableAt
+    new Date(effectiveAvailableAt) >
+    new Date(
+      input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
+    )
+      ? effectiveAvailableAt
+      : input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
   )
   let certainCursor = certainStart.getTime()
   const certainMissionWindowConflict = input.mission.temporalPlan.steps.some(
@@ -445,10 +452,12 @@ export function buildOptimizationCandidate(input: {
       currentPosition: input.currentPosition ?? null,
     })
     const earliestStart = new Date(
-      new Date(input.availableAt) >
-      new Date(input.mission.temporalPlan.earliestStartAt ?? input.availableAt)
-        ? input.availableAt
-        : input.mission.temporalPlan.earliestStartAt ?? input.availableAt
+      new Date(effectiveAvailableAt) >
+      new Date(
+        input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
+      )
+        ? effectiveAvailableAt
+        : input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
     )
     let minimumCursor = earliestStart.getTime()
     const certainWindowConflict = candidatePlan.steps.some((step) => {
@@ -486,12 +495,13 @@ export function buildOptimizationCandidate(input: {
         plan: candidatePlan,
         initialState: input.state,
         simulationStartAt:
-          new Date(input.availableAt) >
+          new Date(effectiveAvailableAt) >
           new Date(
-            input.mission.temporalPlan.earliestStartAt ?? input.availableAt
+            input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
           )
-            ? input.availableAt
-            : input.mission.temporalPlan.earliestStartAt ?? input.availableAt,
+            ? effectiveAvailableAt
+            : input.mission.temporalPlan.earliestStartAt ??
+              effectiveAvailableAt,
         profile: input.optimization.profile,
       })
       if (temporalEvaluation.status === 'IMPOSSIBLE') {
@@ -507,17 +517,6 @@ export function buildOptimizationCandidate(input: {
         compatibility.status = 'INDETERMINATE'
         compatibility.codes.push('REGULATORY_STATE_UNKNOWN')
         compatibility.missingData.push(...temporalEvaluation.missingData)
-      } else if (
-        input.trailer &&
-        temporalEvaluation.possibleStartAt &&
-        new Date(input.trailer.availableAt) >
-          new Date(temporalEvaluation.possibleStartAt)
-      ) {
-        compatibility.status = 'INCOMPATIBLE'
-        compatibility.codes.push('RESOURCE_TIME_CONFLICT')
-        compatibility.messages.push(
-          compatibilityMessages.RESOURCE_TIME_CONFLICT
-        )
       }
       if (
         temporalEvaluation?.possibleStartAt &&
@@ -621,9 +620,12 @@ export function trailerChoices(
 ) {
   const eligible = trailers.filter(
     (trailer) =>
-      (!trailer.forcedMissionId || trailer.forcedMissionId === mission.id) &&
+      (!trailer.forcedMissionId ||
+        trailer.forcedMissionId === mission.id ||
+        Boolean(trailer.timeline?.length)) &&
       (trailer.loadStatus !== 'LOADED' ||
-        trailer.forcedMissionId === mission.id)
+        trailer.forcedMissionId === mission.id ||
+        Boolean(trailer.timeline?.length))
   )
   if (mission.requiredTrailerId) {
     return eligible.filter(
@@ -637,5 +639,5 @@ export function trailerChoices(
     mission.requiredCouplingType
   )
     return eligible
-  return [null]
+  return [null, ...eligible]
 }

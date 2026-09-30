@@ -79,14 +79,29 @@ export async function prepareCandidateApproachRoutes(input: {
     for (const mission of input.missions) {
       const pickup = mission.pickup
       for (const trailer of trailerChoices(mission, input.trailers)) {
-        const trailerChange = Boolean(
-          trailer && trailer.attachedTruckId !== pair.pair.truckId
-        )
-        if (trailerChange) {
-          request(pair.initialPosition, trailer?.position)
-          request(trailer?.position, pickup)
-        } else {
-          request(pair.initialPosition, pickup)
+        const pairPositions = [
+          pair.initialPosition,
+          ...input.missions.map((item) => item.delivery),
+        ]
+        const trailerPositions = trailer
+          ? [
+              trailer.position,
+              ...(trailer.timeline?.map((item) => item.positionAfter) ?? []),
+              ...input.missions.map((item) => item.delivery),
+            ]
+          : []
+        for (const pairPosition of pairPositions) {
+          const attached = Boolean(
+            trailer && trailer.attachedTruckId === pair.pair.truckId
+          )
+          if (trailer && !attached) {
+            for (const trailerPosition of trailerPositions) {
+              request(pairPosition, trailerPosition)
+              request(trailerPosition, pickup)
+            }
+          } else {
+            request(pairPosition, pickup)
+          }
         }
       }
     }

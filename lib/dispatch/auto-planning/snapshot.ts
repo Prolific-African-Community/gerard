@@ -573,6 +573,10 @@ async function buildAutoPlanningSnapshotInternal(input: {
     })
   }
   const activeTrailerMission = new Map<string, string>()
+  const trailerTimelines = new Map<
+    string,
+    NonNullable<DispatchOptimizationInput['trailers'][number]['timeline']>
+  >()
   const activeMissionStatuses = new Set<MissionStatus>([
     MissionStatus.PENDING,
     MissionStatus.ASSIGNED,
@@ -580,6 +584,24 @@ async function buildAutoPlanningSnapshotInternal(input: {
     MissionStatus.ISSUE,
   ])
   for (const assignment of assignments) {
+    const assignmentEnd =
+      assignment.plannedEndAt ?? assignment.mission.deliveryDate
+    if (assignment.trailerId && assignmentEnd) {
+      const timeline = trailerTimelines.get(assignment.trailerId) ?? []
+      timeline.push({
+        missionId: assignment.missionId,
+        truckId: assignment.truckId ?? assignment.planningRow?.truckId ?? null,
+        startsAt: assignment.scheduledDate.toISOString(),
+        endsAt: assignmentEnd.toISOString(),
+        positionAfter: locationFromMission('delivery', {
+          pickupPlaceId: assignment.mission.deliveryPlaceId,
+          pickupAddress: assignment.mission.deliveryAddress,
+          pickupLat: assignment.mission.deliveryLat,
+          pickupLng: assignment.mission.deliveryLng,
+        }),
+      })
+      trailerTimelines.set(assignment.trailerId, timeline)
+    }
     if (
       assignment.trailerId &&
       activeMissionStatuses.has(assignment.mission.status)
@@ -639,6 +661,9 @@ async function buildAutoPlanningSnapshotInternal(input: {
             (value): value is string => typeof value === 'string'
           )
         : null,
+      timeline: trailerTimelines
+        .get(item.id)
+        ?.sort((left, right) => left.startsAt.localeCompare(right.startsAt)),
     })
   })
 

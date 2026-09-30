@@ -375,8 +375,41 @@ export function buildOptimizationCandidates(
   for (const pair of input.pairs) {
     const runtime = runtimes?.get(pair.pair.rowId)
     for (const originalTrailer of trailerChoices(mission, input.trailers)) {
-      const trailer = originalTrailer
+      const runtimeTrailer = originalTrailer
         ? trailerRuntimes?.get(originalTrailer.id) ?? originalTrailer
+        : null
+      const earliestTarget =
+        mission.temporalPlan.earliestStartAt ??
+        runtime?.availableAt ??
+        pair.availableAt
+      const targetAt = new Date(
+        runtimeTrailer?.loadStatus === 'LOADED' ||
+          runtimeTrailer?.forcedMissionId
+          ? mission.temporalPlan.steps.find((step) => step.mustStartBy)
+              ?.mustStartBy ?? earliestTarget
+          : earliestTarget
+      )
+      const completedTimeline = runtimeTrailer?.timeline
+        ?.filter(
+          (item) =>
+            new Date(item.endsAt) <= targetAt &&
+            new Date(item.endsAt) > new Date(runtimeTrailer.availableAt)
+        )
+        .sort((left, right) => left.endsAt.localeCompare(right.endsAt))
+      const latestTimeline = completedTimeline?.[completedTimeline.length - 1]
+      const trailer = runtimeTrailer
+        ? {
+            ...runtimeTrailer,
+            ...(latestTimeline
+              ? {
+                  availableAt: latestTimeline.endsAt,
+                  position: latestTimeline.positionAfter,
+                  attachedTruckId: latestTimeline.truckId,
+                  loadStatus: 'EMPTY' as const,
+                  forcedMissionId: null,
+                }
+              : {}),
+          }
         : null
       candidates.push(
         buildOptimizationCandidate({

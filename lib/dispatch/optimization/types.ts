@@ -108,6 +108,13 @@ export type OptimizationTrailer = {
   attachedTruckId?: string | null
   forcedMissionId?: string | null
   loadStatus?: 'EMPTY' | 'LOADED'
+  timeline?: Array<{
+    missionId: string
+    truckId: string | null
+    startsAt: string
+    endsAt: string
+    positionAfter: TemporalLocation | null
+  }>
   restrictions: string[]
 }
 

@@ -181,6 +181,7 @@ export function adaptTrailerForOptimization(input: {
   capacity?: number | null
   couplingType?: string | null
   compatibleCargoTypes?: string[] | null
+  timeline?: OptimizationTrailer['timeline']
 }): OptimizationTrailer {
   return {
     id: input.id,
@@ -195,6 +196,7 @@ export function adaptTrailerForOptimization(input: {
     capacity: input.capacity,
     couplingType: input.couplingType,
     compatibleCargoTypes: input.compatibleCargoTypes,
+    timeline: input.timeline,
     restrictions: [],
   }
 }
