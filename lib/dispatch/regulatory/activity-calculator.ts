@@ -339,7 +339,6 @@ export function calculateDriverActivityState(input: {
     }
   }
 
-  const associatedEventIds = new Set<string>()
   const plannedMissions = missions.map((mission) => {
     const matched = events.filter(
       (event) =>
@@ -367,7 +366,6 @@ export function calculateDriverActivityState(input: {
         )
       }
     }
-    matched.forEach((event) => associatedEventIds.add(event.id))
     return {
       ...mission,
       associatedEventIds: matched.map((event) => event.id),
@@ -385,16 +383,6 @@ export function calculateDriverActivityState(input: {
     }
   }
   for (const event of events) {
-    if (
-      event.type === 'DRIVE_START' &&
-      event.effectiveAt <= input.at &&
-      !event.missionId &&
-      !associatedEventIds.has(event.id)
-    ) {
-      anomalies.push(
-        `Conduite déclarée à ${event.effectiveAt.toISOString()} sans mission connue.`
-      )
-    }
     if (
       event.recordedAt.getTime() - event.effectiveAt.getTime() >
       5 * 60 * 1000
