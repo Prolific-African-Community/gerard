@@ -1,7 +1,9 @@
+import { resolveTrailerPosition } from './trailer-position'
+
 /**
  * Modèle de rotation des remorques.
  *
- * Le schéma actuel porte déjà les quatre dimensions métier, mais mélangées
+ * Le schéma actuel porte déjà les cinq dimensions métier, mais mélangées
  * dans `Trailer.status` et `Trailer.custodyState`. Ce module les **dérive**
  * des champs existants plutôt que d'en ajouter : aucune migration n'est
  * nécessaire et aucun historique n'est perdu.
@@ -10,6 +12,7 @@
  *   B. Chargement  ← `Trailer.loadStatus`
  *   C. Mission     ← MissionAssignment active portant cette remorque
  *   D. Localisation← `parkSpot` / `status = AT_BASE` / attelage
+ *   E. Disponibilité← dérivée des quatre dimensions précédentes
  *
  * `Trailer.status` conserve son rôle pour la seule dimension qu'il décrit
  * correctement : l'indisponibilité opérationnelle (maintenance, hors service).
@@ -18,7 +21,12 @@
 export type TrailerCoupling = 'ATTACHED' | 'DETACHED'
 export type TrailerLoad = 'EMPTY' | 'LOADED'
 export type TrailerEngagement = 'AVAILABLE' | 'MISSION_ACTIVE'
-export type TrailerLocation = 'BASE' | 'CLIENT' | 'IN_TRANSIT' | 'OTHER'
+export type TrailerLocation =
+  | 'BASE'
+  | 'CLIENT'
+  | 'IN_TRANSIT'
+  | 'OTHER'
+  | 'UNKNOWN'
 
 /** Statuts qui immobilisent réellement la remorque. */
 const IMMOBILIZING_STATUSES = new Set([
@@ -74,7 +82,7 @@ export type TrailerSituation = {
  * Le décrochage ne termine jamais une mission : la remorque reste engagée.
  */
 export function isActiveMission(
-  mission: TrailerActiveMission | null | undefined,
+  mission: TrailerActiveMission | null | undefined
 ): mission is TrailerActiveMission {
   if (!mission) return false
   const status = mission.missionStatus?.toUpperCase() ?? 'PENDING'
@@ -82,7 +90,7 @@ export function isActiveMission(
 }
 
 export function resolveTrailerSituation(
-  input: TrailerSituationInput,
+  input: TrailerSituationInput
 ): TrailerSituation {
   const coupling: TrailerCoupling = input.truckId ? 'ATTACHED' : 'DETACHED'
   const load: TrailerLoad = input.loadStatus === 'LOADED' ? 'LOADED' : 'EMPTY'
@@ -93,19 +101,40 @@ export function resolveTrailerSituation(
     ? 'MISSION_ACTIVE'
     : 'AVAILABLE'
 
-  // Une localisation explicitement déclarée prime sur toute déduction.
-  let location: TrailerLocation
-  if (input.declaredLocation) {
-    location = input.declaredLocation
-  } else if (input.parkSpotCode) {
-    location = 'BASE'
-  } else if (input.status === 'AT_BASE') {
-    location = 'BASE'
-  } else if (coupling === 'ATTACHED') {
-    location = 'IN_TRANSIT'
-  } else {
-    location = 'OTHER'
-  }
+  const locationResolution = resolveTrailerPosition({
+    attached: Boolean(input.truckId),
+    attachedTruckPosition: input.truckId
+      ? {
+          id: `TRUCK:${input.truckId}`,
+          label: input.truckPlate ?? 'Tracteur',
+          latitude: 0,
+          longitude: 0,
+        }
+      : null,
+    explicitPosition: input.declaredLocation
+      ? {
+          id: `DECLARED:${input.declaredLocation}`,
+          label: input.declaredLocation,
+          latitude: 0,
+          longitude: 0,
+        }
+      : null,
+    parkSpotCode: input.parkSpotCode,
+    status: input.status,
+    operatingBase: { latitude: 0, longitude: 0, label: 'Base' },
+    loadStatus: input.loadStatus,
+    hasActiveMission: Boolean(activeMission),
+  })
+  const location: TrailerLocation =
+    locationResolution.source === 'ATTACHED_TRUCK'
+      ? 'IN_TRANSIT'
+      : locationResolution.source === 'MANUAL' && input.declaredLocation
+      ? input.declaredLocation
+      : ['PARK_SPOT', 'STATUS_BASE', 'IDLE_BASE_FALLBACK'].includes(
+          locationResolution.source
+        )
+      ? 'BASE'
+      : 'UNKNOWN'
 
   return {
     coupling,
@@ -140,7 +169,7 @@ export function isTrailerAvailableForNewMission(situation: TrailerSituation) {
  */
 export function isTrailerVisibleOnPlanningRow(
   trailer: { truckId?: string | null } | null | undefined,
-  rowTruckId: string | null | undefined,
+  rowTruckId: string | null | undefined
 ) {
   if (!trailer) return false
   if (!trailer.truckId) return false
@@ -195,7 +224,7 @@ export const trailerFilterLabels: Record<TrailerFilter, string> = {
 /** Les filtres sont dérivés : aucun n'est un statut persisté supplémentaire. */
 export function matchesTrailerFilter(
   situation: TrailerSituation,
-  filter: TrailerFilter,
+  filter: TrailerFilter
 ) {
   switch (filter) {
     case 'ALL':
@@ -216,12 +245,12 @@ export function matchesTrailerFilter(
 }
 
 export function countTrailerFilters<T>(
-  entries: Array<{ situation: TrailerSituation; item: T }>,
+  entries: Array<{ situation: TrailerSituation; item: T }>
 ) {
   const counts = {} as Record<TrailerFilter, number>
   for (const filter of trailerFilterOrder) {
     counts[filter] = entries.filter((entry) =>
-      matchesTrailerFilter(entry.situation, filter),
+      matchesTrailerFilter(entry.situation, filter)
     ).length
   }
   return counts
@@ -246,6 +275,7 @@ export const trailerLocationLabels: Record<TrailerLocation, string> = {
   CLIENT: 'Chez le client',
   IN_TRANSIT: 'En transit',
   OTHER: 'Autre',
+  UNKNOWN: 'Inconnue',
 }
 
 /**
@@ -312,7 +342,7 @@ function readString(source: Record<string, unknown>, key: string) {
  * Retourne `null` quand l'événement n'est pas une rotation de remorque.
  */
 export function describeTrailerRotationEvent(
-  metadata: unknown,
+  metadata: unknown
 ): TrailerRotationEventDescription | null {
   if (typeof metadata !== 'object' || metadata === null) return null
   const source = metadata as Record<string, unknown>
@@ -326,7 +356,10 @@ export function describeTrailerRotationEvent(
 
   if (action === 'DETACH') {
     const where = location
-      ? ` ${trailerLocationLabels[location as TrailerLocation]?.toLowerCase() ?? location}`
+      ? ` ${
+          trailerLocationLabels[location as TrailerLocation]?.toLowerCase() ??
+          location
+        }`
       : ''
     return {
       label: 'Remorque décrochée',
@@ -368,7 +401,7 @@ export function formatTrailerMovement(movement: TrailerCustodyMovement) {
   if (movement.location) {
     parts.push(
       trailerLocationLabels[movement.location as TrailerLocation] ??
-        movement.location,
+        movement.location
     )
   }
 
@@ -417,7 +450,7 @@ export type TrailerMissionSource = {
  */
 export function buildTrailerActiveMissions<T extends TrailerMissionSource>(
   missions: readonly T[],
-  getTrailerId: (mission: T) => string | null | undefined,
+  getTrailerId: (mission: T) => string | null | undefined
 ): Record<string, TrailerActiveMission> {
   const byTrailer: Record<string, TrailerActiveMission> = {}
 

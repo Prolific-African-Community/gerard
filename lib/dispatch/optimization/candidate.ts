@@ -32,7 +32,7 @@ function findRoute(
   )
 }
 
-function requiredTransitions(input: {
+export function requiredTransitions(input: {
   optimization: DispatchOptimizationInput
   pair: OptimizationPair
   mission: OptimizationMission
@@ -160,20 +160,22 @@ function costCandidate(
     typeof mission.loadedDistanceMeters === 'number'
       ? mission.loadedDistanceMeters / 1000
       : null
-  const productiveHours = evaluation?.status === 'FEASIBLE'
-    ? (evaluation.consumedDrivingSeconds +
-        evaluation.consumedOtherWorkSeconds) /
-      3600
-    : null
-  const waitingHours = evaluation?.status === 'FEASIBLE'
-    ? evaluation.timeline
-        .filter(
-          (segment) =>
-            segment.activityType === 'AVAILABILITY' &&
-            segment.stepId.endsWith(':WAIT')
-        )
-        .reduce((sum, segment) => sum + segment.durationSeconds, 0) / 3600
-    : 0
+  const productiveHours =
+    evaluation?.status === 'FEASIBLE'
+      ? (evaluation.consumedDrivingSeconds +
+          evaluation.consumedOtherWorkSeconds) /
+        3600
+      : null
+  const waitingHours =
+    evaluation?.status === 'FEASIBLE'
+      ? evaluation.timeline
+          .filter(
+            (segment) =>
+              segment.activityType === 'AVAILABILITY' &&
+              segment.stepId.endsWith(':WAIT')
+          )
+          .reduce((sum, segment) => sum + segment.durationSeconds, 0) / 3600
+      : 0
   const requiresReturnToBase = routes.some(
     (route) => route.reason === 'RETURN_TO_BASE'
   )
@@ -187,7 +189,8 @@ function costCandidate(
       ? 0
       : null
   const timeCost =
-    typeof input.costs.defaultHourlyCost === 'number' && productiveHours !== null
+    typeof input.costs.defaultHourlyCost === 'number' &&
+    productiveHours !== null
       ? productiveHours * input.costs.defaultHourlyCost
       : input.costs.defaultHourlyCost == null
       ? 0
@@ -231,7 +234,9 @@ function costCandidate(
       0
     )
     assumptions.push(
-      `Approche estimée: ${emptyDistanceKm.toFixed(1)} km, ${approachDurationHours.toFixed(2)} h, ${
+      `Approche estimée: ${emptyDistanceKm.toFixed(
+        1
+      )} km, ${approachDurationHours.toFixed(2)} h, ${
         approachCost?.toFixed(2) ?? 'inconnu'
       } ${input.costs.currency}.`
     )
@@ -244,9 +249,9 @@ function costCandidate(
     }
     if (trailerChange) {
       assumptions.push(
-        `Changement de remorque estimé: ${(
-          trailerChangeCost ?? 0
-        ).toFixed(2)} ${input.costs.currency}.`
+        `Changement de remorque estimé: ${(trailerChangeCost ?? 0).toFixed(
+          2
+        )} ${input.costs.currency}.`
       )
     }
   } else {
@@ -539,7 +544,9 @@ export function buildOptimizationCandidate(input: {
           if (conflicts.some((conflict) => conflict.kinds.includes('TRUCK'))) {
             codes.push('TRUCK_TIME_CONFLICT')
           }
-          if (conflicts.some((conflict) => conflict.kinds.includes('TRAILER'))) {
+          if (
+            conflicts.some((conflict) => conflict.kinds.includes('TRAILER'))
+          ) {
             codes.push('TRAILER_TIME_CONFLICT')
           }
           compatibility.status = 'INCOMPATIBLE'
@@ -612,8 +619,14 @@ export function trailerChoices(
   mission: OptimizationMission,
   trailers: OptimizationTrailer[]
 ) {
+  const eligible = trailers.filter(
+    (trailer) =>
+      (!trailer.forcedMissionId || trailer.forcedMissionId === mission.id) &&
+      (trailer.loadStatus !== 'LOADED' ||
+        trailer.forcedMissionId === mission.id)
+  )
   if (mission.requiredTrailerId) {
-    return trailers.filter(
+    return eligible.filter(
       (trailer) => trailer.id === mission.requiredTrailerId
     )
   }
@@ -623,6 +636,6 @@ export function trailerChoices(
     mission.requiredCargoType ||
     mission.requiredCouplingType
   )
-    return trailers
+    return eligible
   return [null]
 }

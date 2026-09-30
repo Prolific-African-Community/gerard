@@ -27,7 +27,7 @@ const trailerStatusLabels: Record<string, string> = {
   AT_BASE: "À la Base",
   IN_MAINTENANCE: "Maintenance à la Base",
   MAINTENANCE_EXT: "Maintenance extérieure",
-  OUT_OF_SERVICE: "Hors service",
+  OUT_OF_SERVICE: "Retirée du parc actif",
 };
 
 export function MobileTrailerList({

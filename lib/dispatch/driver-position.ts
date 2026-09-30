@@ -1,14 +1,11 @@
 import type { TemporalLocation } from './regulatory'
+import {
+  configuredOperatingBase,
+  DEFAULT_OPERATING_BASE,
+  type OperatingBasePosition,
+} from './base-location'
 
-/**
- * Base d'exploitation utilisee quand DISPATCH_BASE_LATITUDE / LONGITUDE ne sont
- * pas renseignees. C'est la base Gerard actuelle (Luxembourg).
- */
-export const DEFAULT_OPERATING_BASE = {
-  latitude: 49.5988403,
-  longitude: 6.1326175,
-  label: 'Base d’exploitation · Luxembourg',
-} as const
+export { configuredOperatingBase, DEFAULT_OPERATING_BASE }
 
 export const DRIVER_GPS_MAX_AGE_SECONDS = 30 * 60
 export const COMPLETED_MISSION_DIRECT_MAX_AGE_SECONDS = 24 * 60 * 60
@@ -34,12 +31,6 @@ export type CompletedMissionPosition = {
   latitude: number
   longitude: number
   completedAt: Date
-}
-
-export type OperatingBasePosition = {
-  latitude: number
-  longitude: number
-  label?: string
 }
 
 export type ResolvedDriverPosition = {
@@ -73,10 +64,7 @@ function validCoordinate(latitude: number, longitude: number) {
 }
 
 function freshnessSeconds(recordedAt: Date, at: Date) {
-  return Math.max(
-    0,
-    Math.floor((at.getTime() - recordedAt.getTime()) / 1000)
-  )
+  return Math.max(0, Math.floor((at.getTime() - recordedAt.getTime()) / 1000))
 }
 
 function location(input: {
@@ -114,9 +102,7 @@ export function resolveDriverPosition(input: {
     input.gps && validCoordinate(input.gps.latitude, input.gps.longitude)
       ? input.gps
       : null
-  const gpsFreshness = gps
-    ? freshnessSeconds(gps.recordedAt, input.at)
-    : null
+  const gpsFreshness = gps ? freshnessSeconds(gps.recordedAt, input.at) : null
   const latestGps = gps
     ? {
         latitude: gps.latitude,
@@ -154,10 +140,7 @@ export function resolveDriverPosition(input: {
   }
 
   const mission = input.lastCompletedMission
-  if (
-    mission &&
-    validCoordinate(mission.latitude, mission.longitude)
-  ) {
+  if (mission && validCoordinate(mission.latitude, mission.longitude)) {
     const observedAt = mission.completedAt.toISOString()
     const missionFreshness = freshnessSeconds(mission.completedAt, input.at)
     const recentAndObserved =
@@ -180,10 +163,9 @@ export function resolveDriverPosition(input: {
       freshnessSeconds: missionFreshness,
       confidence: 'MEDIUM',
       usable: true,
-      planningEffect:
-        recentAndObserved
-          ? 'Dernière livraison terminée depuis moins de 24 h ; position utilisée directement avec une confiance moyenne.'
-          : 'Position estimée depuis une ancienne livraison ; la proposition reste conditionnelle.',
+      planningEffect: recentAndObserved
+        ? 'Dernière livraison terminée depuis moins de 24 h ; position utilisée directement avec une confiance moyenne.'
+        : 'Position estimée depuis une ancienne livraison ; la proposition reste conditionnelle.',
       latestGps,
     }
   }
@@ -225,19 +207,4 @@ export function resolveDriverPosition(input: {
       'Aucune position n’est inventée ; les distances restent à confirmer.',
     latestGps,
   }
-}
-
-export function configuredOperatingBase(): OperatingBasePosition | null {
-  const latitude = Number(process.env.DISPATCH_BASE_LATITUDE)
-  const longitude = Number(process.env.DISPATCH_BASE_LONGITUDE)
-  if (!validCoordinate(latitude, longitude)) {
-    return DEFAULT_OPERATING_BASE
-  }
-  return validCoordinate(latitude, longitude)
-    ? {
-        latitude,
-        longitude,
-        label: 'Base d’exploitation',
-      }
-    : null
 }

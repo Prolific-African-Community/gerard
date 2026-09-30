@@ -269,7 +269,7 @@ const trailerStatusLabels: Record<TrailerStatus, string> = {
   AT_BASE: 'À la Base',
   IN_MAINTENANCE: 'Maintenance à la base',
   MAINTENANCE_EXT: 'Maintenance extérieure',
-  OUT_OF_SERVICE: 'Hors service',
+  OUT_OF_SERVICE: 'Retirée du parc actif',
 }
 
 const trailerLoadStatusOptions: TrailerLoadStatus[] = ['EMPTY', 'LOADED']
@@ -1385,7 +1385,7 @@ function DriverFormModal({
     }
 
     const confirmed = window.confirm(
-      'Supprimer cet élément ? Cette action est définitive.'
+      'Supprimer cette remorque si elle est inutilisée, ou la retirer du parc actif si son historique doit être conservé ?'
     )
 
     if (!confirmed) {
@@ -2008,7 +2008,7 @@ function TrailerFormModal({
 
         <FormActions
           canDelete={Boolean(onDelete)}
-          deleteLabel="Supprimer remorque"
+          deleteLabel="Supprimer / retirer du parc actif"
           isDeleting={isDeleting}
           isSubmitting={isSubmitting}
           submitLabel={trailer ? 'Enregistrer' : 'Créer'}

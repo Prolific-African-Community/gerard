@@ -6,6 +6,7 @@ import type { Trailer, Truck } from '../../lib/dispatch/mock-data'
 import {
   formatTrailerMovement,
   getTrailerActions,
+  isTrailerAvailableForNewMission,
   resolveTrailerSituation,
   trailerCouplingLabels,
   trailerLoadLabels,
@@ -190,7 +191,7 @@ export function TrailerRotationPanel({
 
   return (
     <section className="rounded-[24px] border border-black/[0.06] bg-[#f7f8f4] px-4 py-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Row label="Attelage">
           {situation.coupling === 'ATTACHED' && situation.truckPlate
             ? `Attelée à ${situation.truckPlate}`
@@ -219,6 +220,15 @@ export function TrailerRotationPanel({
         </Row>
         <Row label="Localisation">
           {trailerLocationLabels[situation.location]}
+        </Row>
+        <Row label="Disponibilité">
+          {situation.immobilized
+            ? 'Immobilisée'
+            : situation.engagement === 'MISSION_ACTIVE'
+              ? 'Engagée'
+              : isTrailerAvailableForNewMission(situation)
+                ? 'Disponible'
+                : 'Indisponible'}
         </Row>
       </div>
 

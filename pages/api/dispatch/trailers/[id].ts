@@ -1,5 +1,6 @@
 import { withTenantApiRoute } from '../../../../lib/auth/authorization'
 import {
+  MaintenanceRequestStatus,
   MissionStatus,
   Prisma,
   TrailerCargoType,
@@ -29,6 +30,8 @@ import {
 } from "../../../../lib/dispatch/form-normalization";
 import { prisma } from "../../../../lib/prisma";
 import { synchronizeParkPresence } from "../../../../lib/park/service";
+import { getWeekStartDate } from "../../../../lib/dispatch/date-utils";
+import { decideTrailerRemoval } from "../../../../lib/dispatch/trailer-lifecycle";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -300,69 +303,108 @@ async function handler(
     }
   }
 
-  if (req.method === "DELETE") {
+  if (req.method === 'DELETE') {
     try {
       const trailer = await prisma.trailer.findUnique({
         where: {
           id: trailerId,
         },
-      });
+        include: { truck: { select: { plateNumber: true } } },
+      })
 
       if (!trailer) {
-        return res.status(404).json({ error: "Trailer not found" });
+        return res.status(404).json({ error: 'Trailer not found' })
       }
 
-      const activeAssignmentConditions: Prisma.MissionAssignmentWhereInput[] = [
-        {
-          planningRow: {
-            trailerId,
-          },
-        },
-      ];
+      const activeStatuses = [
+        MissionStatus.PENDING,
+        MissionStatus.ASSIGNED,
+        MissionStatus.IN_PROGRESS,
+        MissionStatus.ISSUE,
+      ]
+      const activeMaintenanceStatuses = [
+        MaintenanceRequestStatus.SUBMITTED,
+        MaintenanceRequestStatus.RECEIVED,
+        MaintenanceRequestStatus.UNDER_REVIEW,
+        MaintenanceRequestStatus.QUOTE_RECEIVED,
+        MaintenanceRequestStatus.QUOTE_APPROVED,
+        MaintenanceRequestStatus.SCHEDULED,
+        MaintenanceRequestStatus.IN_PROGRESS,
+      ]
+      const currentWeek = getWeekStartDate()
+      const [
+        activeAssignments,
+        activePlanningCount,
+        activeMaintenanceCount,
+        historicalAssignmentCount,
+        custodyEventCount,
+        maintenanceCount,
+        inspectionCount,
+        movementCount,
+        missionEventCount,
+        planningCount,
+      ] = await Promise.all([
+        prisma.missionAssignment.findMany({
+          where: { trailerId, mission: { status: { in: activeStatuses } } },
+          select: { mission: { select: { reference: true } } },
+        }),
+        prisma.planningRow.count({
+          where: { trailerId, weekStartDate: { gte: currentWeek } },
+        }),
+        prisma.maintenanceRequest.count({
+          where: { trailerId, status: { in: activeMaintenanceStatuses } },
+        }),
+        prisma.missionAssignment.count({ where: { trailerId } }),
+        prisma.trailerCustodyEvent.count({ where: { trailerId } }),
+        prisma.maintenanceRequest.count({ where: { trailerId } }),
+        prisma.parkInspection.count({ where: { trailerId } }),
+        prisma.parkMovement.count({ where: { trailerId } }),
+        prisma.missionEvent.count({ where: { trailerId } }),
+        prisma.planningRow.count({ where: { trailerId } }),
+      ])
+      const decision = decideTrailerRemoval({
+        attachedTruckPlate: trailer.truck?.plateNumber ?? null,
+        activeMissionReferences: activeAssignments.map(
+          (item) => item.mission.reference
+        ),
+        activeMaintenanceCount,
+        activePlanningCount,
+        historicalAssignmentCount,
+        custodyEventCount,
+        maintenanceCount,
+        inspectionCount,
+        movementCount,
+        missionEventCount,
+        historicalPlanningCount: Math.max(
+          0,
+          planningCount - activePlanningCount
+        ),
+      })
 
-      if (trailer.truckId) {
-        activeAssignmentConditions.push({
-          truckId: trailer.truckId,
-        });
+      if (decision.action === 'BLOCK') {
+        return res
+          .status(409)
+          .json({ error: decision.reason, disposition: 'BLOCKED' })
       }
 
-      const activeAssignment = await prisma.missionAssignment.findFirst({
-        where: {
-          OR: activeAssignmentConditions,
-          mission: {
-            status: {
-              in: [
-                MissionStatus.PENDING,
-                MissionStatus.ASSIGNED,
-                MissionStatus.IN_PROGRESS,
-                MissionStatus.ISSUE,
-              ],
-            },
-          },
-        },
-        select: {
-          id: true,
-        },
-      });
-
-      if (activeAssignment) {
-        return res.status(409).json({
-          error:
-            "Cette remorque est liée à une mission active. Réassignez ou terminez la mission avant suppression.",
-        });
-      }
-
-      const relatedMaintenanceCount = await prisma.maintenanceRequest.count({
-        where: {
-          trailerId,
-        },
-      });
-
-      if (relatedMaintenanceCount > 0) {
-        return res.status(409).json({
-          error:
-            "Impossible de supprimer cette remorque car elle possède des missions ou interventions liées.",
-        });
+      if (decision.action === 'ARCHIVE') {
+        await prisma.$transaction(async (tx) => {
+          await tx.parkSpot.updateMany({
+            where: { trailerId },
+            data: { trailerId: null, occupiedAt: null, placedById: null },
+          })
+          await tx.trailer.update({
+            where: { id: trailerId },
+            data: { status: TrailerStatus.OUT_OF_SERVICE, truckId: null },
+          })
+        })
+        return res
+          .status(200)
+          .json({
+            success: true,
+            disposition: 'ARCHIVED',
+            message: decision.reason,
+          })
       }
 
       await prisma.$transaction(async (tx) => {
@@ -373,28 +415,30 @@ async function handler(
           data: {
             trailerId: null,
           },
-        });
+        })
         await tx.trailer.delete({
           where: {
             id: trailerId,
           },
-        });
-      });
+        })
+      })
 
-      return res.status(200).json({ success: true });
+      return res.status(200).json({ success: true, disposition: 'DELETED' })
     } catch (error) {
       if (isDeleteConflictError(error)) {
         return res.status(409).json({
           error:
-            "Impossible de supprimer cette remorque car elle possède des missions ou interventions liées.",
-        });
+            'Impossible de supprimer cette remorque car elle possède des missions ou interventions liées.',
+        })
       }
 
-      console.error("Failed to delete trailer", {
+      console.error('Failed to delete trailer', {
         trailerId,
         error,
-      });
-      return res.status(500).json({ error: "Impossible de supprimer la remorque." });
+      })
+      return res
+        .status(500)
+        .json({ error: 'Impossible de supprimer la remorque.' })
     }
   }
 

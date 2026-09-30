@@ -75,8 +75,8 @@ export function evaluateMissionCompatibility(input: {
       pair.initialPosition?.positionSource === 'LAST_COMPLETED_MISSION'
         ? 'position.lastCompletedMission'
         : pair.initialPosition?.positionSource === 'OPERATING_BASE'
-          ? 'position.operatingBase'
-          : 'position.unknown'
+        ? 'position.operatingBase'
+        : 'position.unknown'
     )
   }
 
@@ -92,10 +92,7 @@ export function evaluateMissionCompatibility(input: {
   ) {
     hard.push('TRUCK_UNAVAILABLE')
   }
-  if (
-    mission.forcedPairRowId &&
-    mission.forcedPairRowId !== pair.pair.rowId
-  ) {
+  if (mission.forcedPairRowId && mission.forcedPairRowId !== pair.pair.rowId) {
     hard.push('FORCED_PAIR_MISMATCH')
   }
 
@@ -117,9 +114,15 @@ export function evaluateMissionCompatibility(input: {
       hard.push('TRAILER_UNAVAILABLE')
     }
     if (
-      mission.requiredTrailerId &&
-      mission.requiredTrailerId !== trailer.id
+      trailer.loadStatus === 'LOADED' &&
+      trailer.forcedMissionId !== mission.id
     ) {
+      hard.push('TRAILER_UNAVAILABLE')
+    }
+    if (trailer.forcedMissionId && trailer.forcedMissionId !== mission.id) {
+      hard.push('TRAILER_UNAVAILABLE')
+    }
+    if (mission.requiredTrailerId && mission.requiredTrailerId !== trailer.id) {
       hard.push('REQUIRED_TRAILER_MISSING')
     }
     if (
@@ -227,10 +230,7 @@ export function evaluateMissionCompatibility(input: {
     }
   }
   if (unknown.length) {
-    const conditionalCodes = [
-      'COMPATIBLE_WITH_CONDITION' as const,
-      ...codes,
-    ]
+    const conditionalCodes = ['COMPATIBLE_WITH_CONDITION' as const, ...codes]
     return {
       status: 'INDETERMINATE',
       codes: conditionalCodes,

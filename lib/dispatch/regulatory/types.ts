@@ -72,6 +72,12 @@ export type TemporalLocation = {
     | 'DRIVER_GPS'
     | 'LAST_COMPLETED_MISSION'
     | 'OPERATING_BASE'
+    | 'ATTACHED_TRUCK'
+    | 'MANUAL'
+    | 'PARK_SPOT'
+    | 'STATUS_BASE'
+    | 'MISSION_DELIVERY'
+    | 'IDLE_BASE_FALLBACK'
     | 'UNKNOWN'
   observedAt?: string | null
   positionConfidence?: 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN'

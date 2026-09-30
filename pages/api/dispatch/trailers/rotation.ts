@@ -68,8 +68,8 @@ async function loadTrailerContext(trailerId: string) {
     (assignment) =>
       assignment.mission &&
       !TERMINAL_MISSION_STATUSES.includes(
-        assignment.mission.status as (typeof TERMINAL_MISSION_STATUSES)[number],
-      ),
+        assignment.mission.status as typeof TERMINAL_MISSION_STATUSES[number]
+      )
   )
 
   const situation = resolveTrailerSituation({
@@ -96,10 +96,7 @@ async function loadTrailerContext(trailerId: string) {
   return { trailer, activeAssignment, situation }
 }
 
-async function handler(
-  req: NextApiRequest,
-  res: NextApiResponse,
-) {
+async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (!(await requirePermission(req, res, permissions.dispatchAssign))) return
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST')
@@ -131,8 +128,8 @@ async function handler(
     requestedLoad === 'LOADED'
       ? TrailerLoadStatus.LOADED
       : requestedLoad === 'EMPTY'
-        ? TrailerLoadStatus.EMPTY
-        : trailer.loadStatus
+      ? TrailerLoadStatus.EMPTY
+      : trailer.loadStatus
 
   try {
     /* ---------------------------- DÉCROCHAGE ---------------------------- */
@@ -144,6 +141,11 @@ async function handler(
       }
 
       const previousTruckId = trailer.truckId
+      const effectiveLocation =
+        location ??
+        (nextLoadStatus === TrailerLoadStatus.EMPTY && !activeAssignment
+          ? 'BASE'
+          : null)
 
       const updated = await prisma.$transaction(async (tx) => {
         // Le décrochage ne touche QUE l'attelage physique, le chargement et
@@ -155,7 +157,9 @@ async function handler(
             truckId: null,
             loadStatus: nextLoadStatus,
             status:
-              location === 'BASE' ? TrailerStatus.AT_BASE : trailer.status,
+              effectiveLocation === 'BASE'
+                ? TrailerStatus.AT_BASE
+                : trailer.status,
             custodyState:
               nextLoadStatus === TrailerLoadStatus.LOADED
                 ? TrailerCustodyState.RELAY_AVAILABLE
@@ -172,10 +176,12 @@ async function handler(
             toDriverId: null,
             fromState: trailer.custodyState,
             toState: next.custodyState,
-            location: location ?? null,
+            location: effectiveLocation,
             note:
               note ??
-              `Décrochage${previousTruckId ? ' du tracteur' : ''}. Mission conservée.`,
+              `Décrochage${
+                previousTruckId ? ' du tracteur' : ''
+              }. Mission conservée.`,
           },
         })
 
@@ -191,7 +197,7 @@ async function handler(
                 action: 'DETACH',
                 trailerPlate: trailer.plateNumber,
                 previousTruckId,
-                location,
+                location: effectiveLocation,
                 loadStatus: nextLoadStatus,
               },
             },
@@ -216,7 +222,9 @@ async function handler(
     // plutôt que de produire une mutation vide.
     if (trailer.truckId === truckId) {
       return res.status(409).json({
-        error: `Cette remorque est déjà attelée à ${situation.truckPlate ?? 'ce tracteur'}.`,
+        error: `Cette remorque est déjà attelée à ${
+          situation.truckPlate ?? 'ce tracteur'
+        }.`,
       })
     }
     // Attelée ailleurs : l'attelage devient un TRANSFERT atomique. Le
@@ -226,7 +234,9 @@ async function handler(
     if (situation.immobilized) {
       return res
         .status(409)
-        .json({ error: 'Cette remorque est immobilisée et ne peut pas rouler.' })
+        .json({
+          error: 'Cette remorque est immobilisée et ne peut pas rouler.',
+        })
     }
 
     const truck = await prisma.truck.findUnique({ where: { id: truckId } })
@@ -247,6 +257,10 @@ async function handler(
     const missionToResume = getMissionToResume(situation)
 
     const result = await prisma.$transaction(async (tx) => {
+      await tx.parkSpot.updateMany({
+        where: { trailerId: trailer.id },
+        data: { trailerId: null, occupiedAt: null, placedById: null },
+      })
       const next = await tx.trailer.update({
         where: { id: trailer.id },
         data: {
@@ -304,8 +318,8 @@ async function handler(
           note: missionToResume
             ? `Attelage avec reprise de la mission ${missionToResume.missionReference}.`
             : previousTruckId
-              ? (note ?? 'Transfert de la remorque vers un autre tracteur.')
-              : (note ?? 'Attelage de la remorque.'),
+            ? note ?? 'Transfert de la remorque vers un autre tracteur.'
+            : note ?? 'Attelage de la remorque.',
         },
       })
 

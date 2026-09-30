@@ -107,6 +107,7 @@ export type OptimizationTrailer = {
   availableAt: string
   attachedTruckId?: string | null
   forcedMissionId?: string | null
+  loadStatus?: 'EMPTY' | 'LOADED'
   restrictions: string[]
 }
 

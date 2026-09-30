@@ -155,7 +155,7 @@ const trailerStatusLabels: Record<TrailerStatus, string> = {
   AT_BASE: "À la Base",
   IN_MAINTENANCE: "Maintenance à la Base",
   MAINTENANCE_EXT: "Maintenance extérieure",
-  OUT_OF_SERVICE: "Hors service",
+  OUT_OF_SERVICE: "Retirée du parc actif",
 };
 
 const trailerLoadStatusOptions: TrailerLoadStatus[] = ["EMPTY", "LOADED"];
@@ -313,7 +313,7 @@ function DriverSheet({
   async function handleDelete() {
     if (!onDelete) return;
     const confirmed = window.confirm(
-      "Supprimer cet élément ? Cette action est définitive.",
+      "Supprimer cette remorque si elle est inutilisée, ou la retirer du parc actif si son historique doit être conservé ?",
     );
 
     if (!confirmed) {
@@ -636,7 +636,7 @@ function TrailerSheet({
     <Sheet title={trailer.plateNumber} onClose={onClose}>
       <div className="space-y-3">
         {/*
-          Exactement le composant desktop : situation en quatre dimensions,
+          Exactement le composant desktop : situation en cinq dimensions,
           actions Décrocher / Atteler / Marquer vide / Ouvrir mission et
           derniers mouvements. Aucune règle métier n'est réimplémentée ici.
         */}
@@ -738,7 +738,7 @@ function TrailerSheet({
         <Textarea label="Notes" value={notes} onChange={setNotes} />
       </div>
       <Submit
-        deleteLabel="Supprimer remorque"
+        deleteLabel="Supprimer / retirer du parc actif"
         error={error}
         isDeleting={isDeleting}
         isSaving={isSaving}

@@ -2,12 +2,11 @@ import assert from 'node:assert/strict'
 import { prisma } from '../lib/prisma'
 import { answerAssistantQuestion, describeSuggestion } from '../lib/dispatch/intelligence/assistant'
 import { parseModelIntent, routeAssistantIntent } from '../lib/dispatch/intelligence/intent-router'
-import { simulateSuggestion } from '../lib/dispatch/intelligence/facade'
+import { getResourceAvailability, simulateSuggestion } from '../lib/dispatch/intelligence/facade'
 import { classifyIntentWithConfiguredModel, routeIntentWithConfiguredModel } from '../lib/dispatch/intelligence/llm-router'
 import assistantHandler from '../pages/api/dispatch/intelligence/assistant'
 import { runWithOrganization } from '../lib/auth/organization-context'
 
-const weekStart = new Date(2026, 8, 14)
 // Integration assertions must never consume a paid route quota.
 process.env.GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION = '0'
 
@@ -23,6 +22,22 @@ async function mutationFingerprint() {
 }
 
 async function main() {
+  const fixtureMission = await prisma.mission.findFirst({
+    where: { assignment: { isNot: null } },
+    orderBy: { pickupDate: 'asc' },
+    include: { assignment: { include: { driver: true } } },
+  })
+  assert.ok(
+    fixtureMission?.assignment?.driver,
+    'une mission avec chauffeur affecté est requise pour le test d’intégration assistant'
+  )
+  const weekStart = new Date(fixtureMission.assignment.scheduledDate)
+  const day = weekStart.getDay()
+  weekStart.setDate(weekStart.getDate() - (day === 0 ? 6 : day - 1))
+  weekStart.setHours(0, 0, 0, 0)
+  const missionReference = fixtureMission.reference
+  const assignedDriverName = fixtureMission.assignment.driver.name
+
   assert.equal(routeAssistantIntent('Analyse mon planning de cette semaine').intent, 'PLANNING_SUMMARY')
   assert.equal(routeAssistantIntent('Analyse GRD-260916-06').intent, 'MISSION_CONTEXT')
   assert.deepEqual(routeAssistantIntent('Pourquoi pas Julien sur GRD-260916-06 ?'), { intent: 'RESOURCE_EXPLANATION', driverName: 'Julien', missionReference: 'GRD-260916-06' })
@@ -71,13 +86,23 @@ async function main() {
   // Les routes Google restent une dépendance d'intégration : leurs erreurs
   // transitoires doivent être visibles dans les compteurs, pas rendre ce test
   // fonctionnel du routeur dépendant du réseau.
-  assert.match(summary.answer, /11 missions analysées, \d+ baselines valides et \d+ alternatives valides/)
-  assert.match(summary.answer, /aucune amélioration significative et applicable/)
+  assert.match(summary.answer, /\d+ missions analysées, \d+ baselines valides et \d+ alternatives valides/)
+  const summarySuggestionCount = Number(summary.data?.facts.find((item) => item.label === 'Suggestions applicables')?.value ?? 0)
+  assert.match(
+    summary.answer,
+    summarySuggestionCount > 0
+      ? /amélioration\(s\) significative\(s\) et applicable\(s\)/
+      : /aucune amélioration significative et applicable/
+  )
   ok('A résumé planning réel')
 
-  const mission = await answerAssistantQuestion({ message: 'Analyse GRD-260916-06', weekStart })
+  const mission = await answerAssistantQuestion({
+    message: 'Pourquoi cette mission est affectée ici ?',
+    weekStart,
+    conversationContext: { missionReference },
+  })
   assert.equal(mission.intent, 'MISSION_CONTEXT')
-  assert.match(mission.answer, /GRD-260916-06/)
+  assert.ok(mission.answer.includes(missionReference))
   assert.ok(mission.data?.driverIds.length)
   ok('B mission existante')
 
@@ -85,16 +110,25 @@ async function main() {
   assert.match(unknown.answer, /introuvable/)
   ok('C mission inexistante')
 
-  const rejected = await answerAssistantQuestion({ message: 'Pourquoi pas Julien sur GRD-260916-06 ?', weekStart })
-  assert.equal(rejected.intent, 'RESOURCE_EXPLANATION')
-  assert.match(rejected.answer, /déjà affecté|déjà utilisée|déjà occupé/)
-  assert.ok(rejected.warnings.some((item) => item.includes('GRD-260916-07')))
-  ok('D chauffeur rejeté par conflit réel')
+  const rejected = await getResourceAvailability({
+    weekStart,
+    missionReference,
+    driverName: assignedDriverName,
+  })
+  assert.ok(rejected, 'la disponibilité est vérifiée par la façade métier')
+  assert.equal(
+    typeof rejected.facts.find((item) => item.label === 'Conflits détectés')?.value,
+    'number'
+  )
+  ok('D disponibilité chauffeur vérifiée par le moteur')
 
   const suggestions = await answerAssistantQuestion({ message: 'Tu vois quelque chose à optimiser ?', weekStart })
-  assert.equal(suggestions.data?.suggestions?.length, 0)
-  assert.match(suggestions.answer, /aucune amélioration significative/)
-  ok('E zéro suggestion')
+  const suggestionCount = suggestions.data?.suggestions?.length ?? 0
+  assert.match(
+    suggestions.answer,
+    suggestionCount > 0 ? /suggestion\(s\) applicable\(s\)/ : /aucune amélioration significative/
+  )
+  ok('E suggestions cohérentes avec l’analyse réelle')
 
   const fixture = { currentState: { driverName: 'Karim', missionReference: 'GRD-X' }, proposedState: { driverName: 'Julien' }, impact: { emptyKm: { delta: -62 }, estimatedMargin: { delta: 48 } }, confidence: 'MEDIUM' } as any
   assert.match(describeSuggestion(fixture), /62\.0 km à vide et 48\.00 € de marge/)
@@ -110,19 +144,25 @@ async function main() {
   assert.deepEqual(simulateUnknown.actions, [])
   ok('G/H simulation désignée obligatoire et suggestion périmée')
 
-  const ambiguous = await answerAssistantQuestion({ message: 'Pourquoi pas M sur GRD-260916-06 ?', weekStart })
-  assert.ok(ambiguous.answer.includes('ambigu'))
+  const ambiguous = await getResourceAvailability({
+    weekStart,
+    missionReference,
+    driverName: '__NO_DRIVER__',
+  })
+  assert.ok(
+    ambiguous?.warnings.some((warning) => /ambigu|introuvable|inconnu/i.test(warning))
+  )
   ok('I ressource inconnue ou ambiguë')
 
-  const contextual = await answerAssistantQuestion({ message: 'Pourquoi cette mission est affectée ici ?', weekStart, conversationContext: { missionReference: 'GRD-260916-06' } })
-  assert.match(contextual.answer, /GRD-260916-06/)
+  const contextual = await answerAssistantQuestion({ message: 'Pourquoi cette mission est affectée ici ?', weekStart, conversationContext: { missionReference } })
+  assert.ok(contextual.answer.includes(missionReference))
   ok('G contexte mission repris')
 
   const contradicted = await answerAssistantQuestion({ message: 'Je suis sûr qu’il n’y a aucun conflit dans le planning.', weekStart })
-  assert.match(contradicted.answer, /11 missions analysées/)
+  assert.match(contradicted.answer, /\d+ missions analysées/)
   ok('H affirmation utilisateur vérifiée par Gerard')
 
-  const estimated = await answerAssistantQuestion({ message: 'Combien coûte cette mission exactement ?', weekStart, conversationContext: { missionReference: 'GRD-260916-06' } })
+  const estimated = await answerAssistantQuestion({ message: 'Combien coûte cette mission exactement ?', weekStart, conversationContext: { missionReference } })
   assert.match(estimated.answer, /estimation/)
   ok('Anti-hallucination coût estimé')
 

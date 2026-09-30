@@ -2,10 +2,7 @@ import {
   buildTemporalMissionPlanFromDispatch,
   createUnknownDriverRegulatoryState,
 } from '../regulatory'
-import type {
-  DriverRegulatoryState,
-  TemporalLocation,
-} from '../regulatory'
+import type { DriverRegulatoryState, TemporalLocation } from '../regulatory'
 import type {
   OptimizationMission,
   OptimizationPair,
@@ -163,7 +160,7 @@ export function adaptDispatchMissionForOptimization(input: {
     ],
     confidence:
       temporalPlan.missingData.length === 0 &&
-      !(input.mission.compatibilityMissingData?.length)
+      !input.mission.compatibilityMissingData?.length
         ? input.mission.routeProvider
           ? 'MEDIUM'
           : 'LOW'
@@ -177,6 +174,8 @@ export function adaptTrailerForOptimization(input: {
   status: string
   type: string
   truckId?: string | null
+  loadStatus?: 'EMPTY' | 'LOADED'
+  forcedMissionId?: string | null
   position: TemporalLocation | null
   availableAt: string
   capacity?: number | null
@@ -191,6 +190,8 @@ export function adaptTrailerForOptimization(input: {
     position: input.position,
     availableAt: input.availableAt,
     attachedTruckId: input.truckId,
+    loadStatus: input.loadStatus,
+    forcedMissionId: input.forcedMissionId,
     capacity: input.capacity,
     couplingType: input.couplingType,
     compatibleCargoTypes: input.compatibleCargoTypes,

@@ -1,10 +1,5 @@
 import { createHash } from 'crypto'
-import {
-  MissionStatus,
-  TrailerCargoType,
-  TrailerStatus,
-  TrailerType,
-} from '@prisma/client'
+import { MissionStatus, TrailerCargoType, TrailerType } from '@prisma/client'
 
 import { buildPreparedDriverTruckPairs } from '../driver-truck-pairs'
 import { positionProvidersForAnalysis } from '../suggestions/planning-analysis'
@@ -38,6 +33,7 @@ import {
   configuredOperatingBase,
   resolveDriverPosition,
 } from '../driver-position'
+import { resolveTrailerPosition } from '../trailer-position'
 
 const snapshotLifetimeMs = 15 * 60 * 1000
 export const maximumSimulationMissions = 100
@@ -141,7 +137,7 @@ function missionTrailerRequirements(
   const requiredCouplingType =
     typeof record.requiredCouplingType === 'string' &&
     COUPLING_TYPE_VALUES.includes(
-      record.requiredCouplingType as (typeof COUPLING_TYPE_VALUES)[number]
+      record.requiredCouplingType as typeof COUPLING_TYPE_VALUES[number]
     )
       ? record.requiredCouplingType
       : null
@@ -190,6 +186,7 @@ async function buildAutoPlanningSnapshotInternal(input: {
     trailers,
     latestPositions,
     completedMissionPositions,
+    completedTrailerPositions,
     regulatoryDeclarations,
     driverActivityEvents,
   ] = await Promise.all([
@@ -227,6 +224,9 @@ async function buildAutoPlanningSnapshotInternal(input: {
       include: {
         mission: {
           select: {
+            id: true,
+            reference: true,
+            status: true,
             deliveryPlaceId: true,
             deliveryAddress: true,
             deliveryLat: true,
@@ -284,6 +284,29 @@ async function buildAutoPlanningSnapshotInternal(input: {
         },
         planningRow: {
           select: { driverId: true, truckId: true },
+        },
+      },
+    }),
+    prisma.missionAssignment.findMany({
+      where: {
+        trailerId: { not: null },
+        mission: {
+          status: MissionStatus.DONE,
+          deliveryDate: { lte: input.weekStartDate },
+          deliveryLat: { not: null },
+          deliveryLng: { not: null },
+        },
+      },
+      orderBy: { mission: { deliveryDate: 'desc' } },
+      include: {
+        mission: {
+          select: {
+            deliveryPlaceId: true,
+            deliveryAddress: true,
+            deliveryLat: true,
+            deliveryLng: true,
+            deliveryDate: true,
+          },
         },
       },
     }),
@@ -349,6 +372,10 @@ async function buildAutoPlanningSnapshotInternal(input: {
     string,
     ReturnType<typeof resolveDriverPosition>['location']
   >()
+  const positionByTruckId = new Map<
+    string,
+    ReturnType<typeof resolveDriverPosition>['location']
+  >()
   const pairs = preparedPairs
     .map((source) => {
       const truck = source.assignedTruck
@@ -390,6 +417,7 @@ async function buildAutoPlanningSnapshotInternal(input: {
       })
       const initialPosition = resolvedPosition.location
       positionByPairRowId.set(source.rowId, initialPosition)
+      if (truck) positionByTruckId.set(truck.id, initialPosition)
       return adaptPreparedPairForOptimization({
         source,
         availableAt: input.weekStartDate.toISOString(),
@@ -416,10 +444,14 @@ async function buildAutoPlanningSnapshotInternal(input: {
                     }
                   : null,
               })
-              return regulatoryStateFromActivitySummary(declaration ?? null, summary, {
-                driverId: source.driver!.id,
-                timeZone: declaration?.timeZone ?? 'Europe/Luxembourg',
-              })
+              return regulatoryStateFromActivitySummary(
+                declaration ?? null,
+                summary,
+                {
+                  driverId: source.driver!.id,
+                  timeZone: declaration?.timeZone ?? 'Europe/Luxembourg',
+                }
+              )
             })()
           : null,
       })
@@ -525,9 +557,8 @@ async function buildAutoPlanningSnapshotInternal(input: {
     string,
     { availableAt: Date; position: ReturnType<typeof locationFromMission> }
   >()
-  for (const assignment of assignments) {
-    if (!assignment.trailerId || includedMissionIds.has(assignment.missionId))
-      continue
+  for (const assignment of completedTrailerPositions) {
+    if (!assignment.trailerId) continue
     const availableAt =
       assignment.plannedEndAt ?? assignment.mission.deliveryDate
     if (!availableAt) continue
@@ -543,32 +574,52 @@ async function buildAutoPlanningSnapshotInternal(input: {
       }),
     })
   }
+  const activeTrailerMission = new Map<string, string>()
+  const activeMissionStatuses = new Set<MissionStatus>([
+    MissionStatus.PENDING,
+    MissionStatus.ASSIGNED,
+    MissionStatus.IN_PROGRESS,
+    MissionStatus.ISSUE,
+  ])
+  for (const assignment of assignments) {
+    if (
+      assignment.trailerId &&
+      activeMissionStatuses.has(assignment.mission.status)
+    ) {
+      activeTrailerMission.set(assignment.trailerId, assignment.missionId)
+    }
+  }
   const adaptedTrailers = trailers.map((item) => {
     const prior = priorTrailerState.get(item.id)
+    const forcedMissionId = activeTrailerMission.get(item.id) ?? null
+    const resolvedPosition = resolveTrailerPosition({
+      attached: Boolean(item.truckId),
+      attachedTruckPosition: item.truckId
+        ? positionByTruckId.get(item.truckId) ?? null
+        : null,
+      parkSpotCode: item.parkSpot?.code ?? null,
+      status: item.status,
+      lastMissionDelivery: prior?.position
+        ? {
+            id: prior.position.id,
+            label: prior.position.label ?? 'Dernière livraison',
+            latitude: prior.position.latitude,
+            longitude: prior.position.longitude,
+          }
+        : null,
+      operatingBase,
+      loadStatus: item.loadStatus,
+      hasActiveMission: Boolean(forcedMissionId),
+    })
     return adaptTrailerForOptimization({
       id: item.id,
       plateNumber: item.plateNumber,
       status: item.status,
       type: item.type,
       truckId: item.truckId,
-      position:
-        prior?.position ??
-        (item.parkSpot
-          ? {
-              id: `PARK:${item.parkSpot.code}`,
-              label: item.parkSpot.code,
-              latitude: operatingBase?.latitude,
-              longitude: operatingBase?.longitude,
-            }
-          : item.status === TrailerStatus.AT_BASE ||
-            item.status === TrailerStatus.IN_MAINTENANCE
-          ? {
-              id: 'BASE',
-              label: 'Base',
-              latitude: operatingBase?.latitude,
-              longitude: operatingBase?.longitude,
-            }
-          : null),
+      loadStatus: item.loadStatus,
+      forcedMissionId,
+      position: resolvedPosition.location,
       availableAt:
         prior?.availableAt.toISOString() ?? input.weekStartDate.toISOString(),
       capacity: item.capacityKg,
@@ -692,6 +743,10 @@ async function buildAutoPlanningSnapshotInternal(input: {
   }
 }
 
-export async function buildAutoPlanningSnapshot(input: Parameters<typeof buildAutoPlanningSnapshotInternal>[0]) {
-  return withRouteOperation('Auto-planning snapshot', () => buildAutoPlanningSnapshotInternal(input))
+export async function buildAutoPlanningSnapshot(
+  input: Parameters<typeof buildAutoPlanningSnapshotInternal>[0]
+) {
+  return withRouteOperation('Auto-planning snapshot', () =>
+    buildAutoPlanningSnapshotInternal(input)
+  )
 }

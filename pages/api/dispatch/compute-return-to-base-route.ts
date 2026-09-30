@@ -3,7 +3,7 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 import { requirePermission } from '../../../lib/auth/authorization'
 import { permissions } from '../../../lib/auth/permissions'
 
-import { GERARD_BASE } from '../../../lib/dispatch/base-location'
+import { configuredOperatingBase } from '../../../lib/dispatch/base-location'
 import { computeGoogleRoute } from '../../../lib/dispatch/maps/google'
 import { prisma } from '../../../lib/prisma'
 
@@ -160,9 +160,16 @@ async function handler(
       })
     }
 
+    const operatingBase = configuredOperatingBase()
+    if (!operatingBase) {
+      return res.status(409).json({
+        error: 'Operating base is not configured',
+      })
+    }
+
     const route = await computeGoogleRoute({
       origin: { latitude: truckPosition.latitude, longitude: truckPosition.longitude },
-      destination: { latitude: GERARD_BASE.lat, longitude: GERARD_BASE.lng },
+      destination: operatingBase,
     })
     const { distanceMeters, durationSeconds, polyline } = route
 
