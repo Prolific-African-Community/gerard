@@ -1086,7 +1086,7 @@ function PlanningRowView({
   >
 }) {
   const hasMissions = planningDays.some((day) => missionsByDay[day].length > 0)
-  const hasWork = Boolean(row.truckId || row.trailerId) || hasMissions
+  const hasWork = Boolean(row.truckId) || hasMissions
 
   return (
     <tr
@@ -1370,9 +1370,17 @@ export function WeeklyDispatchBoard({
         const nextMissions = overview.missions.map((mission) => {
           const mapped = mapApiMission(mission)
           const assignment = assignmentByMissionId.get(mission.id)
+          const requestedTrailerId =
+            typeof mapped.requirements?.requiredTrailerId === 'string'
+              ? mapped.requirements.requiredTrailerId
+              : null
           return {
             ...mapped,
             trailerPlateNumber: assignment?.trailer?.plateNumber ?? undefined,
+            requestedTrailerPlateNumber: requestedTrailerId
+              ? nextTrailers.find((trailer) => trailer.id === requestedTrailerId)
+                  ?.plateNumber
+              : undefined,
             trailerId: assignment?.trailer?.id ?? undefined,
             trailerCustodyState:
               assignment?.trailer?.custodyState ?? undefined,
@@ -1558,16 +1566,12 @@ export function WeeklyDispatchBoard({
   )
 
   const assignedTrailerIds = useMemo(() => {
-    const trailerIds = new Set<string>()
-
-    dispatchData.planningRows.forEach((row) => {
-      if (row.trailerId) {
-        trailerIds.add(row.trailerId)
-      }
-    })
-
-    return trailerIds
-  }, [dispatchData.planningRows])
+    return new Set(
+      dispatchData.trailers
+        .filter((trailer) => Boolean(trailer.truckId))
+        .map((trailer) => trailer.id)
+    )
+  }, [dispatchData.trailers])
 
   const truckAssignments = useMemo(() => {
     const assignments = getInitialTruckAssignments(dispatchData.trucks)
@@ -2709,16 +2713,6 @@ export function WeeklyDispatchBoard({
 
       if (result?.trailer) applyTrailerRotation(result.trailer)
 
-      // `PlanningRow.trailerId` reste la remorque PRÉVUE au planning : on la
-      // synchronise pour rester cohérent, sans jamais en faire la preuve
-      // d'attelage.
-      try {
-        await patchPlanningRow(targetRow.id, { trailerId })
-      } catch {
-        // La synchronisation du planning est secondaire : l'attelage physique
-        // a réussi et fait foi.
-      }
-
       // Le toast n'est émis qu'après confirmation serveur.
       setManualPlanningNotice({
         kind: 'success',
@@ -2760,17 +2754,6 @@ export function WeeklyDispatchBoard({
       }
 
       if (result?.trailer) applyTrailerRotation(result.trailer)
-
-      const sourceRow = dispatchData.planningRows.find(
-        (row) => row.trailerId === trailerId
-      )
-      if (sourceRow) {
-        try {
-          await patchPlanningRow(sourceRow.id, { trailerId: null })
-        } catch {
-          // idem : l'état physique fait foi.
-        }
-      }
 
       setManualPlanningNotice({
         kind: 'success',
@@ -3466,7 +3449,7 @@ export function WeeklyDispatchBoard({
                       Camion
                     </th>
                     <th className="border-l border-black/10 px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-[#62665b]">
-                      Remorque
+                      Remorque actuelle
                     </th>
                     {planningDays.map((day) => (
                       <th
@@ -3488,14 +3471,8 @@ export function WeeklyDispatchBoard({
                     // PHYSIQUE courant, pas la remorque prévue au planning.
                     // Une remorque décrochée disparaît immédiatement de la
                     // ligne, même si la mission reste active.
-                    const plannedTrailer = row.trailerId
-                      ? trailersById[row.trailerId]
-                      : undefined
-                    const trailer = isTrailerVisibleOnPlanningRow(
-                      plannedTrailer,
-                      row.truckId
-                    )
-                      ? plannedTrailer
+                    const trailer = row.truckId
+                      ? trailersByTruckId[row.truckId]
                       : undefined
 
                     return (
@@ -3674,6 +3651,7 @@ export function WeeklyDispatchBoard({
         trailerLabel={selectedTrailer?.plateNumber}
         trailers={dispatchData.trailers}
         plannedTrailerId={selectedMissionPlacement?.trailerId}
+        hasAssignment={Boolean(selectedMissionPlacement?.assignmentId)}
         trailerChangePlanned={selectedMissionPlacement?.trailerChangePlanned}
         onPlannedTrailerChange={async (missionId, trailerId) => {
           const response = await fetch(

@@ -328,6 +328,18 @@ async function handler(
         existingMission.requirements,
         normalized.value,
       );
+      const requiredTrailerId = requirementsPatch.requiredTrailerId;
+      if (typeof requiredTrailerId === "string") {
+        const requiredTrailer = await prisma.trailer.findUnique({
+          where: { id: requiredTrailerId },
+          select: { id: true },
+        });
+        if (!requiredTrailer) {
+          return res.status(400).json({
+            error: "La remorque sélectionnée est introuvable.",
+          });
+        }
+      }
     }
     const mergeOptionalObject = (
       value: unknown,

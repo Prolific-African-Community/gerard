@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 
 import {
   configuredOperatingBase,
@@ -10,6 +11,7 @@ import {
   resolveTrailerSituation,
 } from '../lib/dispatch/trailer-rotation'
 import { resolveTrailerPosition } from '../lib/dispatch/trailer-position'
+import { normalizeMissionTrailerRequirements } from '../lib/dispatch/mission-trailer-requirements'
 import {
   evaluateMissionCompatibility,
   requiredTransitions,
@@ -237,6 +239,36 @@ assert.deepEqual(
   ['detached-empty']
 )
 
+// Run 2 — an explicit mission trailer is a hard mission-level constraint.
+const manuallyConstrainedMission = {
+  ...trailerMission,
+  requiredTrailerId: 'manual-trailer',
+}
+assert.deepEqual(
+  trailerChoices(manuallyConstrainedMission, [
+    trailer({ id: 'automatic-best' }),
+    trailer({ id: 'manual-trailer' }),
+  ]).map((item) => item?.id),
+  ['manual-trailer']
+)
+const wrongManualTrailer = evaluateMissionCompatibility({
+  pair,
+  mission: manuallyConstrainedMission,
+  trailer: trailer({ id: 'automatic-best' }),
+})
+assert.equal(
+  wrongManualTrailer.codes.includes('REQUIRED_TRAILER_MISSING'),
+  true
+)
+assert.deepEqual(
+  normalizeMissionTrailerRequirements({ requiredTrailerId: ' manual-trailer ' }),
+  { ok: true, value: { requiredTrailerId: 'manual-trailer' } }
+)
+assert.deepEqual(
+  normalizeMissionTrailerRequirements({ requiredTrailerId: '' }),
+  { ok: true, value: { requiredTrailerId: null } }
+)
+
 // E — maintenance remains a hard blocker.
 const maintenance = evaluateMissionCompatibility({
   pair,
@@ -336,6 +368,21 @@ assert.equal(attachedRoutes.trailerChange, false)
 assert.deepEqual(
   attachedRoutes.routes.map((item) => item.key),
   [direct.key]
+)
+
+// Editing an automatically assigned mission must keep its request automatic.
+// The applied trailer is operational output, not a persisted manual constraint.
+const missionDetailSource = readFileSync(
+  new URL('../components/dispatch/MissionDetailPanel.tsx', import.meta.url),
+  'utf8'
+)
+assert.match(
+  missionDetailSource,
+  /plannedTrailerId:\s*getJsonString\(requirements, "requiredTrailerId"\) \?\? ""/
+)
+assert.doesNotMatch(
+  missionDetailSource,
+  /getEditFormState\(mission,\s*plannedTrailerId\)/
 )
 
 console.log('A-P trailer domain simplification rules: OK')

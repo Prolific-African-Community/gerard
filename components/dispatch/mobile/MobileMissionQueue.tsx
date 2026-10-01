@@ -228,9 +228,15 @@ function MobileMissionCard({
   const truck = placement?.truckId
     ? trucks.find((item) => item.id === placement.truckId)
     : undefined;
-  const trailer = truck
-    ? trailers.find((item) => item.truckId === truck.id)
-    : undefined;
+  const requiredTrailerId =
+    typeof mission.requirements?.requiredTrailerId === "string"
+      ? mission.requirements.requiredTrailerId
+      : null;
+  const trailer = placement?.trailerId
+    ? trailers.find((item) => item.id === placement.trailerId)
+    : requiredTrailerId
+      ? trailers.find((item) => item.id === requiredTrailerId)
+      : undefined;
   const distanceLabel =
     typeof mission.routeDistanceMeters === "number"
       ? `${Math.round(mission.routeDistanceMeters / 1000)} km`
@@ -272,7 +278,7 @@ function MobileMissionCard({
         <Info label="Distance" value={distanceLabel} />
         <Info label="Chauffeur" value={driver?.name ?? "Non assigné"} />
         <Info label="Camion" value={truck?.plateNumber ?? "Non assigné"} />
-        <Info label="Remorque" value={trailer?.plateNumber ?? "Non assignée"} />
+        <Info label="Remorque" value={trailer?.plateNumber ?? "Automatique"} />
         <Info label="Prix" value={formatPrice(mission)} />
       </div>
 

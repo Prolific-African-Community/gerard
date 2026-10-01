@@ -207,6 +207,7 @@ export type Mission = {
   status: MissionStatus
   notes?: string
   trailerPlateNumber?: string
+  requestedTrailerPlateNumber?: string
   trailerId?: string
   trailerCustodyState?: TrailerCustodyState
   trailerCustodyLabel?: string

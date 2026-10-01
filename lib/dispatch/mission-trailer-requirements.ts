@@ -24,7 +24,14 @@ export function hasValidMissionTrailerRequirements(
     requiredCapacityKg,
     requiredCargoType,
     requiredCouplingType,
+    requiredTrailerId,
   } = requirements
+  if (
+    typeof requiredTrailerId !== 'undefined' &&
+    requiredTrailerId !== null &&
+    requiredTrailerId !== '' &&
+    typeof requiredTrailerId !== 'string'
+  ) return false
   if (
     typeof requiredTrailerType !== 'undefined' &&
     requiredTrailerType !== null &&
@@ -62,6 +69,19 @@ export function normalizeMissionTrailerRequirements(
   | { ok: true; value: Record<string, unknown> }
   | { ok: false; error: string } {
   const value = { ...requirements }
+
+  if ('requiredTrailerId' in value) {
+    if (typeof value.requiredTrailerId === 'undefined') {
+      delete value.requiredTrailerId
+    } else if (value.requiredTrailerId === null || value.requiredTrailerId === '') {
+      value.requiredTrailerId = null
+    } else if (typeof value.requiredTrailerId !== 'string') {
+      return { ok: false, error: 'Remorque requise invalide.' }
+    } else {
+      value.requiredTrailerId = value.requiredTrailerId.trim()
+      if (!value.requiredTrailerId) value.requiredTrailerId = null
+    }
+  }
 
   if ('requiredTrailerType' in value) {
     if (typeof value.requiredTrailerType === 'undefined') {

@@ -83,6 +83,7 @@ function missionTrailerRequirements(
   legacyRequiredTruckType: string | null
 ) {
   const empty = {
+    requiredTrailerId: null as string | null,
     requiredTrailerType: null as string | null,
     requiredCapacity: null as number | null,
     requiredCargoType: null as string | null,
@@ -100,6 +101,10 @@ function missionTrailerRequirements(
     }
   }
   const record = requirements as Record<string, unknown>
+  const requiredTrailerId =
+    typeof record.requiredTrailerId === 'string' && record.requiredTrailerId.trim()
+      ? record.requiredTrailerId.trim()
+      : null
   const requiredTrailerType =
     typeof record.requiredTrailerType === 'string' &&
     Object.values(TrailerType).includes(
@@ -146,6 +151,7 @@ function missionTrailerRequirements(
     compatibilityMissingData.push('requiredCouplingType')
   }
   return {
+    requiredTrailerId,
     requiredTrailerType,
     requiredCapacity:
       Number.isFinite(capacity) && capacity > 0 ? capacity : null,
@@ -473,7 +479,8 @@ async function buildAutoPlanningSnapshotInternal(input: {
         mission: {
           ...source,
           ...trailerRequirements,
-          requiredTrailerId: assignment?.trailerId ?? null,
+          requiredTrailerId:
+            assignment?.trailerId ?? trailerRequirements.requiredTrailerId,
         },
         startPosition: pairPosition,
         approachDurationSeconds: assignment?.approachDurationSeconds ?? null,

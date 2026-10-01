@@ -7,6 +7,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useState } from 
 import { AdminShell, Badge, Modal, Notice, SaveBar, SectionHeader, Surface, Switch, TextField, Toast, auditLabel, buttonClass, formatDate, formatRelative, headerLinkClass, inputClass, roleLabels } from '../components/admin/ui'
 import { brandAssetAcceptAttribute, type BrandAssetKind } from '../lib/tenant/brand-assets'
 import { LogoutButton } from '../components/site/LogoutButton'
+import { AddressAutocomplete, type AddressPlace } from '../components/dispatch/AddressAutocomplete'
 import { getPlatformUser } from '../lib/auth/platform-authorization'
 
 const modules = ['PLANNING', 'MAP', 'PROFITABILITY', 'INVOICING', 'FLEET', 'MAINTENANCE', 'INTELLIGENCE', 'ASSISTANT'] as const
@@ -327,10 +328,10 @@ function OperatingBaseForm({ detail, canWrite, mutate }: { detail: Detail; canWr
   const [draft, setDraft] = useState(initial)
   useEffect(() => setDraft(initial), [detail.operatingBaseAddress, detail.operatingBasePlaceId, detail.operatingBaseLat, detail.operatingBaseLng]) // eslint-disable-line react-hooks/exhaustive-deps
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial)
-  const valid = (!draft.lat && !draft.lng) || (Number.isFinite(Number(draft.lat)) && Number.isFinite(Number(draft.lng)))
+  const valid = !draft.address || Boolean(draft.placeId && draft.lat && draft.lng && Number.isFinite(Number(draft.lat)) && Number.isFinite(Number(draft.lng)))
   const { busy, error, submit } = useSubmit(() => mutate(`/api/platform/organizations/${detail.id}`, { method: 'PATCH', body: JSON.stringify({ operatingBaseAddress: draft.address || null, operatingBasePlaceId: draft.placeId || null, operatingBaseLat: draft.lat ? Number(draft.lat) : null, operatingBaseLng: draft.lng ? Number(draft.lng) : null }) }, 'Base d’exploitation enregistrée.'))
   return <form onSubmit={submit} className="mt-5"><Surface title="Base d’exploitation" description="Position de référence utilisée par la planification pour cette organisation." footer={canWrite && <SaveBar dirty={dirty} busy={busy} onReset={() => setDraft(initial)} disabled={!valid} />}>
-    <div className="grid gap-3 p-4 sm:grid-cols-2"><div className="sm:col-span-2"><TextField label="Adresse" value={draft.address} set={(address) => setDraft({ ...draft, address })} disabled={!canWrite} placeholder="Adresse résolue de la base" hint="Les coordonnées enregistrées ci-dessous sont la source de vérité du moteur." /></div><TextField label="Latitude" type="number" value={draft.lat} set={(lat) => setDraft({ ...draft, lat })} disabled={!canWrite} /><TextField label="Longitude" type="number" value={draft.lng} set={(lng) => setDraft({ ...draft, lng })} disabled={!canWrite} /></div>
+    <div className="grid gap-3 p-4 sm:grid-cols-2"><div className="sm:col-span-2"><AddressAutocomplete label="Adresse" value={draft.address} placeId={draft.placeId} placeholder="Rechercher une adresse..." disabled={!canWrite} onChange={(address) => setDraft({ address, placeId: '', lat: '', lng: '' })} onSelect={(place: AddressPlace) => setDraft({ address: place.label, placeId: place.placeId, lat: place.lat == null ? '' : String(place.lat), lng: place.lng == null ? '' : String(place.lng) })} /></div>{draft.address && !valid ? <div className="sm:col-span-2"><Notice tone="error">Sélectionnez une adresse proposée par Google afin d’enregistrer des coordonnées vérifiées.</Notice></div> : null}{valid && draft.lat && draft.lng ? <div className="sm:col-span-2 text-xs font-medium text-black/50">Coordonnées résolues : {draft.lat}, {draft.lng}</div> : null}</div>
     {error && <div className="px-4 pb-3"><Notice tone="error">{error}</Notice></div>}
   </Surface></form>
 }

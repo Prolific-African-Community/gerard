@@ -33,6 +33,7 @@ import {
 } from "../../../lib/dispatch/technical-attributes";
 import { normalizeCompatibleCargoTypes } from "../../../lib/dispatch/form-normalization";
 import { DriverRegulatorySummary } from "../DriverRegulatorySummary";
+import { AddressAutocomplete, type AddressPlace } from "../AddressAutocomplete";
 
 type MobileResourceFormSheetProps = {
   driver: Driver | null;
@@ -92,6 +93,10 @@ export type TrailerPayload = {
   technicalInspectionDate?: string | null;
   capacityKg?: number | null;
   couplingType?: string | null;
+  currentLocationAddress?: string | null;
+  currentLocationPlaceId?: string | null;
+  currentLocationLat?: number | null;
+  currentLocationLng?: number | null;
 };
 
 /** Analyse une capacité saisie (chaîne) : '' => null ; sinon entier > 0. */
@@ -552,6 +557,19 @@ function TrailerSheet({
     typeof trailer.capacityKg === "number" ? String(trailer.capacityKg) : "",
   );
   const [couplingType, setCouplingType] = useState(trailer.couplingType ?? "");
+  const [locationMode, setLocationMode] = useState<"" | "BASE" | "OTHER">(
+    trailer.currentLocationLat != null && trailer.currentLocationLng != null
+      ? "OTHER"
+      : trailer.status === "AT_BASE" && trailer.loadStatus !== "LOADED"
+        ? "BASE"
+        : "",
+  );
+  const [location, setLocation] = useState({
+    address: trailer.currentLocationAddress ?? "",
+    placeId: trailer.currentLocationPlaceId ?? "",
+    lat: trailer.currentLocationLat,
+    lng: trailer.currentLocationLng,
+  });
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -575,6 +593,10 @@ function TrailerSheet({
       setError("Un type de marchandise compatible est invalide.");
       return;
     }
+    if (!truckId && locationMode === "OTHER" && (!location.placeId || location.lat == null || location.lng == null)) {
+      setError("Sélectionnez une adresse proposée pour localiser la remorque.");
+      return;
+    }
 
     try {
       setIsSaving(true);
@@ -595,6 +617,12 @@ function TrailerSheet({
         technicalInspectionDate: technicalInspectionDate || null,
         capacityKg: capacity.value,
         couplingType: couplingType ? couplingType : null,
+        ...(!truckId && locationMode ? {
+          currentLocationAddress: locationMode === "OTHER" ? optionalString(location.address) : null,
+          currentLocationPlaceId: locationMode === "OTHER" ? optionalString(location.placeId) : null,
+          currentLocationLat: locationMode === "OTHER" ? location.lat : null,
+          currentLocationLng: locationMode === "OTHER" ? location.lng : null,
+        } : {}),
       });
     } catch (saveError) {
       setError(
@@ -656,6 +684,11 @@ function TrailerSheet({
           onChange={(value) => setType(value as TrailerType)}
           options={trailerTypeOptions}
         />
+        {!truckId ? <div className="space-y-3 rounded-[24px] border border-black/5 bg-[#F7F8F4] p-3">
+          <Select label="Localisation actuelle" value={locationMode} onChange={(value) => setLocationMode(value as "" | "BASE" | "OTHER")} options={["", "BASE", "OTHER"]} labels={{ "": "À préciser", BASE: "À la base", OTHER: "Autre adresse" }} />
+          {locationMode === "OTHER" ? <AddressAutocomplete label="Adresse" value={location.address} placeId={location.placeId} placeholder="Rechercher une adresse..." onChange={(address) => setLocation({ address, placeId: "", lat: null, lng: null })} onSelect={(place: AddressPlace) => setLocation({ address: place.label, placeId: place.placeId, lat: place.lat ?? null, lng: place.lng ?? null })} /> : null}
+          {!locationMode && loadStatus === "LOADED" ? <p className="text-xs font-semibold text-amber-700">La localisation d’une remorque chargée reste inchangée tant qu’elle n’est pas explicitement précisée.</p> : null}
+        </div> : null}
         <Select
           label="Statut"
           value={status}

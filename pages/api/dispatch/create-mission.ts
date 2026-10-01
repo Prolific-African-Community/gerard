@@ -451,6 +451,21 @@ async function handler(
   }
 
   try {
+    const requiredTrailerId =
+      body.requirements && typeof body.requirements === "object" && !Array.isArray(body.requirements)
+        ? (body.requirements as Record<string, unknown>).requiredTrailerId
+        : null;
+    if (typeof requiredTrailerId === "string") {
+      const requiredTrailer = await prisma.trailer.findUnique({
+        where: { id: requiredTrailerId },
+        select: { id: true },
+      });
+      if (!requiredTrailer) {
+        return res.status(400).json({
+          error: "La remorque sélectionnée est introuvable.",
+        });
+      }
+    }
     if (isDemoRequest && sourceEmailId) {
       const existing = await prisma.mission.findFirst({
         where: { sourceEmailId },

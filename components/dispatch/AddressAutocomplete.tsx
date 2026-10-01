@@ -27,6 +27,7 @@ type AddressAutocompleteProps = {
   value: string;
   placeId?: string;
   placeholder?: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
   onSelect: (place: AddressPlace) => void;
 };
@@ -36,6 +37,7 @@ export function AddressAutocomplete({
   value,
   placeId,
   placeholder,
+  disabled = false,
   onChange,
   onSelect,
 }: AddressAutocompleteProps) {
@@ -44,10 +46,10 @@ export function AddressAutocomplete({
   const [isLoading, setIsLoading] = useState(false);
   const [resolvingPlaceId, setResolvingPlaceId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const containerRef = useRef<HTMLLabelElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (value.trim().length < 3) {
+    if (disabled || value.trim().length < 3) {
       setSuggestions([]);
       setIsLoading(false);
       setError(null);
@@ -95,7 +97,7 @@ export function AddressAutocomplete({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [value]);
+  }, [disabled, value]);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -146,19 +148,21 @@ export function AddressAutocomplete({
   }
 
   return (
-    <label ref={containerRef} className="relative block">
+    <div ref={containerRef} className="relative block">
       <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">
         {label}
       </span>
       <input
+        aria-label={label}
         value={value}
+        disabled={disabled}
         onChange={(event) => {
           onChange(event.target.value);
           setIsOpen(true);
         }}
         onFocus={() => setIsOpen(true)}
         placeholder={placeholder}
-        className="mt-2 h-12 w-full rounded-2xl border border-black/10 bg-black/[0.025] px-4 pr-10 text-sm font-semibold text-[#171814] outline-none transition placeholder:text-[#9aa090] focus:border-lime-300 focus:bg-white focus:ring-4 focus:ring-lime-200/35"
+        className="mt-2 h-12 w-full rounded-2xl border border-black/10 bg-black/[0.025] px-4 pr-10 text-sm font-semibold text-[#171814] outline-none transition placeholder:text-[#9aa090] focus:border-lime-300 focus:bg-white focus:ring-4 focus:ring-lime-200/35 disabled:cursor-not-allowed disabled:opacity-60"
       />
 
       {placeId ? (
@@ -208,6 +212,6 @@ export function AddressAutocomplete({
             : null}
         </div>
       ) : null}
-    </label>
+    </div>
   );
 }

@@ -61,6 +61,16 @@ function mapMissionAssignment(
     routeDurationSeconds: assignment.mission.routeDurationSeconds,
     scheduledDate: assignment.scheduledDate,
     day: assignment.day,
+    trailer: assignment.trailer
+      ? {
+          id: assignment.trailer.id,
+          plateNumber: assignment.trailer.plateNumber,
+          type: assignment.trailer.type,
+          currentLocationAddress: assignment.trailer.currentLocationAddress,
+        }
+      : null,
+    trailerChangePlanned: assignment.trailerChangePlanned,
+    trailerTransitions: assignment.trailerTransitions,
   }
 }
 
@@ -89,6 +99,7 @@ function getDriverAssignments(driverId: string) {
     include: {
       mission: true,
       truck: true,
+      trailer: true,
       planningRow: {
         include: {
           truck: true,

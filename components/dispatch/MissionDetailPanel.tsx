@@ -122,6 +122,7 @@ type MissionDetailPanelProps = {
   trailerLabel?: string;
   trailers?: Trailer[];
   plannedTrailerId?: string | null;
+  hasAssignment?: boolean;
   trailerChangePlanned?: boolean;
   onMarkTrailerRelayAvailable?: (mission: Mission) => Promise<void>;
   onCancelTrailerRelay?: (mission: Mission) => Promise<void>;
@@ -198,7 +199,7 @@ type EditFormState = {
   notes: string;
 };
 
-function getEditFormState(mission: Mission, plannedTrailerId?: string | null): EditFormState {
+function getEditFormState(mission: Mission): EditFormState {
   const requirements = mission.requirements;
   const contacts = mission.contacts;
   const billingInfo = mission.billingInfo;
@@ -210,7 +211,7 @@ function getEditFormState(mission: Mission, plannedTrailerId?: string | null): E
     clientReference: mission.clientReference ?? "",
     cmrNumber: mission.cmrNumber ?? "",
     deliveryNoteNumber: mission.deliveryNoteNumber ?? "",
-    plannedTrailerId: plannedTrailerId ?? "",
+    plannedTrailerId: getJsonString(requirements, "requiredTrailerId") ?? "",
     status: mission.status,
     pickupCity: mission.pickupCity,
     deliveryCity: mission.deliveryCity,
@@ -309,6 +310,7 @@ export function MissionDetailPanel({
   trailerLabel,
   trailers = [],
   plannedTrailerId,
+  hasAssignment = false,
   trailerChangePlanned,
   onMarkTrailerRelayAvailable,
   onCancelTrailerRelay,
@@ -345,7 +347,7 @@ export function MissionDetailPanel({
 
   useEffect(() => {
     if (mission) {
-      setFormState(getEditFormState(mission, plannedTrailerId));
+      setFormState(getEditFormState(mission));
       setIsEditing(false);
       setEditError(null);
     }
@@ -465,8 +467,13 @@ export function MissionDetailPanel({
   }
 
   const visibleMission = mission;
+  const selectedTrailer = plannedTrailerId
+    ? trailers.find((trailer) => trailer.id === plannedTrailerId)
+    : undefined;
   const isAssigned = Boolean(driverName || truckLabel || trailerLabel || day);
-  const currentFormState = formState ?? getEditFormState(visibleMission, plannedTrailerId);
+  const currentFormState = formState ?? getEditFormState(visibleMission);
+  const requestedTrailerId =
+    getJsonString(visibleMission.requirements, "requiredTrailerId") ?? "";
   const hasTransportOrder = hasTransportOrderData(visibleMission);
   const requirementBadges = getRequirementBadges(visibleMission.requirements);
   const invoiceEmail = getJsonString(visibleMission.billingInfo, "invoiceEmail");
@@ -628,6 +635,7 @@ export function MissionDetailPanel({
       requiredCouplingType: getOptionalValue(
         currentFormState.requiredCouplingType,
       )?.toUpperCase() ?? null,
+      requiredTrailerId: currentFormState.plannedTrailerId || null,
     };
   }
 
@@ -754,7 +762,8 @@ export function MissionDetailPanel({
       });
       if (
         onPlannedTrailerChange &&
-        currentFormState.plannedTrailerId !== (plannedTrailerId ?? "")
+        hasAssignment &&
+        currentFormState.plannedTrailerId !== requestedTrailerId
       ) {
         await onPlannedTrailerChange(
           visibleMission.id,
@@ -1049,11 +1058,11 @@ export function MissionDetailPanel({
                   onChange={(value) => updateField("deliveryNoteNumber", value)}
                 />
                 <EditSelect
-                  label="Remorque planifiée"
+                  label="Remorque"
                   value={currentFormState.plannedTrailerId}
                   onChange={(value) => updateField("plannedTrailerId", value)}
                   options={[
-                    { value: "", label: "Non assignée" },
+                    { value: "", label: "Automatique" },
                     ...trailers
                       .filter(
                         (trailer) =>
@@ -1063,9 +1072,14 @@ export function MissionDetailPanel({
                           ) &&
                             trailer.custodyState !== "IMMOBILIZED"),
                       )
+                      .sort((first, second) => {
+                        const firstRank = first.truckId ? 0 : first.currentLocationAddress ? 1 : 2;
+                        const secondRank = second.truckId ? 0 : second.currentLocationAddress ? 1 : 2;
+                        return firstRank - secondRank || first.plateNumber.localeCompare(second.plateNumber);
+                      })
                       .map((trailer) => ({
                         value: trailer.id,
-                        label: `${trailer.plateNumber} · ${custodyStateLabels[trailer.custodyState ?? "EMPTY"] ?? trailer.status}`,
+                        label: `${trailer.plateNumber} · ${trailer.type} · ${trailer.currentLocationAddress ?? (trailer.truckId ? "Attelée" : "Localisation inconnue")} · ${custodyStateLabels[trailer.custodyState ?? "EMPTY"] ?? trailer.status}`,
                       })),
                   ]}
                 />
@@ -1376,12 +1390,23 @@ export function MissionDetailPanel({
               <DetailItem label="Camion" value={truckLabel ?? "Non assigné"} />
               <DetailItem
                 label="Remorque planifiée"
-                value={trailerLabel ?? "Non assignée"}
+                value={
+                  trailerLabel ??
+                  trailers.find(
+                    (trailer) =>
+                      trailer.id === getJsonString(mission.requirements, "requiredTrailerId"),
+                  )?.plateNumber ??
+                  "Automatique"
+                }
               />
               {trailerChangePlanned ? (
                 <DetailItem
-                  label="Opération remorque"
-                  value="Accrochage / décrochage planifié"
+                  label="Approche remorque"
+                  value={
+                    selectedTrailer?.currentLocationAddress
+                      ? `Récupération ${selectedTrailer.plateNumber} à ${selectedTrailer.currentLocationAddress} avant enlèvement`
+                      : `Récupération ${selectedTrailer?.plateNumber ?? "de la remorque"} avant enlèvement`
+                  }
                 />
               ) : null}
               <DetailItem

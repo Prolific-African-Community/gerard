@@ -45,6 +45,17 @@ function getDistanceLabel(mission: Mission) {
   return "Distance à calculer";
 }
 
+function getTrailerLabel(mission: Mission) {
+  if (mission.trailerPlateNumber) return `Remorque ${mission.trailerPlateNumber}`;
+  if (mission.requestedTrailerPlateNumber) {
+    return `Remorque ${mission.requestedTrailerPlateNumber}`;
+  }
+  const requiredTrailerId = mission.requirements?.requiredTrailerId;
+  return typeof requiredTrailerId === "string" && requiredTrailerId
+    ? "Remorque sélectionnée"
+    : "Remorque : Automatique";
+}
+
 type MissionCardProps = {
   mission: Mission;
   status?: MissionStatus;
@@ -118,6 +129,9 @@ export function MissionCardVisual({
             {mission.pickupCity} <span className="text-[#8d9386]">-&gt;</span>{" "}
             {mission.deliveryCity}
           </p> : null}
+          <p className="mt-[2px] truncate text-[9px] font-semibold text-[#62665c]">
+            {getTrailerLabel(mission)}
+          </p>
           <div className="mt-[3px] flex min-w-0 items-center gap-1.5 text-[9px] leading-[1.15] text-[#62665c]">
             {visibleFields.has("client") ? <span className="min-w-0 flex-1 truncate">{mission.clientName}</span> : null}
             {visibleFields.has("distance") ? <span className="shrink-0 font-semibold text-[#1f211c]">
@@ -154,6 +168,9 @@ export function MissionCardVisual({
                   {mission.pickupCity} <span className="text-[#8d9386]">-&gt;</span>{" "}
                   {mission.deliveryCity}
                 </p> : null}
+                <p className="mt-1 text-[10px] font-semibold text-[#62665c]">
+                  {getTrailerLabel(mission)}
+                </p>
               </div>
             )}
             {/*

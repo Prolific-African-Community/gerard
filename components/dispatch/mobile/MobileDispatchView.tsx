@@ -994,7 +994,8 @@ export function MobileDispatchView({
       <MissionDetailPanel
         mission={selectedMission}
         trailers={data.trailers}
-        plannedTrailerId={selectedMission?.trailerId}
+        plannedTrailerId={selectedMissionPlacement?.trailerId}
+        hasAssignment={Boolean(selectedMissionPlacement?.assignmentId)}
         driverName={selectedDriver?.name}
         truckLabel={selectedTruck?.plateNumber}
         day={selectedMissionPlacement?.day}
@@ -1063,7 +1064,20 @@ export function MobileDispatchView({
 }
 
 function mapOverview(overview: DispatchOverviewResponse): MobileDispatchData {
-  const missions = overview.missions.map(mapApiMission)
+  const trailers = overview.trailers.map(mapApiTrailer)
+  const missions = overview.missions.map((source) => {
+    const mission = mapApiMission(source)
+    const requestedTrailerId =
+      typeof mission.requirements?.requiredTrailerId === 'string'
+        ? mission.requirements.requiredTrailerId
+        : null
+    return {
+      ...mission,
+      requestedTrailerPlateNumber: requestedTrailerId
+        ? trailers.find((trailer) => trailer.id === requestedTrailerId)?.plateNumber
+        : undefined,
+    }
+  })
   const placements = overview.assignments.reduce<
     Record<string, MissionPlacement | null>
   >((items, assignment) => {
@@ -1094,7 +1108,7 @@ function mapOverview(overview: DispatchOverviewResponse): MobileDispatchData {
   return {
     drivers: overview.drivers.map(mapApiDriver),
     trucks,
-    trailers: overview.trailers.map(mapApiTrailer),
+    trailers,
     missions,
     planningRows: overview.planningRows.map(mapApiPlanningRow),
     truckPositions: overview.truckPositions,

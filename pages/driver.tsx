@@ -80,6 +80,14 @@ type DriverMission = {
   billingInfo?: Record<string, unknown> | null
   routeDistanceMeters?: number | null
   routeDurationSeconds?: number | null
+  trailer?: {
+    id: string
+    plateNumber: string
+    type: string
+    currentLocationAddress?: string | null
+  } | null
+  trailerChangePlanned?: boolean
+  trailerTransitions?: unknown
 }
 
 type DriverPageProps = {
@@ -678,6 +686,21 @@ export default function DriverPage({ username }: DriverPageProps) {
                   </div>
 
                   <div className="mt-5 rounded-[26px] bg-[#F4F5F1] p-4">
+                    {mission.trailer ? (
+                      <div className="mb-4 rounded-[18px] bg-white px-3 py-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-[#8a9085]">
+                          Remorque mission
+                        </p>
+                        <p className="mt-1 text-sm font-black text-[#11130F]">
+                          {mission.trailer.plateNumber}
+                        </p>
+                        {mission.trailerChangePlanned && mission.trailer.currentLocationAddress ? (
+                          <p className="mt-1 text-xs font-semibold text-[#62685d]">
+                            À récupérer : {mission.trailer.currentLocationAddress}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <RoutePoint
                       label="Pickup"
                       city={mission.pickupCity}
