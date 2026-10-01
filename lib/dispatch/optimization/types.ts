@@ -226,6 +226,12 @@ export type OptimizationCandidate = {
   transitions: RouteTransition[]
   compatibility: CompatibilityEvaluation
   temporalEvaluation: MissionTemporalEvaluation | null
+  /**
+   * Deterministic occupation window of the candidate, route and mission steps
+   * included. It is filled even when the regulatory evaluator stays
+   * indeterminate, so sequencing can still reserve the resources.
+   */
+  plannedWindow: { startsAt: string; endsAt: string } | null
   cost: CostBreakdown
   score: number
   factors: ScoreFactor[]
@@ -241,6 +247,7 @@ export type ProposedMission = {
   trailerPlateNumber?: string | null
   trailerChange: boolean
   temporalEvaluation: MissionTemporalEvaluation | null
+  plannedWindow: { startsAt: string; endsAt: string } | null
   transitions: RouteTransition[]
   loadedDistanceMeters: number | null
   cost: CostBreakdown

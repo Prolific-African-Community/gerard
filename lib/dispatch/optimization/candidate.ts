@@ -440,6 +440,7 @@ export function buildOptimizationCandidate(input: {
   }
 
   let temporalEvaluation: OptimizationCandidate['temporalEvaluation'] = null
+  let plannedWindow: OptimizationCandidate['plannedWindow'] = null
   if (
     compatibility.status !== 'INCOMPATIBLE' &&
     !transitionResult.missing.length
@@ -451,13 +452,19 @@ export function buildOptimizationCandidate(input: {
       profile: input.optimization.profile,
       currentPosition: input.currentPosition ?? null,
     })
+    // The approach (and any trailer change) happens before the pickup window
+    // opens: the crew leaves just in time rather than waiting at the base until
+    // the pickup hour. Clamping the departure to the mission start would make
+    // every mission with a long approach look temporally impossible.
+    const approachSeconds = candidatePlan.steps
+      .filter((step) => step.id.startsWith('OPTIMIZATION_'))
+      .reduce((sum, step) => sum + step.durationSeconds, 0)
+    const availableFromMs = new Date(effectiveAvailableAt).getTime()
+    const missionStartMs = input.mission.temporalPlan.earliestStartAt
+      ? new Date(input.mission.temporalPlan.earliestStartAt).getTime()
+      : availableFromMs
     const earliestStart = new Date(
-      new Date(effectiveAvailableAt) >
-      new Date(
-        input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
-      )
-        ? effectiveAvailableAt
-        : input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
+      Math.max(availableFromMs, missionStartMs - approachSeconds * 1000)
     )
     let minimumCursor = earliestStart.getTime()
     const certainWindowConflict = candidatePlan.steps.some((step) => {
@@ -490,18 +497,18 @@ export function buildOptimizationCandidate(input: {
         (code) => compatibilityMessages[code]
       )
     } else {
+      // Rest-free lower bound of the occupation. The regulatory evaluator may
+      // not be able to time an indeterminate candidate, but the sequencing
+      // still needs to know the pair and the trailer are busy.
+      plannedWindow = {
+        startsAt: earliestStart.toISOString(),
+        endsAt: new Date(minimumCursor).toISOString(),
+      }
       temporalEvaluation = evaluateTemporalMission({
         pair: input.pair.pair,
         plan: candidatePlan,
         initialState: input.state,
-        simulationStartAt:
-          new Date(effectiveAvailableAt) >
-          new Date(
-            input.mission.temporalPlan.earliestStartAt ?? effectiveAvailableAt
-          )
-            ? effectiveAvailableAt
-            : input.mission.temporalPlan.earliestStartAt ??
-              effectiveAvailableAt,
+        simulationStartAt: earliestStart.toISOString(),
         profile: input.optimization.profile,
       })
       if (temporalEvaluation.status === 'IMPOSSIBLE') {
@@ -603,6 +610,13 @@ export function buildOptimizationCandidate(input: {
     transitions: transitionResult.routes,
     compatibility,
     temporalEvaluation,
+    plannedWindow:
+      temporalEvaluation?.possibleStartAt && temporalEvaluation.completedAt
+        ? {
+            startsAt: temporalEvaluation.possibleStartAt,
+            endsAt: temporalEvaluation.completedAt,
+          }
+        : plannedWindow,
     cost,
     score: scored.score,
     factors: scored.factors,

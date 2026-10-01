@@ -331,9 +331,21 @@ export async function persistValidatedAutoPlanning(input: {
       }
     }
 
+    // A conditional proposal has no regulatory timing, only the deterministic
+    // window the candidate computed. Refusing it here would make every orange
+    // proposal unapplicable even though the dispatcher confirmed it.
+    const missionWindow = (item: SelectedAutoPlanningItem) => ({
+      startsAt:
+        item.mission.temporalEvaluation?.possibleStartAt ??
+        item.mission.plannedWindow?.startsAt ??
+        null,
+      endsAt:
+        item.mission.temporalEvaluation?.completedAt ??
+        item.mission.plannedWindow?.endsAt ??
+        null,
+    })
     const proposedIntervals = selectedItems.map((item) => {
-      const startsAt = item.mission.temporalEvaluation?.possibleStartAt
-      const endsAt = item.mission.temporalEvaluation?.completedAt
+      const { startsAt, endsAt } = missionWindow(item)
       if (!startsAt || !endsAt) {
         throw new AutoPlanningConflictError(
           'MISSING_CONFIRMED_START',
@@ -408,8 +420,8 @@ export async function persistValidatedAutoPlanning(input: {
     }
 
     for (const item of selectedItems) {
-      const possibleStart = item.mission.temporalEvaluation?.possibleStartAt
-      const completedAt = item.mission.temporalEvaluation?.completedAt
+      const { startsAt: possibleStart, endsAt: completedAt } =
+        missionWindow(item)
       if (!possibleStart || !completedAt) {
         throw new AutoPlanningConflictError(
           'MISSING_CONFIRMED_START',

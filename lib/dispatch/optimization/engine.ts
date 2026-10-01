@@ -22,6 +22,7 @@ type PairRuntime = {
   positionId: string | null
   position: OptimizationPair['initialPosition']
   missions: ProposedMission[]
+  conditionalMissions: ProposedMission[]
   score: number
 }
 
@@ -64,7 +65,7 @@ function missionDrivingSeconds(mission: OptimizationMission) {
 
 function runtimeWorkloadHours(runtime: PairRuntime | undefined) {
   if (!runtime) return 0
-  return runtime.missions.reduce((sum, mission) => {
+  return [...runtime.missions, ...runtime.conditionalMissions].reduce((sum, mission) => {
     const evaluation = mission.temporalEvaluation
     if (!evaluation) return sum
     if (evaluation.possibleStartAt && evaluation.completedAt) {
@@ -74,6 +75,17 @@ function runtimeWorkloadHours(runtime: PairRuntime | undefined) {
           0,
           new Date(evaluation.completedAt).getTime() -
             new Date(evaluation.possibleStartAt).getTime()
+        ) /
+          3_600_000
+      )
+    }
+    if (mission.plannedWindow) {
+      return (
+        sum +
+        Math.max(
+          0,
+          new Date(mission.plannedWindow.endsAt).getTime() -
+            new Date(mission.plannedWindow.startsAt).getTime()
         ) /
           3_600_000
       )
@@ -229,6 +241,7 @@ export function toProposedMission(
     trailerPlateNumber: candidate.trailer?.plateNumber ?? null,
     trailerChange: candidate.trailerChange,
     temporalEvaluation: candidate.temporalEvaluation,
+    plannedWindow: candidate.plannedWindow,
     transitions: candidate.transitions,
     loadedDistanceMeters: candidate.mission.loadedDistanceMeters,
     cost: candidate.cost,
@@ -238,24 +251,27 @@ export function toProposedMission(
   }
 }
 
-function toPairProposal(runtime: PairRuntime): PairProposal {
-  const evaluations = runtime.missions
+function toPairProposal(
+  runtime: PairRuntime,
+  missions: ProposedMission[] = runtime.missions
+): PairProposal {
+  const evaluations = missions
     .map((mission) => mission.temporalEvaluation)
     .filter((evaluation): evaluation is NonNullable<typeof evaluation> =>
       Boolean(evaluation)
     )
-  const revenueKnown = runtime.missions.reduce(
+  const revenueKnown = missions.reduce(
     (sum, mission) => sum + (mission.cost.revenueKnown ?? 0),
     0
   )
-  const estimatedCosts = runtime.missions
+  const estimatedCosts = missions
     .map((mission) => mission.cost.estimatedCost)
     .filter((value): value is number => typeof value === 'number')
   const lastEvaluation = evaluations[evaluations.length - 1]
   return {
     pair: runtime.pair.pair,
     locked: runtime.pair.pair.pairLocked,
-    missions: runtime.missions,
+    missions,
     timeline: evaluations.flatMap((evaluation) => evaluation.timeline),
     finalPosition: runtime.position,
     finalRegulatoryState: lastEvaluation?.stateAfter ?? runtime.state,
@@ -263,17 +279,17 @@ function toPairProposal(runtime: PairRuntime): PairProposal {
     revenueKnown,
     knownCost: null,
     estimatedCost:
-      estimatedCosts.length === runtime.missions.length
+      estimatedCosts.length === missions.length
         ? estimatedCosts.reduce((sum, value) => sum + value, 0)
         : null,
     estimatedMargin:
-      estimatedCosts.length === runtime.missions.length
+      estimatedCosts.length === missions.length
         ? revenueKnown - estimatedCosts.reduce((sum, value) => sum + value, 0)
         : null,
     score: runtime.score,
-    confidence: runtime.missions.some((mission) => mission.confidence === 'LOW')
+    confidence: missions.some((mission) => mission.confidence === 'LOW')
       ? 'LOW'
-      : runtime.missions.some((mission) => mission.confidence === 'MEDIUM')
+      : missions.some((mission) => mission.confidence === 'MEDIUM')
       ? 'MEDIUM'
       : 'HIGH',
   }
@@ -445,11 +461,11 @@ export function optimizeDispatch(
         positionId: pair.initialPosition?.id ?? null,
         position: pair.initialPosition,
         missions: [],
+        conditionalMissions: [],
         score: 0,
       } as PairRuntime,
     ])
   )
-  const conditionalRuntimes = new Map<string, PairRuntime>()
   const trailerRuntimes = new Map(
     input.trailers.map((trailer) => [trailer.id, { ...trailer }])
   )
@@ -548,20 +564,32 @@ export function optimizeDispatch(
         candidate.temporalEvaluation?.status === 'INDETERMINATE'
     )
     if (conditional) {
-      const existing =
-        conditionalRuntimes.get(conditional.pair.pair.rowId) ??
-        ({
-          pair: conditional.pair,
-          state: conditional.pair.regulatoryState,
-          availableAt: conditional.pair.availableAt,
-          positionId: conditional.pair.initialPosition?.id ?? null,
-          position: conditional.pair.initialPosition,
-          missions: [],
-          score: 0,
-        } as PairRuntime)
-      existing.missions.push(toProposedMission(conditional, allCandidates))
-      existing.score += conditional.score
-      conditionalRuntimes.set(conditional.pair.pair.rowId, existing)
+      const runtime = runtimes.get(conditional.pair.pair.rowId) as PairRuntime
+      runtime.conditionalMissions.push(
+        toProposedMission(conditional, allCandidates)
+      )
+      runtime.score += conditional.score
+      // A conditional assignment still occupies the crew and the trailer: the
+      // data is incomplete, the truck is not. Advancing the runtime is what
+      // lets the next missions see this one and reach the other pairs.
+      const endsAt =
+        conditional.temporalEvaluation?.nextAvailableAt ??
+        conditional.plannedWindow?.endsAt ??
+        null
+      if (endsAt && new Date(endsAt) > new Date(runtime.availableAt)) {
+        runtime.availableAt = endsAt
+      }
+      runtime.state = conditional.temporalEvaluation?.stateAfter ?? runtime.state
+      runtime.positionId = conditional.mission.delivery?.id ?? runtime.positionId
+      runtime.position = conditional.mission.delivery ?? runtime.position
+      if (conditional.trailer) {
+        trailerRuntimes.set(conditional.trailer.id, {
+          ...conditional.trailer,
+          availableAt: endsAt ?? conditional.trailer.availableAt,
+          position: conditional.mission.delivery,
+          attachedTruckId: conditional.pair.pair.truckId,
+        })
+      }
       assignedMissionIds.add(mission.id)
       continue
     }
@@ -581,10 +609,10 @@ export function optimizeDispatch(
 
   const confirmedProposals = Array.from(runtimes.values())
     .filter((runtime) => runtime.missions.length)
-    .map(toPairProposal)
-  const conditionalProposals = Array.from(conditionalRuntimes.values()).map(
-    toPairProposal
-  )
+    .map((runtime) => toPairProposal(runtime))
+  const conditionalProposals = Array.from(runtimes.values())
+    .filter((runtime) => runtime.conditionalMissions.length)
+    .map((runtime) => toPairProposal(runtime, runtime.conditionalMissions))
 
   // Final pure sequence verification reuses the Run 2 sequence evaluator.
   for (const runtime of Array.from(runtimes.values())) {

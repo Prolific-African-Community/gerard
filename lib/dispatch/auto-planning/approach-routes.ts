@@ -23,6 +23,32 @@ function routable(
   )
 }
 
+// Calibrated on the Gerard route cache: road distance is about 1.22 times the
+// great-circle distance and a tractor averages close to 90 km/h door to door.
+const geodesicDetourFactor = 1.22
+const geodesicAverageSpeedKmh = 90
+
+function geodesicRoute(from: RoutableLocation, to: RoutableLocation) {
+  const earthRadiusMeters = 6_371_000
+  const toRadians = (value: number) => (value * Math.PI) / 180
+  const deltaLat = toRadians(to.latitude - from.latitude)
+  const deltaLng = toRadians(to.longitude - from.longitude)
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(from.latitude)) *
+      Math.cos(toRadians(to.latitude)) *
+      Math.sin(deltaLng / 2) ** 2
+  const straightMeters =
+    2 * earthRadiusMeters * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  const distanceMeters = Math.round(straightMeters * geodesicDetourFactor)
+  return {
+    distanceMeters,
+    durationSeconds: Math.round(
+      distanceMeters / ((geodesicAverageSpeedKmh * 1000) / 3600)
+    ),
+  }
+}
+
 function sameCoordinates(left: RoutableLocation, right: RoutableLocation) {
   return (
     Math.abs(left.latitude - right.latitude) < 0.000001 &&
@@ -108,12 +134,17 @@ export async function prepareCandidateApproachRoutes(input: {
   }
 
   const jobs = Array.from(requested.entries())
+  // Resolved out of order by the workers, appended in job order: the snapshot
+  // fingerprint is computed over this list and has to stay reproducible
+  // between the simulation and the apply that replays it.
+  const resolved = new Array<RouteTransition | null>(jobs.length).fill(null)
   let cursor = 0
   const workers = Array.from(
     { length: Math.min(2, jobs.length) },
     async () => {
       while (cursor < jobs.length) {
-        const [key, endpoints] = jobs[cursor++]
+        const index = cursor++
+        const [key, endpoints] = jobs[index]
         try {
           const route = await provider({
             origin: {
@@ -126,7 +157,7 @@ export async function prepareCandidateApproachRoutes(input: {
             },
             routingPreference: 'TRAFFIC_UNAWARE',
           })
-          transitions.push({
+          resolved[index] = {
             key,
             from: endpoints.from,
             to: endpoints.to,
@@ -136,14 +167,31 @@ export async function prepareCandidateApproachRoutes(input: {
             confidence: 'HIGH',
             reason: 'INITIAL_APPROACH',
             empty: true,
-          })
+          }
         } catch {
-          // The candidate remains explicitely indeterminate through
-          // MISSING_ROUTE; one provider failure must not abort the snapshot.
+          // No provider answer (quota, cooldown, call budget): fall back to a
+          // geodesic estimate rather than dropping the transition. A missing
+          // transition makes the candidate unplannable through MISSING_ROUTE,
+          // whereas an estimate only downgrades it to a conditional proposal.
+          const estimate = geodesicRoute(endpoints.from, endpoints.to)
+          resolved[index] = {
+            key,
+            from: endpoints.from,
+            to: endpoints.to,
+            distanceMeters: estimate.distanceMeters,
+            durationSeconds: estimate.durationSeconds,
+            source: 'ESTIMATED',
+            confidence: 'LOW',
+            reason: 'INITIAL_APPROACH',
+            empty: true,
+          }
         }
       }
     }
   )
   await Promise.all(workers)
+  for (const transition of resolved) {
+    if (transition) transitions.push(transition)
+  }
   return transitions
 }
