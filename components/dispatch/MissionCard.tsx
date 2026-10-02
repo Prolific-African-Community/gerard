@@ -120,18 +120,19 @@ export function MissionCardVisual({
         // méta pour laisser la référence et le trajet occuper toute la
         // largeur de la colonne, sans troncature ni scroll interne.
         <>
-          {ReferenceSlot ? <ReferenceSlot {...slotProps} /> : (
+          <div data-compact-reference className="flex min-w-0 items-baseline justify-between gap-1 text-[10px] leading-[1.15]">
+            <div className="min-w-0">          {ReferenceSlot ? <ReferenceSlot {...slotProps} /> : (
             <p className="truncate text-[10px] font-bold uppercase leading-[1.15] tracking-[0.04em] text-[#20211d]">
               {primaryReference}
             </p>
           )}
+</div>
+            {mission.trailerPlateNumber || mission.requestedTrailerPlateNumber ? <span data-compact-trailer className="shrink-0 whitespace-nowrap text-[9px] font-semibold text-[#62665c]">{mission.trailerPlateNumber || mission.requestedTrailerPlateNumber}</span> : null}
+          </div>
           {visibleFields.has("route") ? <p className="mt-[2px] break-words text-[10px] font-semibold leading-[1.15] text-[#11120f]">
             {mission.pickupCity} <span className="text-[#8d9386]">-&gt;</span>{" "}
             {mission.deliveryCity}
           </p> : null}
-          <p className="mt-[2px] truncate text-[9px] font-semibold text-[#62665c]">
-            {getTrailerLabel(mission)}
-          </p>
           <div className="mt-[3px] flex min-w-0 items-center gap-1.5 text-[9px] leading-[1.15] text-[#62665c]">
             {visibleFields.has("client") ? <span className="min-w-0 flex-1 truncate">{mission.clientName}</span> : null}
             {visibleFields.has("distance") ? <span className="shrink-0 font-semibold text-[#1f211c]">

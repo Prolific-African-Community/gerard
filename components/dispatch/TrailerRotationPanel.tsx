@@ -1,13 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
+import { getTrailerOperationalPresentation } from '../../lib/dispatch/trailer-display'
 import type { Trailer, Truck } from '../../lib/dispatch/mock-data'
 import {
   formatTrailerMovement,
   getTrailerActions,
-  isTrailerAvailableForNewMission,
-  resolveTrailerSituation,
   trailerCouplingLabels,
   trailerLoadLabels,
   trailerLocationLabels,
@@ -81,20 +80,8 @@ export function TrailerRotationPanel({
   const [error, setError] = useState<string | null>(null)
   const [movements, setMovements] = useState<TrailerCustodyMovement[]>([])
 
-  const situation = useMemo(
-    () =>
-      resolveTrailerSituation({
-        id: trailer.id,
-        plateNumber: trailer.plateNumber,
-        truckId: trailer.truckId,
-        truckPlate: trucks.find((truck) => truck.id === trailer.truckId)
-          ?.plateNumber,
-        loadStatus: trailer.loadStatus,
-        status: trailer.status,
-        activeMission,
-      }),
-    [trailer, trucks, activeMission],
-  )
+  const presentation = getTrailerOperationalPresentation(trailer, activeMission, trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber)
+  const { situation } = presentation
   const actions = getTrailerActions(situation)
 
   useEffect(() => {
@@ -222,13 +209,7 @@ export function TrailerRotationPanel({
           {trailerLocationLabels[situation.location]}
         </Row>
         <Row label="Disponibilité">
-          {situation.immobilized
-            ? 'Immobilisée'
-            : situation.engagement === 'MISSION_ACTIVE'
-              ? 'Engagée'
-              : isTrailerAvailableForNewMission(situation)
-                ? 'Disponible'
-                : 'Indisponible'}
+          {presentation.status.label}
         </Row>
       </div>
 

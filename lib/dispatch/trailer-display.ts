@@ -1,3 +1,6 @@
+import { resolveTrailerSituation, isTrailerAvailableForNewMission, trailerLocationLabels } from './trailer-rotation'
+import type { TrailerActiveMission } from './trailer-rotation'
+import { getVehicleDisplayStatus } from './maintenance-display'
 import type {
   Trailer,
   TrailerCargoType,
@@ -105,4 +108,29 @@ export function getTrailerCargoLabel(trailer: Trailer) {
   }
 
   return trailerCargoTypeLabels[trailer.cargoType ?? 'OTHER']
+}
+
+/** Current operational presentation, never a persisted status mutation. */
+export function getTrailerOperationalPresentation(
+  trailer: Trailer,
+  activeMission?: TrailerActiveMission | null,
+  truckPlate?: string | null,
+) {
+  const situation = resolveTrailerSituation({
+    ...trailer, truckPlate, activeMission: activeMission && ['IN_PROGRESS', 'ISSUE'].includes(activeMission.missionStatus?.toUpperCase() ?? '') ? activeMission : null,
+    declaredLocation: trailer.currentLocationLat != null && trailer.currentLocationLng != null ? 'OTHER' : null,
+  })
+  const available = isTrailerAvailableForNewMission(situation)
+  const label = trailer.status === 'OUT_OF_SERVICE' ? 'Retirée du parc actif'
+    : situation.immobilized ? 'Maintenance'
+    : situation.activeMission ? 'Engagée'
+    : available ? 'Disponible' : 'Indisponible'
+  const status = getVehicleDisplayStatus({
+    baseStatusLabel: label,
+    baseStatusKind: trailer.status === 'OUT_OF_SERVICE' ? 'outOfService'
+      : situation.immobilized ? 'maintenance'
+      : situation.activeMission ? 'assigned' : available ? 'available' : 'neutral',
+    activeMaintenance: trailer.activeMaintenance,
+  })
+  return { situation, status, locationLabel: trailerLocationLabels[situation.location], locationEditable: !trailer.truckId }
 }

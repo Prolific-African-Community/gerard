@@ -1,3 +1,4 @@
+import { reconcileVisiblePlanningScope } from './mission-scope'
 import {
   buildOptimizationCandidates,
   compareDispatchStrategies,
@@ -198,7 +199,7 @@ export async function simulateAutoPlanning(input: {
     reconciliation: {
       visible: snapshot.missionScope.counts.visible,
       included: snapshot.missionScope.counts.included,
-      excluded: snapshot.missionScope.exclusions.length,
+      excluded: reconcileVisiblePlanningScope(snapshot.missionScope).excluded,
       confirmed: confirmedCount,
       conditional: conditionalCount,
       red:
@@ -212,10 +213,7 @@ export async function simulateAutoPlanning(input: {
       candidates: result.metrics.candidatesGenerated,
       confirmedProposals: result.confirmedProposals.length,
       conditionalProposals: result.conditionalProposals.length,
-      poolEquationValid:
-        snapshot.missionScope.counts.visible ===
-        snapshot.missionScope.counts.included +
-          snapshot.missionScope.exclusions.length,
+      poolEquationValid: reconcileVisiblePlanningScope(snapshot.missionScope).poolEquationValid,
       resultEquationValid:
         snapshot.missionScope.counts.included === includedOutcomes.length,
       outcomes: [...includedOutcomes, ...excludedOutcomes],

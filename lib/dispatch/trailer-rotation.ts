@@ -444,9 +444,8 @@ export type TrailerMissionSource = {
  * Construit la table remorque → mission active, partagée par le desktop et le
  * mobile.
  *
- * La preuve d'engagement est **l'affectation** (`trailerId` issu d'un
- * MissionAssignment), pas le statut : un statut absent n'invalide donc pas la
- * mission. Seul un statut terminal explicite l'exclut.
+ * Seule une mission commencée (ou en incident) porte l'engagement courant.
+ * Une affectation future ne change jamais la situation physique actuelle.
  */
 export function buildTrailerActiveMissions<T extends TrailerMissionSource>(
   missions: readonly T[],
@@ -458,9 +457,8 @@ export function buildTrailerActiveMissions<T extends TrailerMissionSource>(
     const trailerId = getTrailerId(mission)
     if (!trailerId) continue
 
-    // Un statut terminal connu exclut la mission ; un statut inconnu ne peut
-    // pas l'exclure, l'affectation démontrant déjà l'engagement.
-    if (isTerminalMissionStatus(mission.status)) continue
+    // L'affectation seule ne prouve pas que l'exécution a commencé.
+    if (!['IN_PROGRESS', 'ISSUE'].includes(normalizeMissionStatus(mission.status))) continue
 
     byTrailer[trailerId] = {
       missionId: mission.id,

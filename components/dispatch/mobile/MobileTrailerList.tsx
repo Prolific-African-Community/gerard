@@ -1,5 +1,7 @@
+import type { TrailerActiveMission } from '../../../lib/dispatch/trailer-rotation';
 import type { Trailer, Truck } from "../../../lib/dispatch/mock-data";
 import {
+  getTrailerOperationalPresentation,
   getTrailerCargoLabel,
   getTrailerCargoStyle,
   getTrailerLoadLabel,
@@ -7,6 +9,7 @@ import {
 
 type MobileTrailerListProps = {
   trailers: Trailer[];
+  activeMissions?: Record<string, TrailerActiveMission>;
   trucks: Truck[];
   onEdit?: (trailer: Trailer) => void;
   onMaintenance?: (trailer: Trailer) => void;
@@ -21,17 +24,9 @@ const trailerTypeLabels: Record<string, string> = {
   OTHER: "Autre",
 };
 
-const trailerStatusLabels: Record<string, string> = {
-  AVAILABLE: "Disponible",
-  ASSIGNED: "Assignée",
-  AT_BASE: "À la Base",
-  IN_MAINTENANCE: "Maintenance à la Base",
-  MAINTENANCE_EXT: "Maintenance extérieure",
-  OUT_OF_SERVICE: "Retirée du parc actif",
-};
-
 export function MobileTrailerList({
   trailers,
+  activeMissions,
   trucks,
   onEdit,
   onMaintenance,
@@ -90,7 +85,7 @@ export function MobileTrailerList({
                   </p>
                 </div>
                 <span className="rounded-full border border-lime-300 bg-lime-100 px-2.5 py-1 text-[10px] font-bold text-[#49630b]">
-                  {trailerStatusLabels[trailer.status]}
+                  {getTrailerOperationalPresentation(trailer, activeMissions?.[trailer.id], truck?.plateNumber).status.label}
                 </span>
               </div>
 

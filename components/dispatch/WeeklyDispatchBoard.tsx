@@ -71,6 +71,7 @@ import type {
   LocatorNavigation,
   SmartSearchResult,
 } from '../../lib/dispatch/smart-search-navigation'
+import type { TrailerActiveMission } from '../../lib/dispatch/trailer-rotation'
 import { TrailerCard } from './TrailerCard'
 import { TruckCard } from './TruckCard'
 import { useResourceCardActivation } from './useResourceCardActivation'
@@ -843,6 +844,7 @@ function TruckAssignmentCell({
 }
 
 type TrailerAssignmentCellProps = {
+  activeMission?: TrailerActiveMission | null
   onEdit?: (trailer: Trailer) => void
   rowId: string
   trailer: Trailer | null
@@ -851,6 +853,7 @@ type TrailerAssignmentCellProps = {
 }
 
 function TrailerAssignmentCell({
+  activeMission,
   onEdit,
   rowId,
   trailer,
@@ -879,6 +882,7 @@ function TrailerAssignmentCell({
       >
         {trailer ? (
           <TrailerCard
+            activeMission={activeMission}
             trailer={trailer}
             truck={truck ?? undefined}
             dense
@@ -1045,6 +1049,7 @@ function PlanningDriverCell({
 }
 
 function PlanningRowView({
+  activeTrailerMission,
   driver,
   missionsByDay,
   onDriverEdit,
@@ -1062,6 +1067,7 @@ function PlanningRowView({
   previewMissionsByDay,
 }: {
   driver?: Driver
+  activeTrailerMission?: TrailerActiveMission | null
   missionsByDay: Record<DispatchDay, Mission[]>
   onDriverEdit: (driver: Driver) => void
   onMissionClick: (mission: Mission) => void
@@ -1111,6 +1117,7 @@ function PlanningRowView({
         dragDisabled={dragDisabled}
       />
       <TrailerAssignmentCell
+        activeMission={activeTrailerMission}
         rowId={row.id}
         trailer={trailer ?? null}
         truck={truck}
@@ -3477,6 +3484,7 @@ export function WeeklyDispatchBoard({
 
                     return (
                       <PlanningRowView
+                        activeTrailerMission={trailer ? trailerActiveMissions[trailer.id] : null}
                         key={row.id}
                         row={row}
                         driver={driver}

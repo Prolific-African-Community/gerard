@@ -203,3 +203,17 @@ export function classifyPlanningMissions(input: {
     },
   }
 }
+
+/** Reconcile the displayed pool by IDs; exclusions outside it stay diagnostic. */
+export function reconcileVisiblePlanningScope(scope: PlanningMissionScopeSummary) {
+  const visible = new Set(scope.visibleMissionIds)
+  const included = new Set(scope.includedMissionIds)
+  const excluded = new Set(scope.exclusions.map((item) => item.missionId).filter((id) => visible.has(id)))
+  return {
+    excluded: excluded.size,
+    poolEquationValid: visible.size === scope.visibleMissionIds.length &&
+      included.size === scope.includedMissionIds.length &&
+      Array.from(included).every((id) => visible.has(id) && !excluded.has(id)) &&
+      Array.from(visible).every((id) => included.has(id) || excluded.has(id)),
+  }
+}

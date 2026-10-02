@@ -1,15 +1,16 @@
 'use client'
 
+import type { TrailerActiveMission } from '../../lib/dispatch/trailer-rotation'
 import { useDraggable } from '@dnd-kit/core'
 import { CSS } from '@dnd-kit/utilities'
 
 import type {
   Trailer,
-  TrailerStatus,
   TrailerType,
   Truck,
 } from '../../lib/dispatch/mock-data'
 import {
+  getTrailerOperationalPresentation,
   getTrailerCargoLabel,
   getTrailerCargoStyle,
   getTrailerLoadLabel,
@@ -18,7 +19,6 @@ import {
   getDisplayCardVariantClass,
   getDisplayStatusBadgeClass,
   getMaintenanceSummaryClass,
-  getVehicleDisplayStatus,
   maintenanceInterventionShortLabels,
 } from '../../lib/dispatch/maintenance-display'
 import {
@@ -26,7 +26,6 @@ import {
   getTechnicalInspectionBadgeClass,
   getTechnicalInspectionState,
 } from '../../lib/dispatch/technical-inspection'
-import type { VehicleBaseStatusKind } from '../../lib/dispatch/maintenance-display'
 import { normalizeSlExternalInvoiceReference } from '../../lib/dispatch/sl-invoice-reference'
 import { StatusDot } from './StatusDot'
 import { resourceCardShellClassName } from './ResourcePoolPrimitives'
@@ -34,6 +33,7 @@ import { useResourceCardActivation } from './useResourceCardActivation'
 
 type TrailerCardProps = {
   trailer: Trailer
+  activeMission?: TrailerActiveMission | null
   truck?: Truck
   compact?: boolean
   /**
@@ -63,26 +63,9 @@ const trailerTypeLabels: Record<TrailerType, string> = {
   OTHER: 'Autre',
 }
 
-const trailerStatusLabels: Record<TrailerStatus, string> = {
-  AVAILABLE: 'Disponible',
-  ASSIGNED: 'Assignée',
-  AT_BASE: 'À la Base',
-  IN_MAINTENANCE: 'Maintenance à la Base',
-  MAINTENANCE_EXT: 'Maintenance extérieure',
-  OUT_OF_SERVICE: 'Retirée du parc actif',
-}
-
-const trailerBaseStatusKind: Record<TrailerStatus, VehicleBaseStatusKind> = {
-  AVAILABLE: 'available',
-  ASSIGNED: 'assigned',
-  AT_BASE: 'available',
-  IN_MAINTENANCE: 'maintenance',
-  MAINTENANCE_EXT: 'maintenance',
-  OUT_OF_SERVICE: 'outOfService',
-}
-
 export function TrailerCard({
   trailer,
+  activeMission,
   truck,
   compact = false,
   dense = false,
@@ -119,27 +102,14 @@ export function TrailerCard({
         maintenance?.providerRequestId ?? maintenance?.id
       )
     : null
-  const displayStatus = getVehicleDisplayStatus({
-    baseStatusLabel: trailerStatusLabels[trailer.status],
-    baseStatusKind: trailerBaseStatusKind[trailer.status],
-    activeMaintenance: maintenance,
-  })
+  const displayStatus = getTrailerOperationalPresentation(trailer, activeMission, truck?.plateNumber).status
   const showMaintenanceSummary =
     Boolean(maintenance) && displayStatus.shouldShowMaintenanceSummary
   const technicalInspection = getTechnicalInspectionState(trailer)
   const technicalInspectionExpiryLabel =
     formatTechnicalInspectionDisplayDate(technicalInspection.expiresAt)
   const activation = useResourceCardActivation(trailer, isDragging, onEdit)
-  const custodyLabel =
-    trailer.custodyState === 'RELAY_AVAILABLE'
-      ? 'Chargée · à la base · relais possible'
-      : trailer.custodyState === 'IN_MISSION'
-        ? 'Chargée · en mission'
-        : trailer.custodyState === 'IMMOBILIZED'
-          ? 'Indisponible'
-          : trailer.loadStatus === 'LOADED'
-            ? 'Chargée'
-            : 'Vide · disponible'
+  const custodyLabel = `${loadLabel} · ${displayStatus.label.toLowerCase()}`
   const custodyClass =
     trailer.custodyState === 'RELAY_AVAILABLE'
       ? 'bg-amber-100 text-amber-800'

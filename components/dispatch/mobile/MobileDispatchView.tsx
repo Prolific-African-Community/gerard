@@ -914,6 +914,7 @@ export function MobileDispatchView({
 
       {!isLoading && activeTab === 'trailers' ? (
         <MobileTrailerList
+          activeMissions={trailerActiveMissions}
           trailers={data.trailers}
           trucks={data.trucks}
           onEdit={capabilities.canManageTrailers ? (trailer) => setEditingTrailerId(trailer.id) : undefined}

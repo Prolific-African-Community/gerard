@@ -18,6 +18,7 @@ import type {
   TruckStatus,
 } from '../../lib/dispatch/mock-data'
 import {
+  getTrailerOperationalPresentation,
   getTrailerCargoLabel,
   getTrailerCargoStyle,
   getTrailerLoadLabel,
@@ -61,7 +62,6 @@ import type { PlanningPoolBucket } from '../../lib/dispatch/planning-pool'
 import {
   countTrailerFilters,
   matchesTrailerFilter,
-  resolveTrailerSituation,
   summarizeTrailerSituation,
   trailerFilterLabels,
   trailerFilterOrder,
@@ -541,16 +541,14 @@ export function MissionPool({
     () =>
       trailers.map((trailer) => ({
         item: trailer,
-        situation: resolveTrailerSituation({
-          id: trailer.id,
-          plateNumber: trailer.plateNumber,
-          truckId: trailer.truckId,
-          truckPlate: trucks.find((truck) => truck.id === trailer.truckId)
-            ?.plateNumber,
-          loadStatus: trailer.loadStatus,
-          status: trailer.status,
-          activeMission: trailerActiveMissions?.[trailer.id] ?? null,
-        }) as TrailerSituation,
+        // Même dérivation que les cartes et le panneau rotation : sans elle,
+        // une remorque garée ailleurs était comptée « à la base » par les
+        // filtres tout en affichant « Autre adresse » sur sa fiche.
+        situation: getTrailerOperationalPresentation(
+          trailer,
+          trailerActiveMissions?.[trailer.id] ?? null,
+          trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber
+        ).situation as TrailerSituation,
       })),
     [trailers, trucks, trailerActiveMissions]
   )
@@ -771,6 +769,7 @@ export function MissionPool({
                     <ResourceTrailerCard
                       key={trailer.id}
                       trailer={trailer}
+                      activeMission={trailerActiveMissions?.[trailer.id]}
                       truck={trucks.find(
                         (truck) => truck.id === trailer.truckId
                       )}
@@ -1567,7 +1566,7 @@ function DriverFormModal({
   )
 }
 
-function TrailerFormModal({
+export function TrailerFormModal({
   onMaintenanceUpdated,
   onClose,
   onDelete,
@@ -1689,10 +1688,12 @@ function TrailerFormModal({
         // Compatibilité technique : null = « Non renseigné » (jamais zéro).
         capacityKg,
         couplingType: formState.couplingType ? formState.couplingType : null,
+        ...(!trailer?.truckId ? {
         currentLocationAddress: formState.locationMode === 'OTHER' ? getOptionalValue(formState.currentLocationAddress) : null,
         currentLocationPlaceId: formState.locationMode === 'OTHER' ? getOptionalValue(formState.currentLocationPlaceId) : null,
         currentLocationLat: formState.locationMode === 'OTHER' && formState.currentLocationLat ? Number(formState.currentLocationLat) : null,
         currentLocationLng: formState.locationMode === 'OTHER' && formState.currentLocationLng ? Number(formState.currentLocationLng) : null,
+        } : {}),
       })
     } catch (submitError) {
       console.error('Unable to save trailer', submitError)
@@ -1803,17 +1804,19 @@ function TrailerFormModal({
               ))}
             </select>
           </label>
+          {trailer?.truckId ? <p className="text-sm font-semibold">Localisation actuelle : {getTrailerOperationalPresentation(trailer, activeMission).locationLabel} · suit {trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber ?? 'le camion attelé'}</p> : <>
           <label>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">Localisation</span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">Localisation actuelle</span>
             <select value={formState.locationMode} onChange={(event) => updateField('locationMode', event.target.value)} className="focus:ring-lime-200/35 mt-2 h-12 w-full rounded-2xl border border-black/10 bg-black/[0.025] px-4 text-sm font-semibold text-[#171814] outline-none transition focus:border-lime-300 focus:bg-white focus:ring-4">
               <option value="BASE">À la base</option>
               <option value="OTHER">Autre adresse</option>
             </select>
           </label>
           {formState.locationMode === 'OTHER' ? <div className="sm:col-span-2"><AddressAutocomplete label="Localisation actuelle" value={formState.currentLocationAddress} placeId={formState.currentLocationPlaceId} onChange={(value) => updateField('currentLocationAddress', value)} onSelect={(place: AddressPlace) => setFormState((current) => ({ ...current, currentLocationAddress: place.label, currentLocationPlaceId: place.placeId, currentLocationLat: place.lat == null ? '' : String(place.lat), currentLocationLng: place.lng == null ? '' : String(place.lng) }))} /></div> : null}
+          </>}
           <label>
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">
-              Statut
+              État matériel
             </span>
             <select
               value={formState.status}
@@ -1824,7 +1827,7 @@ function TrailerFormModal({
             >
               {trailerStatusOptions.map((status) => (
                 <option key={status} value={status}>
-                  {trailerStatusLabels[status]}
+                  {status === 'AVAILABLE' || status === 'ASSIGNED' || status === 'AT_BASE' ? 'Opérationnelle' : trailerStatusLabels[status]}
                 </option>
               ))}
             </select>

@@ -690,11 +690,11 @@ function TrailerSheet({
           {!locationMode && loadStatus === "LOADED" ? <p className="text-xs font-semibold text-amber-700">La localisation d’une remorque chargée reste inchangée tant qu’elle n’est pas explicitement précisée.</p> : null}
         </div> : null}
         <Select
-          label="Statut"
+          label="État matériel"
           value={status}
           onChange={(value) => setStatus(value as TrailerStatus)}
           options={trailerStatusOptions}
-          labels={trailerStatusLabels}
+          labels={{ ...trailerStatusLabels, AVAILABLE: "Opérationnelle", ASSIGNED: "Opérationnelle", AT_BASE: "Opérationnelle" }}
         />
         <Select
           label="Camion assigné"
