@@ -6,7 +6,10 @@ import type {
   RegulatoryProfile,
   TemporalLocation,
 } from '../regulatory'
-import type { ResourceOccupation } from '../resource-availability'
+import type {
+  ResourceConflict,
+  ResourceOccupation,
+} from '../resource-availability'
 
 export type OptimizationStrategy =
   | 'MAX_PROFITABILITY'
@@ -232,6 +235,12 @@ export type OptimizationCandidate = {
    * indeterminate, so sequencing can still reserve the resources.
    */
   plannedWindow: { startsAt: string; endsAt: string } | null
+  /**
+   * Affectations déjà posées sur la grille que ce candidat chevaucherait.
+   * Permet de nommer la ressource, la mission et l'intervalle exacts au lieu
+   * d'un message générique.
+   */
+  occupationConflicts: ResourceConflict[]
   cost: CostBreakdown
   score: number
   factors: ScoreFactor[]

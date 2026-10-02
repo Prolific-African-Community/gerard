@@ -1,3 +1,4 @@
+import { resourceStateBefore } from '../resource-availability'
 import { evaluateTemporalMissionSequence } from '../regulatory'
 import { buildOptimizationCandidate, trailerChoices } from './candidate'
 import { optimizationStrategies } from './config'
@@ -137,6 +138,11 @@ function compareCandidates(
 }
 
 function candidateClassificationRank(candidate: OptimizationCandidate) {
+  // Un candidat incompatible le reste, quelle que soit l'évaluation temporelle.
+  // Sans ce garde-fou, un chevauchement avéré avec une affectation déjà posée
+  // était classé « à confirmer » parce que l'état réglementaire, lui, était
+  // seulement indéterminé.
+  if (candidate.compatibility.status === 'INCOMPATIBLE') return 2
   if (
     candidate.compatibility.status === 'COMPATIBLE' &&
     candidate.temporalEvaluation?.status === 'FEASIBLE'
@@ -390,14 +396,43 @@ export function buildOptimizationCandidates(
   const candidates: OptimizationCandidate[] = []
   for (const pair of input.pairs) {
     const runtime = runtimes?.get(pair.pair.rowId)
+    // Une affectation manuelle déjà posée est une mission déjà faite : le
+    // couple repart de son heure de fin et de son point de livraison, comme
+    // après une mission que le moteur vient lui-même de placer.
+    const priorState = resourceStateBefore({
+      occupations: input.resourceOccupations ?? [],
+      driverId: pair.pair.driverId,
+      truckId: pair.pair.truckId,
+      before:
+        mission.temporalPlan.earliestStartAt ??
+        runtime?.availableAt ??
+        pair.availableAt,
+    })
+    const pairAvailableAt = (() => {
+      const base = runtime?.availableAt ?? pair.availableAt
+      if (!priorState) return base
+      return new Date(priorState.availableAt) > new Date(base)
+        ? priorState.availableAt
+        : base
+    })()
+    const pairPosition =
+      priorState?.position &&
+      new Date(priorState.availableAt) >=
+        new Date(runtime?.availableAt ?? pair.availableAt)
+        ? priorState.position
+        : runtime?.position ?? pair.initialPosition
+    const pairPositionId =
+      priorState?.position &&
+      new Date(priorState.availableAt) >=
+        new Date(runtime?.availableAt ?? pair.availableAt)
+        ? priorState.position.id
+        : runtime?.positionId ?? pair.initialPosition?.id ?? null
     for (const originalTrailer of trailerChoices(mission, input.trailers)) {
       const runtimeTrailer = originalTrailer
         ? trailerRuntimes?.get(originalTrailer.id) ?? originalTrailer
         : null
       const earliestTarget =
-        mission.temporalPlan.earliestStartAt ??
-        runtime?.availableAt ??
-        pair.availableAt
+        mission.temporalPlan.earliestStartAt ?? pairAvailableAt
       const targetAt = new Date(
         runtimeTrailer?.loadStatus === 'LOADED' ||
           runtimeTrailer?.forcedMissionId
@@ -434,10 +469,9 @@ export function buildOptimizationCandidates(
           mission,
           trailer,
           state: runtime?.state ?? pair.regulatoryState,
-          availableAt: runtime?.availableAt ?? pair.availableAt,
-          currentPositionId:
-            runtime?.positionId ?? pair.initialPosition?.id ?? null,
-          currentPosition: runtime?.position ?? pair.initialPosition,
+          availableAt: pairAvailableAt,
+          currentPositionId: pairPositionId,
+          currentPosition: pairPosition,
           workload: runtimeWorkloadHours(runtime),
         })
       )
@@ -560,8 +594,9 @@ export function optimizeDispatch(
 
     const conditional = candidates.find(
       (candidate) =>
-        candidate.compatibility.status === 'INDETERMINATE' ||
-        candidate.temporalEvaluation?.status === 'INDETERMINATE'
+        candidate.compatibility.status !== 'INCOMPATIBLE' &&
+        (candidate.compatibility.status === 'INDETERMINATE' ||
+          candidate.temporalEvaluation?.status === 'INDETERMINATE')
     )
     if (conditional) {
       const runtime = runtimes.get(conditional.pair.pair.rowId) as PairRuntime

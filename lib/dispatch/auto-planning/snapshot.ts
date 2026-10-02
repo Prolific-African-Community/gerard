@@ -675,25 +675,50 @@ async function buildAutoPlanningSnapshotInternal(input: {
     })
   })
 
+  const resourceOccupations = assignments
+    .filter((assignment) => !includedMissionIds.has(assignment.missionId))
+    .map((assignment) => ({
+      missionId: assignment.missionId,
+      reference: assignment.mission.reference,
+      driverId: assignment.driverId ?? assignment.planningRow?.driverId ?? null,
+      truckId: assignment.truckId ?? assignment.planningRow?.truckId ?? null,
+      trailerId: assignment.trailerId,
+      startsAt: assignment.scheduledDate,
+      endsAt: assignment.plannedEndAt ?? assignment.mission.deliveryDate,
+      // Une affectation déjà posée laisse la ressource à son point de
+      // livraison : le reste de la semaine se planifie à partir de là.
+      endPosition:
+        assignment.mission.deliveryPlaceId ||
+        assignment.mission.deliveryAddress ||
+        typeof assignment.mission.deliveryLat === 'number'
+          ? {
+              id:
+                assignment.mission.deliveryPlaceId ??
+                assignment.mission.deliveryAddress ??
+                `DELIVERY:${assignment.mission.deliveryLat},${assignment.mission.deliveryLng}`,
+              label: assignment.mission.deliveryAddress ?? undefined,
+              latitude: assignment.mission.deliveryLat ?? undefined,
+              longitude: assignment.mission.deliveryLng ?? undefined,
+            }
+          : null,
+    }))
+
   if (input.prepareCandidateRoutes !== false) {
     transitions = await prepareCandidateApproachRoutes({
       pairs,
       missions: adaptedMissions,
       trailers: adaptedTrailers,
       existing: transitions,
+      // Une affectation déjà posée laisse le couple à son point de livraison :
+      // sans ces trajets, tout candidat partant de là serait sans itinéraire.
+      extraOrigins: resourceOccupations
+        .map((occupation) => occupation.endPosition)
+        .filter(
+          (position): position is NonNullable<typeof position> =>
+            Boolean(position)
+        ),
     })
   }
-
-  const resourceOccupations = assignments
-    .filter((assignment) => !includedMissionIds.has(assignment.missionId))
-    .map((assignment) => ({
-      missionId: assignment.missionId,
-      driverId: assignment.driverId ?? assignment.planningRow?.driverId ?? null,
-      truckId: assignment.truckId ?? assignment.planningRow?.truckId ?? null,
-      trailerId: assignment.trailerId,
-      startsAt: assignment.scheduledDate,
-      endsAt: assignment.plannedEndAt ?? assignment.mission.deliveryDate,
-    }))
 
   const material: Omit<
     DispatchOptimizationInput,

@@ -262,7 +262,7 @@ export async function persistValidatedAutoPlanning(input: {
       if (stored) return stored
     }
 
-    const [rows, missions, assignments, trailers] =
+    const [rows, missions, assignments, trailers, drivers, trucks] =
       await Promise.all([
         tx.planningRow.findMany({
           where: { id: { in: pairRowIds } },
@@ -272,6 +272,8 @@ export async function persistValidatedAutoPlanning(input: {
           where: { missionId: { in: selected } },
         }),
         tx.trailer.findMany({ where: { id: { in: trailerIds } } }),
+        tx.driver.findMany({ select: { id: true, name: true } }),
+        tx.truck.findMany({ select: { id: true, plateNumber: true } }),
       ])
     if (
       rows.length !== pairRowIds.length ||
@@ -387,7 +389,7 @@ export async function persistValidatedAutoPlanning(input: {
              : []),
          ],
       },
-      include: { mission: { select: { deliveryDate: true } } },
+      include: { mission: { select: { reference: true, deliveryDate: true } } },
     })
     const existingConflicts = findResourceOccupationConflicts({
       proposed: proposedIntervals,
@@ -400,26 +402,70 @@ export async function persistValidatedAutoPlanning(input: {
         endsAt: existing.plannedEndAt ?? existing.mission.deliveryDate,
       })),
     })
-    const firstExistingConflict = existingConflicts[0]
-    if (firstExistingConflict) {
-      if (firstExistingConflict.availabilityUnknown) {
-        throw new AutoPlanningConflictError(
-          'RESOURCE_AVAILABILITY_UNKNOWN',
-          'Une affectation existante ne possède pas de fin vérifiable.'
-        )
-      }
-      const trailerOnly = firstExistingConflict.kinds.every(
-        (kind) => kind === 'TRAILER'
+    // Une mission du lot qui chevauche une affectation déjà posée ne doit pas
+    // faire échouer les autres : elle est écartée, nommée, et le reste du lot
+    // est appliqué. Faire échouer tout le lot rendait la planification
+    // automatique inutilisable dès qu'une mission était placée à la main.
+    const conflictedMissionIds = new Set<string>()
+    const occupiedById = new Map(
+      existingResourceAssignments.map((existing) => [
+        existing.missionId,
+        existing,
+      ])
+    )
+    const resourceNames = new Map<string, string>([
+      ...drivers.map((driver) => [driver.id, driver.name] as const),
+      ...trucks.map((truck) => [truck.id, truck.plateNumber] as const),
+      ...trailers.map((trailer) => [trailer.id, trailer.plateNumber] as const),
+    ])
+    for (const conflict of existingConflicts) {
+      conflictedMissionIds.add(conflict.proposedMissionId)
+      const proposed = proposedIntervals.find(
+        (interval) => interval.missionId === conflict.proposedMissionId
       )
-      throw new AutoPlanningConflictError(
-        trailerOnly ? 'TRAILER_TIME_CONFLICT' : 'RESOURCE_TIME_CONFLICT',
-        trailerOnly
-          ? 'Une remorque est déjà planifiée sur ce créneau.'
-          : 'Un chauffeur ou un camion est déjà planifié sur ce créneau.'
+      const occupied = occupiedById.get(conflict.occupiedMissionId)
+      const reference =
+        selectedItems.find(
+          (item) => item.mission.missionId === conflict.proposedMissionId
+        )?.mission.reference ?? conflict.proposedMissionId
+      if (conflict.availabilityUnknown) {
+        warnings.push(
+          `${reference} non appliquée : l’affectation existante ${
+            occupied?.mission.reference ?? conflict.occupiedMissionId
+          } n’a pas de fin vérifiable.`
+        )
+        continue
+      }
+      const busy = conflict.kinds
+        .map((kind) =>
+          kind === 'DRIVER'
+            ? resourceNames.get(occupied?.driverId ?? '')
+            : kind === 'TRUCK'
+            ? resourceNames.get(occupied?.truckId ?? '')
+            : resourceNames.get(occupied?.trailerId ?? '')
+        )
+        .filter(Boolean)
+        .join(' / ')
+      const occupiedEnd = occupied?.plannedEndAt ?? occupied?.mission.deliveryDate
+      warnings.push(
+        `${reference} non appliquée : ${busy || 'la ressource'} occupé${
+          conflict.kinds.length > 1 ? 's' : ''
+        } par ${
+          occupied?.mission.reference ?? conflict.occupiedMissionId
+        } du ${occupied?.scheduledDate.toISOString() ?? '?'} au ${
+          occupiedEnd?.toISOString() ?? '?'
+        }. Créneau demandé : ${proposed?.startsAt.toISOString() ?? '?'} → ${
+          proposed?.endsAt.toISOString() ?? '?'
+        }. Décaler l’enlèvement après ${
+          occupiedEnd?.toISOString() ?? '?'
+        } ou choisir un autre couple.`
       )
     }
 
+    const applied: string[] = []
     for (const item of selectedItems) {
+      if (conflictedMissionIds.has(item.mission.missionId)) continue
+      applied.push(item.mission.missionId)
       const { startsAt: possibleStart, endsAt: completedAt } =
         missionWindow(item)
       if (!possibleStart || !completedAt) {
@@ -499,7 +545,7 @@ export async function persistValidatedAutoPlanning(input: {
         strategy: input.request.strategy,
         periodStart: new Date(input.snapshot.input.period.startsAt),
         periodEnd: new Date(input.snapshot.input.period.endsAt),
-        missionIds: selected,
+        missionIds: applied,
         pairRowIds,
         warnings,
         actorId: input.userId,
@@ -509,9 +555,9 @@ export async function persistValidatedAutoPlanning(input: {
     const response: ApplyResult = {
       idempotentReplay: false,
       applicationId: audit.id,
-      appliedMissionIds: selected,
+      appliedMissionIds: applied,
       pairRowIds,
-      ignoredMissionIds: [],
+      ignoredMissionIds: Array.from(conflictedMissionIds),
       warnings,
     }
     await tx.dispatchOptimizationApplication.update({

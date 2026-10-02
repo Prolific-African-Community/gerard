@@ -66,6 +66,8 @@ export async function prepareCandidateApproachRoutes(input: {
   missions: DispatchOptimizationInput['missions']
   trailers: DispatchOptimizationInput['trailers']
   existing: RouteTransition[]
+  /** Points de départ supplémentaires : fin des affectations déjà posées. */
+  extraOrigins?: ReadonlyArray<TemporalLocation>
   provider?: RouteProvider
 }) {
   const provider = input.provider ?? computeGoogleRouteMetrics
@@ -107,12 +109,14 @@ export async function prepareCandidateApproachRoutes(input: {
       for (const trailer of trailerChoices(mission, input.trailers)) {
         const pairPositions = [
           pair.initialPosition,
+          ...(input.extraOrigins ?? []),
           ...input.missions.map((item) => item.delivery),
         ]
         const trailerPositions = trailer
           ? [
               trailer.position,
               ...(trailer.timeline?.map((item) => item.positionAfter) ?? []),
+              ...(input.extraOrigins ?? []),
               ...input.missions.map((item) => item.delivery),
             ]
           : []

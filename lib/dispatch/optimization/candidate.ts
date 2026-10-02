@@ -441,6 +441,9 @@ export function buildOptimizationCandidate(input: {
 
   let temporalEvaluation: OptimizationCandidate['temporalEvaluation'] = null
   let plannedWindow: OptimizationCandidate['plannedWindow'] = null
+  let occupationConflicts: ReturnType<
+    typeof findResourceOccupationConflicts
+  > = []
   if (
     compatibility.status !== 'INCOMPATIBLE' &&
     !transitionResult.missing.length
@@ -525,45 +528,53 @@ export function buildOptimizationCandidate(input: {
         compatibility.codes.push('REGULATORY_STATE_UNKNOWN')
         compatibility.missingData.push(...temporalEvaluation.missingData)
       }
-      if (
-        temporalEvaluation?.possibleStartAt &&
-        temporalEvaluation.completedAt
-      ) {
-        const conflicts = findResourceOccupationConflicts({
-          proposed: [
-            {
-              missionId: input.mission.id,
-              driverId: input.pair.pair.driverId,
-              truckId: input.pair.pair.truckId,
-              trailerId: input.trailer?.id ?? null,
-              startsAt: temporalEvaluation.possibleStartAt,
-              endsAt: temporalEvaluation.completedAt,
-            },
-          ],
-          occupied: input.optimization.resourceOccupations ?? [],
-        })
-        if (conflicts.length) {
-          const codes: CompatibilityCode[] = ['RESOURCE_TIME_CONFLICT']
-          if (conflicts.some((conflict) => conflict.kinds.includes('DRIVER'))) {
-            codes.push('DRIVER_TIME_CONFLICT')
-          }
-          if (conflicts.some((conflict) => conflict.kinds.includes('TRUCK'))) {
-            codes.push('TRUCK_TIME_CONFLICT')
-          }
-          if (
-            conflicts.some((conflict) => conflict.kinds.includes('TRAILER'))
-          ) {
-            codes.push('TRAILER_TIME_CONFLICT')
-          }
-          compatibility.status = 'INCOMPATIBLE'
-          compatibility.codes = Array.from(
-            new Set([...compatibility.codes, ...codes])
-          )
-          compatibility.messages = compatibility.codes.map(
-            (code) => compatibilityMessages[code]
-          )
+    }
+  }
+
+  // The occupation window: the regulatory evaluator times a confirmed
+  // candidate, the deterministic walk times a conditional one. Checking only
+  // the first let a conditional candidate be proposed straight on top of a
+  // mission the dispatcher had already placed by hand.
+  const occupationWindow =
+    temporalEvaluation?.possibleStartAt && temporalEvaluation.completedAt
+      ? {
+          startsAt: temporalEvaluation.possibleStartAt,
+          endsAt: temporalEvaluation.completedAt,
         }
+      : plannedWindow
+  if (occupationWindow && compatibility.status !== 'INCOMPATIBLE') {
+    const conflicts = findResourceOccupationConflicts({
+      proposed: [
+        {
+          missionId: input.mission.id,
+          driverId: input.pair.pair.driverId,
+          truckId: input.pair.pair.truckId,
+          trailerId: input.trailer?.id ?? null,
+          startsAt: occupationWindow.startsAt,
+          endsAt: occupationWindow.endsAt,
+        },
+      ],
+      occupied: input.optimization.resourceOccupations ?? [],
+    })
+    if (conflicts.length) {
+      const codes: CompatibilityCode[] = ['RESOURCE_TIME_CONFLICT']
+      if (conflicts.some((conflict) => conflict.kinds.includes('DRIVER'))) {
+        codes.push('DRIVER_TIME_CONFLICT')
       }
+      if (conflicts.some((conflict) => conflict.kinds.includes('TRUCK'))) {
+        codes.push('TRUCK_TIME_CONFLICT')
+      }
+      if (conflicts.some((conflict) => conflict.kinds.includes('TRAILER'))) {
+        codes.push('TRAILER_TIME_CONFLICT')
+      }
+      compatibility.status = 'INCOMPATIBLE'
+      compatibility.codes = Array.from(
+        new Set([...compatibility.codes, ...codes])
+      )
+      compatibility.messages = compatibility.codes.map(
+        (code) => compatibilityMessages[code]
+      )
+      occupationConflicts = conflicts
     }
   }
 
@@ -617,6 +628,7 @@ export function buildOptimizationCandidate(input: {
             endsAt: temporalEvaluation.completedAt,
           }
         : plannedWindow,
+    occupationConflicts,
     cost,
     score: scored.score,
     factors: scored.factors,
