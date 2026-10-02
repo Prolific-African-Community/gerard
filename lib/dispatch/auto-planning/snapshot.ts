@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { MissionStatus, TrailerCargoType, TrailerType } from '@prisma/client'
+import { MissionStatus, TrailerCargoType, TrailerType, TruckStatus } from '@prisma/client'
 
 import { buildPreparedDriverTruckPairs } from '../driver-truck-pairs'
 import { positionProvidersForAnalysis } from '../suggestions/planning-analysis'
@@ -418,6 +418,7 @@ async function buildAutoPlanningSnapshotInternal(input: {
               }
             : null,
         operatingBase,
+        truckAtBase: truck?.status === TruckStatus.AT_BASE,
       })
       const initialPosition = resolvedPosition.location
       positionByPairRowId.set(source.rowId, initialPosition)

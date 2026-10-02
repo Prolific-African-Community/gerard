@@ -18,6 +18,7 @@ import {
   translateReasonCode,
 } from '../../../lib/dispatch/reason-labels'
 import { resolvePairChecklistAction } from '../../../lib/dispatch/auto-planning/checklist-actions'
+import { summarizeProposalMissingData } from '../../../lib/dispatch/auto-planning/readiness-summary'
 import type { MissionPrerequisiteItem } from '../../../lib/dispatch/mission-prerequisites'
 
 const strategyLabels: Record<OptimizationStrategy, string> = {
@@ -91,6 +92,8 @@ type ReadinessResponse = {
       planningEffect: string
     }>
     unavailable: boolean
+    readinessLevel: 'READY' | 'WARNING' | 'BLOCKED'
+    readinessSummary: string
   }>
   counts: {
     readyMissions: number
@@ -291,7 +294,7 @@ export function AutoPlanningPanel({
     })
     setSelectedMissionIds(
       new Set(
-        result.confirmedProposals.flatMap((proposal) =>
+        [...result.confirmedProposals, ...result.conditionalProposals].flatMap((proposal) =>
           proposal.missions.map((mission) => mission.missionId)
         )
       )
@@ -381,37 +384,6 @@ export function AutoPlanningPanel({
     })
   }
 
-  function confirmConditionalProposal(proposal: PairProposal) {
-    const ids = proposal.missions.map((mission) => mission.missionId)
-    const allConfirmed = ids.every((id) =>
-      confirmedConditionalMissionIds.has(id)
-    )
-    if (
-      !allConfirmed &&
-      !window.confirm(
-        `Confirmer explicitement ${ids.length} proposition(s) orange malgré les réserves affichées ?`
-      )
-    ) {
-      return
-    }
-    setConfirmedConditionalMissionIds((current) => {
-      const next = new Set(current)
-      ids.forEach((id) => {
-        if (allConfirmed) next.delete(id)
-        else next.add(id)
-      })
-      return next
-    })
-    setSelectedMissionIds((current) => {
-      const next = new Set(current)
-      ids.forEach((id) => {
-        if (allConfirmed) next.delete(id)
-        else next.add(id)
-      })
-      return next
-    })
-  }
-
   function openProposalEditor(
     proposal: PairProposal,
     missionId: string,
@@ -471,9 +443,10 @@ export function AutoPlanningPanel({
 
   async function applySelection() {
     if (!simulation || !activeResult || stale || dataChanged) return
+    const orangeIds = activeResult.conditionalProposals.flatMap((proposal) => proposal.missions.map((mission) => mission.missionId)).filter((id) => selectedMissionIds.has(id))
     if (
       !window.confirm(
-        `Appliquer ${selectedMissionIds.size} mission(s) confirmée(s) au planning réel ?`
+        `Appliquer ${selectedMissionIds.size} mission(s) au planning réel ?${orangeIds.length ? ` Confirmer également les ${orangeIds.length} mission(s) orange avec les réserves affichées.` : ''}`
       )
     ) {
       return
@@ -490,9 +463,7 @@ export function AutoPlanningPanel({
           simulationId: simulation.simulationId,
           strategy,
           selectedMissionIds: Array.from(selectedMissionIds),
-          confirmedConditionalMissionIds: Array.from(
-            confirmedConditionalMissionIds
-          ),
+          confirmedConditionalMissionIds: Array.from(new Set([...Array.from(confirmedConditionalMissionIds), ...orangeIds])),
           adjustments: Object.values(adjustments),
           idempotencyKey:
             typeof crypto.randomUUID === 'function'
@@ -782,7 +753,7 @@ export function AutoPlanningPanel({
               activeResult.conditionalProposals.length ? (
                 <section>
                   <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-amber-700">
-                    À confirmer
+                    À confirmer · applicables avec réserves
                   </h3>
                   {activeResult.conditionalProposals.map((proposal) => (
                     <ProposalCard
@@ -790,9 +761,9 @@ export function AutoPlanningPanel({
                       proposal={proposal}
                       pairLabel={simulation.pairLabels[proposal.pair.rowId]}
                       selected={proposal.missions.every((mission) =>
-                        confirmedConditionalMissionIds.has(mission.missionId)
+                        selectedMissionIds.has(mission.missionId)
                       )}
-                      onToggle={() => confirmConditionalProposal(proposal)}
+                      onToggle={() => toggleProposal(proposal)}
                       conditional
                       adjustments={adjustments}
                       adjustmentOptions={simulation.adjustmentOptions}
@@ -1121,55 +1092,72 @@ function PairResolutionList({
   onEditRegulatory: (driverId: string, driverName: string) => void
   onOpenResource?: (type: 'driver' | 'truck' | 'trailer', id: string) => void
 }) {
-  // Ne conserver que les couples présentant un point à corriger, chacun avec
-  // une raison traduite et une action ciblée (§8 : centre de résolution).
-  const rows = pairs.filter(
-    (pair) =>
-      pair.missingRegulatoryState || pair.missingPosition || pair.unavailable
-  )
-  if (!rows.length) return null
+  // Une entrée par couple réel, avec un seul état lisible. Les lignes de
+  // planning vides sont écartées côté API : il n'y a donc jamais de carte
+  // anonyme, et un couple prêt n'a rien à corriger.
+  const rows = pairs.filter((pair) => pair.readinessLevel !== 'READY')
+  const ready = pairs.filter((pair) => pair.readinessLevel === 'READY')
+  if (!pairs.length) return null
   return (
     <div className="mt-3 space-y-2">
       <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#777d72]">
-        Ressources à compléter
+        Ressources
       </p>
+      {ready.length ? (
+        <div className="rounded-2xl bg-[#f1f3ec] px-3 py-2">
+          <p className="text-[10px] font-semibold text-[#3f463c]">
+            {`Prêt${ready.length > 1 ? 's' : ''} · ${ready
+              .map((pair) =>
+                [pair.driverName, pair.truckPlateNumber]
+                  .filter(Boolean)
+                  .join(' ')
+              )
+              .join(', ')}.`}
+          </p>
+        </div>
+      ) : null}
       {rows.map((pair) => {
-        const label = `${pair.driverName ?? 'Chauffeur ?'} · ${
-          pair.truckPlateNumber ?? 'Camion ?'
-        }`
-        const reason = pair.missingRegulatoryState
-          ? translateReasonCode('MISSING_DRIVER_STATE')
-          : pair.missingPosition
-          ? translateReasonCode('MISSING_POSITION')
-          : translateReasonCode('DRIVER_UNAVAILABLE')
-        const regulatoryWarnings = pair.regulatoryControls.filter(
-          (control) => control.status !== 'CONFORME'
-        )
+        const blocked = pair.readinessLevel === 'BLOCKED'
         return (
-          <div key={pair.rowId} className="rounded-2xl bg-amber-50 px-3 py-3">
+          <div
+            key={pair.rowId}
+            className={[
+              'rounded-2xl px-3 py-3',
+              blocked ? 'bg-red-50' : 'bg-amber-50',
+            ].join(' ')}
+          >
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="text-amber-950 text-[11px] font-semibold">
-                  {label}
+                <p
+                  className={[
+                    'text-[11px] font-semibold',
+                    blocked ? 'text-red-950' : 'text-amber-950',
+                  ].join(' ')}
+                >
+                  {[pair.driverName, pair.truckPlateNumber]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </p>
-                <p className="mt-0.5 text-[10px] font-semibold text-amber-900">
-                  {reason.title}
+                <p
+                  className={[
+                    'mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em]',
+                    blocked ? 'text-red-900' : 'text-amber-900',
+                  ].join(' ')}
+                >
+                  {blocked ? 'Bloqué' : 'Réserve'}
                 </p>
-                <p className="mt-0.5 text-[10px] text-amber-800">
-                  {regulatoryWarnings.length
-                    ? regulatoryWarnings
-                        .map(
-                          (control) =>
-                            `${control.label} : ${control.value}. ${control.explanation}`
-                        )
-                        .join(' ')
-                    : reason.explanation}
+                <p
+                  className={[
+                    'mt-0.5 text-[10px]',
+                    blocked ? 'text-red-800' : 'text-amber-800',
+                  ].join(' ')}
+                >
+                  {pair.readinessSummary}
                 </p>
               </div>
               <PairActionButton
                 action={resolvePairChecklistAction(pair)}
                 driverName={pair.driverName}
-                fallbackAction={reason.action}
                 onEditRegulatory={onEditRegulatory}
                 onOpenResource={onOpenResource}
               />
@@ -1184,13 +1172,11 @@ function PairResolutionList({
 function PairActionButton({
   action,
   driverName,
-  fallbackAction,
   onEditRegulatory,
   onOpenResource,
 }: {
   action: ReturnType<typeof resolvePairChecklistAction>
   driverName: string | null
-  fallbackAction: ReturnType<typeof translateReasonCode>['action']
   onEditRegulatory: (driverId: string, driverName: string) => void
   onOpenResource?: (type: 'driver' | 'truck' | 'trailer', id: string) => void
 }) {
@@ -1238,13 +1224,8 @@ function PairActionButton({
       </button>
     )
   }
-  if (fallbackAction) {
-    return (
-      <span className={secondary.replace('focus-visible:ring-amber-400', '')}>
-        {reasonActionLabels[fallbackAction]}
-      </span>
-    )
-  }
+  // Pas de cible exploitable : on n'affiche rien plutot qu'un bouton decoratif
+  // que le dispatcher essaierait de cliquer.
   return null
 }
 
@@ -1454,7 +1435,7 @@ function ProposalCard({
             ].join(' ')}
             style={{ border: 0 }}
           >
-            {selected ? 'Orange confirmée' : 'Confirmer l’orange'}
+            {selected ? 'Orange sélectionnée' : 'Sélectionner l’orange'}
           </button>
         ) : (
           <label className="flex items-center gap-2 text-[10px] font-semibold text-[#555c51]">
@@ -1512,17 +1493,13 @@ function ProposalCard({
                 {mission.explanation.assumptions.map((item) => (
                   <p key={item}>Hypothèse · {item}</p>
                 ))}
-                {mission.explanation.missingData.map((item) => {
-                  const label = translateReasonCode(item)
-                  return (
-                    <p key={item} className="font-semibold text-amber-700">
-                      Donnée manquante · {label.title}
-                      {label.action
-                        ? ` → ${reasonActionLabels[label.action]}`
-                        : ''}
-                    </p>
-                  )
-                })}
+                {summarizeProposalMissingData(
+                  mission.explanation.missingData
+                ).map((item) => (
+                  <p key={item} className="font-semibold text-amber-700">
+                    {item}
+                  </p>
+                ))}
                 <div className="flex flex-wrap gap-2 sm:col-span-2">
                   <button
                     type="button"

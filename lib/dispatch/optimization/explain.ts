@@ -1,3 +1,4 @@
+import { summarizeProposalMissingData } from '../auto-planning/readiness-summary'
 import type {
   OptimizationCandidate,
   OptimizationExplanation,
@@ -59,7 +60,11 @@ export function explainOptimizationDecision(
       })),
     summary:
       candidate.compatibility.status === 'INDETERMINATE'
-        ? `Proposition à confirmer pour ${candidate.mission.reference} : ${missingData.join(', ')}.`
+        ? // Les clés internes restent dans `missingData` pour le diagnostic ;
+          // la phrase lue par le dispatcher n'en expose aucune.
+          `Proposition à confirmer pour ${
+            candidate.mission.reference
+          } : ${summarizeProposalMissingData(missingData).join(' ')}`
         : `Mission ${candidate.mission.reference} proposée au couple ${candidate.pair.driverName} / ${candidate.pair.truckPlateNumber}, avec ${emptyKm.toFixed(1)} km à vide, ${candidate.cost.approachDurationHours.toFixed(2)} h d’approche, ${economicSummary}.`,
   }
 }

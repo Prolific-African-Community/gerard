@@ -13,6 +13,9 @@ export const COMPLETED_MISSION_DIRECT_MAX_AGE_SECONDS = 24 * 60 * 60
 export type DriverPositionSource =
   | 'DRIVER_GPS'
   | 'LAST_COMPLETED_MISSION'
+  // Le tracteur est déclaré « à la base » : la position est constatée.
+  | 'STATUS_BASE'
+  // Repli : aucune position connue, la base est supposée.
   | 'OPERATING_BASE'
   | 'UNKNOWN'
 
@@ -94,6 +97,8 @@ export function resolveDriverPosition(input: {
   gps: SharedGpsPosition | null
   lastCompletedMission: CompletedMissionPosition | null
   operatingBase: OperatingBasePosition | null
+  /** Le tracteur porte un statut « à la base » déclaré par l'exploitation. */
+  truckAtBase?: boolean
   maximumGpsAgeSeconds?: number
 }): ResolvedDriverPosition {
   const maximumGpsAgeSeconds =
@@ -172,25 +177,33 @@ export function resolveDriverPosition(input: {
 
   const base = input.operatingBase
   if (base && validCoordinate(base.latitude, base.longitude)) {
+    // Un tracteur déclaré « à la base » est une position constatée, pas une
+    // hypothèse : elle ne doit pas rendre la proposition conditionnelle ni
+    // apparaître comme une donnée manquante. Le repli sur la base sans aucun
+    // état connu reste, lui, une estimation.
+    const declaredAtBase = input.truckAtBase === true
     return {
       location: location({
         id: `BASE:${base.latitude},${base.longitude}`,
         label: base.label ?? 'Base d’exploitation',
         latitude: base.latitude,
         longitude: base.longitude,
-        source: 'OPERATING_BASE',
+        source: declaredAtBase ? 'STATUS_BASE' : 'OPERATING_BASE',
         observedAt: null,
-        confidence: 'LOW',
-        planningEffect: 'CONDITIONAL',
+        confidence: declaredAtBase ? 'MEDIUM' : 'LOW',
+        planningEffect: declaredAtBase ? 'DIRECT' : 'CONDITIONAL',
       }),
-      source: 'OPERATING_BASE',
-      sourceLabel: 'Base d’exploitation',
+      source: declaredAtBase ? 'STATUS_BASE' : 'OPERATING_BASE',
+      sourceLabel: declaredAtBase
+        ? 'Tracteur à la base'
+        : 'Base d’exploitation',
       observedAt: null,
       freshnessSeconds: null,
-      confidence: 'LOW',
+      confidence: declaredAtBase ? 'MEDIUM' : 'LOW',
       usable: true,
-      planningEffect:
-        'Repli sur la base faute de position récente ; la proposition reste conditionnelle.',
+      planningEffect: declaredAtBase
+        ? 'Tracteur déclaré à la base : position de départ utilisée directement.'
+        : 'Repli sur la base faute de position récente ; la proposition reste conditionnelle.',
       latestGps,
     }
   }

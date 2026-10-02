@@ -18,6 +18,10 @@ import { evaluateMissionPrerequisites } from '../../../../lib/dispatch/mission-p
 import { getDriverActivityState } from '../../../../lib/dispatch/regulatory'
 import { prisma } from '../../../../lib/prisma'
 import { resolveOperatingBase } from '../../../../lib/dispatch/operating-base'
+import {
+  isResourcePair,
+  summarizePairReadiness,
+} from '../../../../lib/dispatch/auto-planning/readiness-summary'
 
 const unavailableTrucks = new Set<TruckStatus>([
   TruckStatus.IN_MAINTENANCE,
@@ -84,7 +88,6 @@ async function handler(
       .map((state) => [state.driver.id, state])
   )
   const missionItems = included.map((mission) => {
-    const assignedDriverId = mission.assignment?.driverId ?? null
     return {
       missionId: mission.id,
       reference: mission.reference,
@@ -92,12 +95,10 @@ async function handler(
       missingData: Array.isArray(mission.preparationMissingData)
         ? mission.preparationMissingData
         : [],
-      prerequisites: evaluateMissionPrerequisites(mission, {
-        assigned: Boolean(assignedDriverId),
-        regulatoryStateKnown: Boolean(
-          assignedDriverId && regulatoryByDriverId.has(assignedDriverId)
-        ),
-      }),
+      // Choisir le chauffeur est précisément le travail de la planification
+      // automatique : une mission non encore affectée n'est pas une mission
+      // incomplète. On n'évalue donc pas le prérequis chauffeur ici.
+      prerequisites: evaluateMissionPrerequisites(mission),
       pickupResolutionStatus: mission.pickupResolutionStatus,
       deliveryResolutionStatus: mission.deliveryResolutionStatus,
       pickupResolutionReason: mission.pickupResolutionReason,
@@ -110,31 +111,51 @@ async function handler(
         : [],
     }
   })
-  const pairItems = pairs.map((pair) => {
+  // Une ligne de planning vide est une place libre sur la grille, pas une
+  // ressource à compléter : sans chauffeur ni tracteur elle n'identifie rien
+  // sur quoi le dispatcher pourrait agir. Les compter produisait autant de
+  // cartes anonymes « Chauffeur ? · Camion ? » que de lignes vides.
+  const resourcePairs = pairs.filter(isResourcePair)
+  const pairItems = resourcePairs.map((pair) => {
     const regulatory = pair.driver
       ? regulatoryByDriverId.get(pair.driver.id)
       : null
+    const driverActive = Boolean(
+      pair.driver && pair.driver.status === DriverStatus.ACTIVE
+    )
+    const truckUsable = Boolean(
+      pair.assignedTruck && !unavailableTrucks.has(pair.assignedTruck.status)
+    )
+    const missingPosition = Boolean(
+      pair.assignedTruck && !regulatory?.position.usable
+    )
+    // A partial history is a reservation presented by the assessment, not a
+    // prerequisite blocker. Only a wholly missing calculated state is absent.
+    const missingRegulatoryState = Boolean(pair.driver && !regulatory)
+    const regulatoryStatus = regulatory?.assessment.status ?? 'AVERTISSEMENT'
+    const readiness = summarizePairReadiness({
+      driverId: pair.driver?.id ?? null,
+      driverName: pair.driver?.name ?? null,
+      truckPlateNumber: pair.assignedTruck?.plateNumber ?? null,
+      driverActive,
+      truckUsable,
+      missingRegulatoryState,
+      missingPosition,
+      regulatoryStatus,
+    })
     return {
       rowId: pair.rowId,
       driverId: pair.driver?.id ?? null,
       driverName: pair.driver?.name ?? null,
       truckId: pair.assignedTruck?.id ?? null,
       truckPlateNumber: pair.assignedTruck?.plateNumber ?? null,
-      missingPosition: Boolean(
-        pair.assignedTruck &&
-          !regulatory?.position.usable
-      ),
-      // A partial history is a reservation presented by the assessment, not a
-      // prerequisite blocker. Only a wholly missing calculated state is absent.
-      missingRegulatoryState: Boolean(pair.driver && !regulatory),
-      regulatoryStatus: regulatory?.assessment.status ?? 'AVERTISSEMENT',
+      missingPosition,
+      missingRegulatoryState,
+      regulatoryStatus,
       regulatoryControls: regulatory?.assessment.controls ?? [],
-      unavailable: Boolean(
-        !pair.driver ||
-          !pair.assignedTruck ||
-          pair.driver.status !== DriverStatus.ACTIVE ||
-          unavailableTrucks.has(pair.assignedTruck.status)
-      ),
+      readinessLevel: readiness.level,
+      readinessSummary: readiness.summary,
+      unavailable: readiness.level === 'BLOCKED',
     }
   })
   return res.status(200).json({
