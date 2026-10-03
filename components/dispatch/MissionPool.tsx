@@ -1591,6 +1591,16 @@ export function TrailerFormModal({
   onRotated?: (result: TrailerRotationResult, toast: string) => void
   trucks: Truck[]
 }) {
+  // Une seule dérivation de l'état courant, partagée avec la grille, les
+  // cartes et le mobile : jamais de règle de priorité réécrite ici.
+  const trailerPresentation = trailer
+    ? getTrailerOperationalPresentation(
+        trailer,
+        activeMission,
+        trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber,
+        (truckId) => trucks.find((truck) => truck.id === truckId)?.plateNumber
+      )
+    : null
   const [formState, setFormState] = useState(() =>
     trailer
       ? {
@@ -1688,7 +1698,7 @@ export function TrailerFormModal({
         // Compatibilité technique : null = « Non renseigné » (jamais zéro).
         capacityKg,
         couplingType: formState.couplingType ? formState.couplingType : null,
-        ...(!trailer?.truckId ? {
+        ...(trailerPresentation?.locationEditable !== false ? {
         currentLocationAddress: formState.locationMode === 'OTHER' ? getOptionalValue(formState.currentLocationAddress) : null,
         currentLocationPlaceId: formState.locationMode === 'OTHER' ? getOptionalValue(formState.currentLocationPlaceId) : null,
         currentLocationLat: formState.locationMode === 'OTHER' && formState.currentLocationLat ? Number(formState.currentLocationLat) : null,
@@ -1804,7 +1814,10 @@ export function TrailerFormModal({
               ))}
             </select>
           </label>
-          {trailer?.truckId ? <p className="text-sm font-semibold">Localisation actuelle : {getTrailerOperationalPresentation(trailer, activeMission).locationLabel} · suit {trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber ?? 'le camion attelé'}</p> : <>
+          {trailerPresentation && !trailerPresentation.locationEditable ? <div className="sm:col-span-2">
+            <p className="text-sm font-semibold">Localisation actuelle : {trailerPresentation.locationLabel}{trailerPresentation.activeMission ? ` · mission ${trailerPresentation.activeMission.missionReference}` : ''}{trailerPresentation.currentTruckPlate ? ` · ${trailerPresentation.currentTruckPlate}` : ''}</p>
+            <p className="mt-1 text-xs text-[#73796d]">{trailerPresentation.couplingLabel}. Localisation après décrochage : {trailerPresentation.detachedLocationLabel}.</p>
+          </div> : <>
           <label>
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">Localisation actuelle</span>
             <select value={formState.locationMode} onChange={(event) => updateField('locationMode', event.target.value)} className="focus:ring-lime-200/35 mt-2 h-12 w-full rounded-2xl border border-black/10 bg-black/[0.025] px-4 text-sm font-semibold text-[#171814] outline-none transition focus:border-lime-300 focus:bg-white focus:ring-4">
@@ -1834,7 +1847,7 @@ export function TrailerFormModal({
           </label>
           <label>
             <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#73796d]">
-              Camion assigné
+              Attelage physique
             </span>
             <select
               value={formState.truckId}

@@ -441,6 +441,18 @@ export type TrailerMissionSource = {
 }
 
 /**
+ * Affectation telle que les surfaces la connaissent. La forme courte (un
+ * identifiant de remorque) reste acceptée pour les appels qui n'ont que cela.
+ */
+export type TrailerMissionAssignment =
+  | string
+  | {
+      trailerId?: string | null
+      driverId?: string | null
+      truckId?: string | null
+    }
+
+/**
  * Construit la table remorque → mission active, partagée par le desktop et le
  * mobile.
  *
@@ -449,12 +461,14 @@ export type TrailerMissionSource = {
  */
 export function buildTrailerActiveMissions<T extends TrailerMissionSource>(
   missions: readonly T[],
-  getTrailerId: (mission: T) => string | null | undefined
+  getAssignment: (mission: T) => TrailerMissionAssignment | null | undefined
 ): Record<string, TrailerActiveMission> {
   const byTrailer: Record<string, TrailerActiveMission> = {}
 
   for (const mission of missions) {
-    const trailerId = getTrailerId(mission)
+    const assignment = getAssignment(mission)
+    const trailerId =
+      typeof assignment === 'string' ? assignment : assignment?.trailerId
     if (!trailerId) continue
 
     // L'affectation seule ne prouve pas que l'exécution a commencé.
@@ -464,8 +478,52 @@ export function buildTrailerActiveMissions<T extends TrailerMissionSource>(
       missionId: mission.id,
       missionReference: mission.reference,
       missionStatus: normalizeMissionStatus(mission.status),
+      // Le couple qui exécute la mission en cours : c'est lui qui fait foi
+      // pour la présentation « actuelle », l'attelage physique pouvant ne pas
+      // avoir encore été constaté.
+      driverId: typeof assignment === 'string' ? null : assignment?.driverId ?? null,
+      truckId: typeof assignment === 'string' ? null : assignment?.truckId ?? null,
     }
   }
 
   return byTrailer
+}
+
+/**
+ * Remorque « actuelle » d'un tracteur, pour la présentation seulement.
+ *
+ * Ordre de preuve :
+ *   1. la remorque de la mission EN COURS de ce tracteur ;
+ *   2. l'attelage physique persisté (`Trailer.truckId`) ;
+ *   3. aucune.
+ *
+ * Une affectation future ne remonte jamais ici : `activeMissionsByTrailerId`
+ * ne contient que des missions commencées. Rien n'est muté : constater
+ * l'attelage physique reste un acte d'exploitation distinct.
+ */
+export function resolveCurrentTrailerIdForTruck(input: {
+  truckId: string | null | undefined
+  activeMissionsByTrailerId: Record<string, TrailerActiveMission>
+  physicalTrailerId?: string | null
+}) {
+  if (!input.truckId) return null
+  for (const [trailerId, mission] of Object.entries(
+    input.activeMissionsByTrailerId
+  )) {
+    if (mission.truckId && mission.truckId === input.truckId) return trailerId
+  }
+  return input.physicalTrailerId ?? null
+}
+
+/**
+ * Tracteur « actuel » d'une remorque, même ordre de preuve que ci-dessus.
+ */
+export function resolveCurrentTruckIdForTrailer(input: {
+  activeMission?: TrailerActiveMission | null
+  physicalTruckId?: string | null
+}) {
+  if (isActiveMission(input.activeMission) && input.activeMission.truckId) {
+    return input.activeMission.truckId
+  }
+  return input.physicalTruckId ?? null
 }

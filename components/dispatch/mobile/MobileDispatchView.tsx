@@ -406,7 +406,7 @@ export function MobileDispatchView({
     () =>
       buildTrailerActiveMissions(
         data.missions,
-        (mission) => data.placements[mission.id]?.trailerId
+        (mission) => data.placements[mission.id]
       ),
     [data.missions, data.placements]
   )

@@ -1,4 +1,11 @@
-import { resolveTrailerSituation, isTrailerAvailableForNewMission, trailerLocationLabels } from './trailer-rotation'
+import type { TrailerLocation } from './trailer-rotation'
+import {
+  isActiveMission,
+  isTrailerAvailableForNewMission,
+  resolveCurrentTruckIdForTrailer,
+  resolveTrailerSituation,
+  trailerLocationLabels,
+} from './trailer-rotation'
 import type { TrailerActiveMission } from './trailer-rotation'
 import { getVehicleDisplayStatus } from './maintenance-display'
 import type {
@@ -110,16 +117,46 @@ export function getTrailerCargoLabel(trailer: Trailer) {
   return trailerCargoTypeLabels[trailer.cargoType ?? 'OTHER']
 }
 
-/** Current operational presentation, never a persisted status mutation. */
+/**
+ * Présentation opérationnelle courante. Ne mute jamais un statut persisté.
+ *
+ * Quand une mission est EN COURS, c'est elle qui porte la vérité du moment :
+ * son tracteur devient le tracteur actuel et la remorque est en transit, même
+ * si l'attelage physique n'a pas encore été constaté. `Trailer.truckId` reste
+ * la preuve secondaire, et la seule qui compte hors mission active.
+ */
 export function getTrailerOperationalPresentation(
   trailer: Trailer,
   activeMission?: TrailerActiveMission | null,
   truckPlate?: string | null,
+  /** Résolution d'une plaque depuis un identifiant : simple lecture, aucune
+   * règle de priorité n'est réécrite par l'appelant. */
+  getTruckPlate?: (truckId: string) => string | null | undefined,
 ) {
+  const engaged = isActiveMission(activeMission)
+    && ['IN_PROGRESS', 'ISSUE'].includes(activeMission.missionStatus?.toUpperCase() ?? '')
+    ? activeMission
+    : null
+  const currentTruckId = resolveCurrentTruckIdForTrailer({
+    activeMission: engaged,
+    physicalTruckId: trailer.truckId,
+  })
+  const currentTruckPlate =
+    (currentTruckId ? getTruckPlate?.(currentTruckId) : null) ??
+    (currentTruckId && currentTruckId === trailer.truckId ? truckPlate : null) ??
+    engaged?.truckPlate ??
+    null
+  // `situation` garde la vérité PHYSIQUE : son attelage reste `Trailer.truckId`.
   const situation = resolveTrailerSituation({
-    ...trailer, truckPlate, activeMission: activeMission && ['IN_PROGRESS', 'ISSUE'].includes(activeMission.missionStatus?.toUpperCase() ?? '') ? activeMission : null,
+    ...trailer,
+    truckPlate,
+    activeMission: engaged,
     declaredLocation: trailer.currentLocationLat != null && trailer.currentLocationLng != null ? 'OTHER' : null,
   })
+  // Seule la localisation PRÉSENTÉE suit la mission en cours : sans cela une
+  // remorque « Engagée » s'affichait « À la base » avec « Aucun camion ».
+  const location: TrailerLocation =
+    engaged && currentTruckId ? 'IN_TRANSIT' : situation.location
   const available = isTrailerAvailableForNewMission(situation)
   const label = trailer.status === 'OUT_OF_SERVICE' ? 'Retirée du parc actif'
     : situation.immobilized ? 'Maintenance'
@@ -132,5 +169,28 @@ export function getTrailerOperationalPresentation(
       : situation.activeMission ? 'assigned' : available ? 'available' : 'neutral',
     activeMaintenance: trailer.activeMaintenance,
   })
-  return { situation, status, locationLabel: trailerLocationLabels[situation.location], locationEditable: !trailer.truckId }
+  // L'attelage physique n'est affirmé que si `Trailer.truckId` le prouve ;
+  // sinon la remorque est seulement associée au tracteur par la mission.
+  const physicalAttachmentConfirmed = Boolean(trailer.truckId)
+  const couplingLabel = physicalAttachmentConfirmed
+    ? 'Attelée'
+    : engaged
+      ? 'Attelage physique non confirmé'
+      : 'Décrochée'
+  return {
+    situation,
+    status,
+    location,
+    locationLabel: trailerLocationLabels[location],
+    // Une remorque engagée ou attelée ne propose pas de localisation éditable
+    // qui contredirait son état courant.
+    locationEditable: !trailer.truckId && !engaged,
+    activeMission: engaged,
+    currentTruckId,
+    currentTruckPlate,
+    physicalAttachmentConfirmed,
+    couplingLabel,
+    /** Localisation persistée, valable seulement une fois décrochée. */
+    detachedLocationLabel: trailer.currentLocationAddress ?? 'À la base',
+  }
 }

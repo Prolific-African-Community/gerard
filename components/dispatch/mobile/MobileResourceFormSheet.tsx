@@ -13,6 +13,7 @@ import type {
   TruckStatus,
 } from "../../../lib/dispatch/mock-data";
 import {
+  getTrailerOperationalPresentation,
   trailerCargoTypeLabels,
   trailerLoadStatusLabels,
 } from "../../../lib/dispatch/trailer-display";
@@ -660,6 +661,15 @@ function TrailerSheet({
     }
   }
 
+  // Même dérivation partagée que le desktop : aucune règle de priorité n'est
+  // réécrite ici.
+  const presentation = getTrailerOperationalPresentation(
+    trailer,
+    activeMission,
+    trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber,
+    (id: string) => trucks.find((truck) => truck.id === id)?.plateNumber,
+  );
+
   return (
     <Sheet title={trailer.plateNumber} onClose={onClose}>
       <div className="space-y-3">
@@ -684,11 +694,11 @@ function TrailerSheet({
           onChange={(value) => setType(value as TrailerType)}
           options={trailerTypeOptions}
         />
-        {!truckId ? <div className="space-y-3 rounded-[24px] border border-black/5 bg-[#F7F8F4] p-3">
-          <Select label="Localisation actuelle" value={locationMode} onChange={(value) => setLocationMode(value as "" | "BASE" | "OTHER")} options={["", "BASE", "OTHER"]} labels={{ "": "À préciser", BASE: "À la base", OTHER: "Autre adresse" }} />
+        {presentation.locationEditable ? <div className="space-y-3 rounded-[24px] border border-black/5 bg-[#F7F8F4] p-3">
+          <Select label="Localisation après décrochage" value={locationMode} onChange={(value) => setLocationMode(value as "" | "BASE" | "OTHER")} options={["", "BASE", "OTHER"]} labels={{ "": "À préciser", BASE: "À la base", OTHER: "Autre adresse" }} />
           {locationMode === "OTHER" ? <AddressAutocomplete label="Adresse" value={location.address} placeId={location.placeId} placeholder="Rechercher une adresse..." onChange={(address) => setLocation({ address, placeId: "", lat: null, lng: null })} onSelect={(place: AddressPlace) => setLocation({ address: place.label, placeId: place.placeId, lat: place.lat ?? null, lng: place.lng ?? null })} /> : null}
           {!locationMode && loadStatus === "LOADED" ? <p className="text-xs font-semibold text-amber-700">La localisation d’une remorque chargée reste inchangée tant qu’elle n’est pas explicitement précisée.</p> : null}
-        </div> : null}
+        </div> : <p className="text-xs font-semibold text-[#73796d]">Localisation actuelle : {presentation.locationLabel}{presentation.activeMission ? ` · mission ${presentation.activeMission.missionReference}` : ''}{presentation.currentTruckPlate ? ` · ${presentation.currentTruckPlate}` : ''}. {presentation.couplingLabel}.</p>}
         <Select
           label="État matériel"
           value={status}
@@ -697,7 +707,7 @@ function TrailerSheet({
           labels={{ ...trailerStatusLabels, AVAILABLE: "Opérationnelle", ASSIGNED: "Opérationnelle", AT_BASE: "Opérationnelle" }}
         />
         <Select
-          label="Camion assigné"
+          label="Attelage physique"
           value={truckId}
           onChange={setTruckId}
           options={["", ...trucks.map((truck) => truck.id)]}

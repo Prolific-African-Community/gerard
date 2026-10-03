@@ -30,11 +30,24 @@ assert.deepEqual(Object.keys(buildTrailerActiveMissions([
 assert.equal(buildTrailerActiveMissions([{id:'future',reference:'FUTURE',status:'ASSIGNED',trailerId:'trailer'}],m=>m.trailerId).trailer,undefined)
 const form = (value:Trailer) => renderToStaticMarkup(<TrailerFormModal trailer={value} trucks={[truck]} activeMission={active} onClose={()=>{}} onSubmit={async()=>{}} />)
 const attached = form(trailer)
-assert.match(attached,/En transit.*suit LU 0221/)
+assert.match(attached,/Localisation actuelle : En transit · mission INT-1234 · LU 0221/)
+assert.match(attached,/Localisation après décrochage : À la base/)
+assert.match(attached,/Camion actuel/)
+// Le sélecteur éditable écrit l'attelage PHYSIQUE : il ne porte pas le même
+// nom que la synthèse opérationnelle, sinon les deux se contredisent.
+assert.match(attached,/Attelage physique<\/span>/)
 assert.doesNotMatch(attached,/<option value="BASE"/)
-const detached = form({...trailer,truckId:null})
-assert.match(detached,/<option value="BASE"/)
-assert.match(detached,/<option value="OTHER"/)
+// Une mission en cours n'est jamais présentée comme « à la base ».
+assert.doesNotMatch(attached,/Localisation actuelle : À la base/)
+// Décrochée MAIS engagée sur une mission en cours : pas de sélecteur qui
+// contredirait l'état courant, seulement la localisation après décrochage.
+const detachedEngaged = form({...trailer,truckId:null})
+assert.doesNotMatch(detachedEngaged,/<option value="BASE"/)
+assert.match(detachedEngaged,/Localisation après décrochage/)
+// Décrochée et sans mission en cours : l'édition normale revient.
+const detachedFree = renderToStaticMarkup(<TrailerFormModal trailer={{...trailer,truckId:null}} trucks={[truck]} activeMission={null} onClose={()=>{}} onSubmit={async()=>{}} />)
+assert.match(detachedFree,/<option value="BASE"/)
+assert.match(detachedFree,/<option value="OTHER"/)
 assert.match(renderToStaticMarkup(<TrailerCard trailer={trailer} activeMission={active} truck={truck} dragDisabled />),/Engagée/)
 const mission:Mission={id:'mission',reference:'EC-1234',status:'assigned',clientName:'Client QA',pickupCity:'Luxembourg',deliveryCity:'Paris',estimatedKm:300,trailerPlateNumber:'RE 2001'}
 const compact=renderToStaticMarkup(<MissionCardVisual mission={mission} compact />)

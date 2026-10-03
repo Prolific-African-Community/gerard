@@ -7,7 +7,6 @@ import type { Trailer, Truck } from '../../lib/dispatch/mock-data'
 import {
   formatTrailerMovement,
   getTrailerActions,
-  trailerCouplingLabels,
   trailerLoadLabels,
   trailerLocationLabels,
 } from '../../lib/dispatch/trailer-rotation'
@@ -80,7 +79,12 @@ export function TrailerRotationPanel({
   const [error, setError] = useState<string | null>(null)
   const [movements, setMovements] = useState<TrailerCustodyMovement[]>([])
 
-  const presentation = getTrailerOperationalPresentation(trailer, activeMission, trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber)
+  const presentation = getTrailerOperationalPresentation(
+    trailer,
+    activeMission,
+    trucks.find((truck) => truck.id === trailer.truckId)?.plateNumber,
+    (truckId) => trucks.find((truck) => truck.id === truckId)?.plateNumber,
+  )
   const { situation } = presentation
   const actions = getTrailerActions(situation)
 
@@ -178,11 +182,14 @@ export function TrailerRotationPanel({
 
   return (
     <section className="rounded-[24px] border border-black/[0.06] bg-[#f7f8f4] px-4 py-3">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
         <Row label="Attelage">
-          {situation.coupling === 'ATTACHED' && situation.truckPlate
-            ? `Attelée à ${situation.truckPlate}`
-            : trailerCouplingLabels[situation.coupling]}
+          {situation.coupling === 'ATTACHED' && presentation.currentTruckPlate
+            ? `Attelée à ${presentation.currentTruckPlate}`
+            : presentation.couplingLabel}
+        </Row>
+        <Row label="Camion actuel">
+          {presentation.currentTruckPlate ?? 'Aucun camion'}
         </Row>
         <Row label="Chargement">{trailerLoadLabels[situation.load]}</Row>
         <Row label="Mission">
@@ -206,7 +213,7 @@ export function TrailerRotationPanel({
           )}
         </Row>
         <Row label="Localisation">
-          {trailerLocationLabels[situation.location]}
+          {presentation.locationLabel}
         </Row>
         <Row label="Disponibilité">
           {presentation.status.label}

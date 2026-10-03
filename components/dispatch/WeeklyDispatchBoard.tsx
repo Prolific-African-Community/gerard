@@ -94,6 +94,7 @@ import {
 } from '../../lib/dispatch/planning-pool'
 import {
   buildTrailerActiveMissions,
+  resolveCurrentTrailerIdForTruck,
   isTrailerVisibleOnPlanningRow,
 } from '../../lib/dispatch/trailer-rotation'
 import { getMissionDisplayLocation } from '../../lib/dispatch/mission-display-location'
@@ -1686,10 +1687,7 @@ export function WeeklyDispatchBoard({
   // statut persisté supplémentaire. Une remorque décrochée reste engagée.
   const trailerActiveMissions = useMemo(
     () =>
-      buildTrailerActiveMissions(
-        missions,
-        (mission) => placements[mission.id]?.trailerId
-      ),
+      buildTrailerActiveMissions(missions, (mission) => placements[mission.id]),
     [missions, placements]
   )
   // Une ressource quitte le bandeau uniquement lorsqu'elle est présente dans
@@ -3474,12 +3472,19 @@ export function WeeklyDispatchBoard({
                       ? driversById[row.driverId]
                       : undefined
                     const truck = row.truckId ? trucksById[row.truckId] : null
-                    // Invariant 2 : la colonne Remorque reflète l'attelage
-                    // PHYSIQUE courant, pas la remorque prévue au planning.
-                    // Une remorque décrochée disparaît immédiatement de la
-                    // ligne, même si la mission reste active.
-                    const trailer = row.truckId
-                      ? trailersByTruckId[row.truckId]
+                    // « Remorque actuelle » = la remorque de la mission EN
+                    // COURS du tracteur, sinon son attelage physique. Une
+                    // affectation future n'y remonte jamais : la table des
+                    // missions actives ne contient que des missions commencées.
+                    const currentTrailerId = resolveCurrentTrailerIdForTruck({
+                      truckId: row.truckId,
+                      activeMissionsByTrailerId: trailerActiveMissions,
+                      physicalTrailerId: row.truckId
+                        ? trailersByTruckId[row.truckId]?.id
+                        : null,
+                    })
+                    const trailer = currentTrailerId
+                      ? trailersById[currentTrailerId]
                       : undefined
 
                     return (
