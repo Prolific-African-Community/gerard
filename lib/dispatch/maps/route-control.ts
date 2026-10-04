@@ -54,6 +54,26 @@ function configuredMaximum() {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 10
 }
 
+/**
+ * Budget d'un itinéraire unique demandé explicitement par un utilisateur :
+ * créer une mission, recalculer son trajet, afficher une carte.
+ *
+ * Il est distinct de `GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION`, qui plafonne
+ * les opérations en masse (l'instantané de planification en demande des
+ * centaines). Confondre les deux mettait à zéro le trajet principal d'une
+ * mission créée à la main : la fiche restait sur « Distance à calculer »
+ * avec `GOOGLE_ROUTES_OPERATION_LIMIT` en erreur de préparation.
+ *
+ * Mettre cette variable à 0 rebloque explicitement ces appels.
+ */
+export function configuredSingleRouteMaximum() {
+  const parsed = Number.parseInt(
+    process.env.GOOGLE_ROUTES_MAX_CALLS_PER_MISSION_ROUTE ?? '2',
+    10
+  )
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 2
+}
+
 export function normalizeRouteCoordinate(value: number) {
   if (!Number.isFinite(value)) throw new Error('ROUTE_COORDINATE_INVALID')
   return Number(value.toFixed(coordinatePrecision))
@@ -156,8 +176,12 @@ export async function measureRouteOperation<T>(operation: string, task: () => Pr
   return { result, metrics: { ...state.metrics } }
 }
 
-export async function withRouteOperation<T>(operation: string, task: () => Promise<T>) {
-  return (await measureRouteOperation(operation, task)).result
+export async function withRouteOperation<T>(
+  operation: string,
+  task: () => Promise<T>,
+  options: { maxCalls?: number; log?: boolean } = {}
+) {
+  return (await measureRouteOperation(operation, task, options)).result
 }
 
 export async function getOrComputeRoute(

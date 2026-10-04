@@ -1,6 +1,11 @@
 import { supportedRegionCodes } from './europe-coverage'
 import type { SupportedCountryCode } from './europe-coverage'
-import { getOrComputeRoute, withRouteOperation, type RouteRequest } from './route-control'
+import {
+  configuredSingleRouteMaximum,
+  getOrComputeRoute,
+  withRouteOperation,
+  type RouteRequest,
+} from './route-control'
 
 export type AddressCandidate = {
   placeId: string
@@ -196,8 +201,13 @@ async function requestGoogleRoute(input: Required<RouteRequest>): Promise<Calcul
  * while an identical provider request is in flight.
  */
 export async function computeGoogleRoute(input: RouteRequest): Promise<CalculatedRoute> {
-  const route = await withRouteOperation('Google route request', () =>
-    getOrComputeRoute(input, { provider: requestGoogleRoute })
+  // Itinéraire unique demandé par l'utilisateur : budget dédié, jamais celui
+  // des opérations en masse. Imbriqué dans une opération existante (un
+  // instantané de planification), c'est le budget de celle-ci qui s'applique.
+  const route = await withRouteOperation(
+    'Google route request',
+    () => getOrComputeRoute(input, { provider: requestGoogleRoute }),
+    { maxCalls: configuredSingleRouteMaximum() }
   )
   if (!route.polyline) throw new Error('GOOGLE_ROUTES_GEOMETRY_MISSING')
   return { ...route, polyline: route.polyline }
@@ -209,8 +219,14 @@ export async function computeGoogleRoute(input: RouteRequest): Promise<Calculate
  * geometry; map rendering continues to use computeGoogleRoute above.
  */
 export async function computeGoogleRouteMetrics(input: RouteRequest): Promise<CalculatedRoute> {
-  const route = await withRouteOperation('Google route metrics request', () =>
-    getOrComputeRoute(input, { provider: requestGoogleRoute, allowMetricsOnly: true })
+  const route = await withRouteOperation(
+    'Google route metrics request',
+    () =>
+      getOrComputeRoute(input, {
+        provider: requestGoogleRoute,
+        allowMetricsOnly: true,
+      }),
+    { maxCalls: configuredSingleRouteMaximum() }
   )
   return { ...route, polyline: route.polyline ?? '' }
 }

@@ -340,17 +340,27 @@ export async function prepareMission(
       typeof mission.routeDurationSeconds === 'number' &&
       Boolean(mission.routePolyline)
     let route: CalculatedRoute | null = null
+    let routeError: string | null = null
     if (!missingData.length && !routeCached) {
-      route = await provider.computeRoute({
-        origin: {
-          latitude: pickup.latitude as number,
-          longitude: pickup.longitude as number,
-        },
-        destination: {
-          latitude: delivery.latitude as number,
-          longitude: delivery.longitude as number,
-        },
-      })
+      try {
+        route = await provider.computeRoute({
+          origin: {
+            latitude: pickup.latitude as number,
+            longitude: pickup.longitude as number,
+          },
+          destination: {
+            latitude: delivery.latitude as number,
+            longitude: delivery.longitude as number,
+          },
+        })
+      } catch (error) {
+        // Une panne du fournisseur ne doit pas faire perdre la préparation :
+        // les adresses résolues sont conservées et l'échec devient explicite
+        // (`MISSION_ROUTE` + motif lisible) au lieu de laisser la fiche sur
+        // « Distance à calculer » sans explication.
+        routeError =
+          error instanceof Error ? error.message : 'MISSION_ROUTE_FAILED'
+      }
     }
     if (!routeCached && !route) missingData.push('MISSION_ROUTE')
     missingData.push(
@@ -380,7 +390,12 @@ export async function prepareMission(
       ...endpointUpdate('delivery', delivery),
       preparationStatus,
       preparationMissingData: missingData,
-      preparationError: null,
+      preparationError: routeError
+        ? `Itinéraire non calculé : ${describeRouteFailure(routeError)}`.slice(
+            0,
+            500
+          )
+        : null,
       ...(route
         ? {
             routeDistanceMeters: route.distanceMeters,
@@ -423,6 +438,23 @@ export async function prepareMission(
     })
     throw error
   }
+}
+
+/** Motif lisible par un dispatcher, sans masquer le code technique. */
+function describeRouteFailure(code: string) {
+  if (code.startsWith('GOOGLE_ROUTES_OPERATION_LIMIT')) {
+    return 'budget d’appels Google Routes épuisé pour cette opération.'
+  }
+  if (code.startsWith('GOOGLE_ROUTES_PROVIDER_COOLDOWN')) {
+    return 'Google Routes temporairement indisponible, nouvelle tentative plus tard.'
+  }
+  if (code.startsWith('GOOGLE_ROUTES_GEOMETRY_MISSING')) {
+    return 'Google Routes n’a pas renvoyé de tracé exploitable.'
+  }
+  if (code.startsWith('GOOGLE_ROUTES')) {
+    return `Google Routes indisponible (${code}).`
+  }
+  return code
 }
 
 export type { PreparationProvider }
