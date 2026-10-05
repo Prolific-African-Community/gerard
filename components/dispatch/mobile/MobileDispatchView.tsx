@@ -58,6 +58,7 @@ import type {
 } from './types'
 import type { DispatchCapabilities } from '../../../lib/auth/dispatch-capabilities'
 import { buildTrailerActiveMissions } from '../../../lib/dispatch/trailer-rotation'
+import { resolveMissionPlanningDisplayDay } from '../../../lib/dispatch/mission-planning-day'
 import { MaintenanceRequestDialog } from '../MaintenanceRequestDialog'
 import type { MaintenanceTarget } from '../MaintenanceRequestDialog'
 import { ParkView } from '../../park/ParkView'
@@ -504,6 +505,17 @@ export function MobileDispatchView({
   const selectedTruck = selectedMissionPlacement?.truckId
     ? data.trucks.find((truck) => truck.id === selectedMissionPlacement.truckId)
     : undefined
+  // Même résolveur que le desktop : aucune règle de jour propre au mobile.
+  const selectedMissionDisplayDay =
+    selectedMission && selectedMissionPlacement?.day
+      ? resolveMissionPlanningDisplayDay({
+          plannedDay: selectedMissionPlacement.day,
+          deliveryDate: selectedMission.deliveryDate,
+          missionStatus: selectedMission.status,
+          truckStatus: selectedTruck?.status,
+          weekStartDate: selectedWeekStartDate,
+        })
+      : selectedMissionPlacement?.day
 
   async function handleCreateMission(formData: CreateMissionFormData) {
     const response = await fetch('/api/dispatch/create-mission', {
@@ -999,7 +1011,7 @@ export function MobileDispatchView({
         hasAssignment={Boolean(selectedMissionPlacement?.assignmentId)}
         driverName={selectedDriver?.name}
         truckLabel={selectedTruck?.plateNumber}
-        day={selectedMissionPlacement?.day}
+        day={selectedMissionDisplayDay}
         onClose={() => setSelectedMissionId(null)}
         onMarkPreAnnouncementSent={handleMarkPreAnnouncementSent}
         onStatusChange={handleMissionStatusChange}

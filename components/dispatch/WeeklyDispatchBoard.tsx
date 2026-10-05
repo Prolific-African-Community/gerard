@@ -33,6 +33,7 @@ import {
   getMissionDayPhase,
   getMissionOccupation,
 } from '../../lib/dispatch/multi-day-mission'
+import { resolveMissionPlanningDisplayDay } from '../../lib/dispatch/mission-planning-day'
 import type {
   DispatchDay,
   Driver,
@@ -1863,7 +1864,22 @@ export function WeeklyDispatchBoard({
   function getMissionsForCell(rowId: string, day: DispatchDay) {
     return missions.filter((mission) => {
       const placement = placements[mission.id]
-      return placement?.planningRowId === rowId && placement.day === day
+      if (placement?.planningRowId !== rowId || !placement.day) return false
+      // Jour d'affichage dérivé du jalon opérationnel courant. Le jour
+      // persisté de l'affectation n'est jamais modifié.
+      const truckId =
+        placement.truckId ??
+        visiblePlanningRows.find((row) => row.id === rowId)?.truckId ??
+        null
+      return (
+        resolveMissionPlanningDisplayDay({
+          plannedDay: placement.day,
+          deliveryDate: mission.deliveryDate,
+          missionStatus: mission.status,
+          truckStatus: truckId ? trucksById[truckId]?.status : null,
+          weekStartDate: selectedWeekStartDate,
+        }) === day
+      )
     })
   }
 
