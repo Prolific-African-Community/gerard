@@ -1024,7 +1024,11 @@ function PlanningBucketSelector({
       : primaryPlanningBuckets
 
   return (
-    <div className="flex max-w-full items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      // Même barre horizontale que les pools de ressources : sous Windows
+      // la rangée d'onglets débordait sans barre saisissable à la souris.
+      className="dispatch-pool-scrollbar -mx-1 flex max-w-full items-center gap-1 overscroll-x-contain px-1 pb-2"
+    >
       {visibleBuckets.map((bucket) => {
         const isActive = activeBucket === bucket
         return (
