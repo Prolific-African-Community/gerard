@@ -43,7 +43,8 @@ export async function resolveMissionReference(weekStart: Date, reference: string
   const matches = await prisma.mission.findMany({
     where: suffix ? {
       reference: { endsWith: suffix, mode: 'insensitive' },
-      assignment: { scheduledDate: { gte: weekStart, lte: weekEnd } },
+      // Une mission non planifiée n'a pas d'affectation : son enlèvement situe la semaine.
+      OR: [{ assignment: { scheduledDate: { gte: weekStart, lte: weekEnd } } }, { pickupDate: { gte: weekStart, lte: weekEnd } }],
     } : { reference: { equals: normalized, mode: 'insensitive' } }, take: 3,
     include: { assignment: { include: { driver: true, truck: true, trailer: true, planningRow: true } } },
   })

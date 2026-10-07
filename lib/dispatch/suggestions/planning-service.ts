@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { formatDateParam, getWeekEndDate } from '../date-utils'
 import { prisma } from '../../prisma'
 import { buildAutoPlanningSnapshot, fingerprintSnapshot } from '../auto-planning/snapshot'
@@ -111,7 +112,33 @@ async function analyzePlanningForSuggestionsInternal(weekStart: Date): Promise<P
   return { analyzedAt: new Date().toISOString(), weekStart: weekStart.toISOString(), snapshotFingerprint: fingerprint, summary: { analyzedMissions: current.length, validBaselines, validAlternatives, suggestions: suggestions.length }, suggestions, diagnostics: { noValidAlternative, belowThreshold, incomplete }, missionDiagnostics }
 }
 
+const analysisMemoStorage = new AsyncLocalStorage<Map<string, Promise<PlanningSuggestionAnalysis>>>()
+
+/**
+ * Mémoïse l'analyse hebdomadaire le temps d'une seule requête. Un tour de chat
+ * peut enchaîner plusieurs outils qui lisent la même analyse : sans cela, chacun
+ * recalculerait toute la semaine. La mémoire disparaît à la fin de la requête,
+ * jamais partagée entre utilisateurs ni entre requêtes.
+ */
+export function withPlanningAnalysisMemo<T>(task: () => Promise<T>): Promise<T> {
+  return analysisMemoStorage.getStore() ? task() : analysisMemoStorage.run(new Map(), task)
+}
+
 export async function analyzePlanningForSuggestions(weekStart: Date): Promise<PlanningSuggestionAnalysis> {
+  const memo = analysisMemoStorage.getStore()
+  if (!memo) return analyzePlanningForSuggestionsUncached(weekStart)
+  const key = formatDateParam(weekStart)
+  let pending = memo.get(key)
+  if (!pending) {
+    pending = analyzePlanningForSuggestionsUncached(weekStart)
+    memo.set(key, pending)
+    // Un échec n'est pas mémorisé : le prochain outil peut réessayer.
+    pending.catch(() => memo.delete(key))
+  }
+  return pending
+}
+
+async function analyzePlanningForSuggestionsUncached(weekStart: Date): Promise<PlanningSuggestionAnalysis> {
   const week = formatDateParam(weekStart)
   return observeIntelligenceOperation(
     { started: 'analysis.started', completed: 'analysis.completed', failed: 'analysis.failed' },

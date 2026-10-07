@@ -166,6 +166,8 @@ async function buildAutoPlanningSnapshotInternal(input: {
   includeExistingForced: boolean
   now?: Date
   prepareCandidateRoutes?: boolean
+  /** Concurrence de lecture des trajets candidats (défaut du moteur : 2). */
+  routeConcurrency?: number
 }): Promise<AutoPlanningSnapshot> {
   const snapshotNow = input.now ?? new Date()
   const isolationPrefix = process.env.QA_AUTO_ISOLATION_PREFIX?.trim()
@@ -709,6 +711,7 @@ async function buildAutoPlanningSnapshotInternal(input: {
       missions: adaptedMissions,
       trailers: adaptedTrailers,
       existing: transitions,
+      concurrency: input.routeConcurrency,
       // Une affectation déjà posée laisse le couple à son point de livraison :
       // sans ces trajets, tout candidat partant de là serait sans itinéraire.
       extraOrigins: resourceOccupations

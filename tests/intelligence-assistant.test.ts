@@ -9,6 +9,8 @@ import { runWithOrganization } from '../lib/auth/organization-context'
 
 // Integration assertions must never consume a paid route quota.
 process.env.GOOGLE_ROUTES_MAX_CALLS_PER_OPERATION = '0'
+// Ce test verrouille le chemin déterministe historique (repli) ; l'agent est couvert par intelligence-agent.test.ts.
+process.env.GERARD_INTELLIGENCE_AGENT = 'off'
 
 function ok(label: string) { console.log(`${label}: OK`) }
 

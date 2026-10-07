@@ -14,6 +14,8 @@ export type AssistantRequestBody = {
   message: string
   weekStart: string
   conversationContext: { missionReference?: string; suggestionId?: string }
+  /** Derniers échanges, pour que l'agent comprenne les relances (« et Marc ? »). */
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>
   confirmation?: { token: string }
 }
 
@@ -33,6 +35,7 @@ function body(input: {
   weekStart: string
   conversationContext?: { missionReference?: string; suggestionId?: string }
   suggestionId?: string
+  history?: AssistantRequestBody['history']
   confirmation?: { token: string }
 }): AssistantRequestBody {
   return {
@@ -42,6 +45,7 @@ function body(input: {
       ...input.conversationContext,
       suggestionId: input.suggestionId ?? input.conversationContext?.suggestionId,
     },
+    ...(input.history?.length && !input.confirmation ? { history: input.history } : {}),
     ...(input.confirmation ? { confirmation: input.confirmation } : {}),
   }
 }
@@ -53,6 +57,7 @@ export function questionAsked(input: {
   conversationContext?: { missionReference?: string; suggestionId?: string }
   pending: GerardAssistantConfirmApplyAction | null
   suggestionId?: string
+  history?: AssistantRequestBody['history']
 }): AssistantTransition {
   return { pending: input.pending, request: body(input), refreshPlanning: false }
 }

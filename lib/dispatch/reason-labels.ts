@@ -168,6 +168,51 @@ const reasonDefinitions: Record<string, ReasonDefinition> = {
     action: 'EDIT_TRUCK_TECHNICAL',
     demonstrated: true,
   },
+  DRIVER_TIME_CONFLICT: {
+    title: 'Chauffeur déjà occupé',
+    explanation:
+      'Le chauffeur est déjà affecté à une autre mission qui chevauche ce créneau.',
+    nature: 'TEMPORAL',
+    severity: 'BLOCKING',
+    action: 'EDIT_MISSION_SCHEDULE',
+    demonstrated: true,
+  },
+  TRUCK_TIME_CONFLICT: {
+    title: 'Camion déjà occupé',
+    explanation:
+      'Le tracteur est déjà affecté à une autre mission qui chevauche ce créneau.',
+    nature: 'TEMPORAL',
+    severity: 'BLOCKING',
+    action: 'EDIT_MISSION_SCHEDULE',
+    demonstrated: true,
+  },
+  TRAILER_TIME_CONFLICT: {
+    title: 'Remorque déjà occupée',
+    explanation:
+      'La remorque est déjà affectée à une autre mission qui chevauche ce créneau.',
+    nature: 'TEMPORAL',
+    severity: 'BLOCKING',
+    action: 'EDIT_MISSION_SCHEDULE',
+    demonstrated: true,
+  },
+  TRAILER_CARGO_MISMATCH: {
+    title: 'Remorque inadaptée à la marchandise',
+    explanation:
+      'Le type de marchandise de la mission n’est pas compatible avec cette remorque.',
+    nature: 'INCOMPATIBLE',
+    severity: 'BLOCKING',
+    action: 'EDIT_TRAILER_TECHNICAL',
+    demonstrated: true,
+  },
+  COUPLING_TYPE_MISMATCH: {
+    title: 'Attelage incompatible',
+    explanation:
+      'Le système d’attelage du tracteur et celui de la remorque ne sont pas compatibles.',
+    nature: 'INCOMPATIBLE',
+    severity: 'BLOCKING',
+    action: 'EDIT_TRAILER_TECHNICAL',
+    demonstrated: true,
+  },
   RESOURCE_TIME_CONFLICT: {
     title: 'Créneau déjà occupé',
     explanation:
@@ -652,9 +697,9 @@ const reasonDefinitions: Record<string, ReasonDefinition> = {
     demonstrated: false,
   },
   requiredCapacityKg: {
-    title: 'Capacité minimale invalide',
+    title: 'Capacité requise absente ou invalide',
     explanation:
-      'La capacité minimale demandée doit être un nombre strictement positif.',
+      'La capacité minimale demandée est absente ou n’est pas un nombre strictement positif : la compatibilité de capacité ne peut pas être vérifiée.',
     nature: 'MISSING_DATA',
     severity: 'CONDITIONAL',
     action: 'EDIT_MISSION_SCHEDULE',

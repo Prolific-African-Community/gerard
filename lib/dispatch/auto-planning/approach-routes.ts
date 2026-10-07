@@ -69,6 +69,8 @@ export async function prepareCandidateApproachRoutes(input: {
   /** Points de départ supplémentaires : fin des affectations déjà posées. */
   extraOrigins?: ReadonlyArray<TemporalLocation>
   provider?: RouteProvider
+  /** Lectures de cache simultanées (2 par défaut) ; le chat en monte plus pour lire plus vite. */
+  concurrency?: number
 }) {
   const provider = input.provider ?? computeGoogleRouteMetrics
   const transitions = [...input.existing]
@@ -144,7 +146,7 @@ export async function prepareCandidateApproachRoutes(input: {
   const resolved = new Array<RouteTransition | null>(jobs.length).fill(null)
   let cursor = 0
   const workers = Array.from(
-    { length: Math.min(2, jobs.length) },
+    { length: Math.min(input.concurrency ?? 2, jobs.length) },
     async () => {
       while (cursor < jobs.length) {
         const index = cursor++

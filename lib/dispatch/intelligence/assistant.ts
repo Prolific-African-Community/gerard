@@ -1,4 +1,7 @@
 import { routeAssistantIntent } from './intent-router'
+import { runIntelligenceAgent, type AgentHistoryMessage, type AgentStatus } from './agent'
+import { withRouteOperation } from '../maps/route-control'
+import { withPlanningAnalysisMemo } from '../suggestions/planning-service'
 import { classifyIntentWithConfiguredModel } from './llm-router'
 import { explainSuggestion, getMissionContext, getPlanningInsights, getPlanningSuggestions, getPlanningSummary, getResourceAvailability, resolveMissionReference, simulateSuggestion } from './facade'
 import { buildPendingApplyAction, verifyPendingApplyToken } from './pending-action'
@@ -7,6 +10,9 @@ import type { GerardAssistantAction, GerardAssistantApplicationOutcome, GerardAs
 import { SuggestionApplicationError, applyPlanningSuggestion } from '../suggestions/application'
 import { formatDateParam } from '../date-utils'
 import type { GerardSuggestion } from '../suggestions/types'
+import { describeSuggestion } from './describe-suggestion'
+
+export { describeSuggestion }
 
 function numberFact(context: GerardAssistantContext, label: string) {
   return Number(context.facts.find((item) => item.label === label)?.value ?? 0)
@@ -38,40 +44,6 @@ function reply(
   }
 }
 
-const confidenceLabels = { HIGH: 'haute', MEDIUM: 'moyenne' } as const
-
-/**
- * L'explication dérive du score réellement calculé : elle nomme la composante
- * qui a emporté la décision, puis les autres contributions. Aucun récit n'est
- * reconstruit à partir des seuls chiffres d'impact.
- */
-export function describeSuggestion(suggestion: GerardSuggestion) {
-  const breakdown = suggestion.scoreBreakdown
-  const opening = `${suggestion.proposedState.driverName} remplacerait ${suggestion.currentState.driverName} sur ${suggestion.currentState.missionReference}.`
-  if (!breakdown) {
-    return `${opening} Gain estimé : ${Math.max(0, -suggestion.impact.emptyKm.delta).toFixed(1)} km à vide et ${Math.max(0, suggestion.impact.estimatedMargin.delta ?? 0).toFixed(2)} € de marge. Confiance ${confidenceLabels[suggestion.confidence]}.`
-  }
-  const byCode = new Map(breakdown.components.map((component) => [component.code, component]))
-  const primary = breakdown.primaryReason ? byCode.get(breakdown.primaryReason) : null
-  const secondary = breakdown.components
-    .filter((component) => component.code !== breakdown.primaryReason && component.code !== 'UNCERTAINTY' && component.contribution > 0)
-    .sort((left, right) => right.contribution - left.contribution)[0]
-  // Le détail de la composante économique dit déjà d'où viennent les chiffres :
-  // on ne répète la mise en garde que si elle n'a pas déjà été formulée.
-  const marginShown = primary?.code === 'MARGIN' || secondary?.code === 'MARGIN'
-  const economics = breakdown.economicBasis === 'UNAVAILABLE'
-    ? 'La comparaison économique n’est pas disponible.'
-    : marginShown
-      ? null
-      : 'Les données économiques sont estimées à partir des paramètres de coût par défaut.'
-  return [
-    opening,
-    primary ? `Principalement parce qu’elle agit sur : ${primary.label.toLocaleLowerCase('fr-FR')}. ${primary.detail}` : 'Aucune composante ne ressort nettement.',
-    secondary ? secondary.detail : null,
-    economics,
-    `Confiance des données : ${confidenceLabels[suggestion.confidence]}.`,
-  ].filter(Boolean).join(' ')
-}
 
 /**
  * Prépare une action d'application confirmable. Rien n'est écrit ici : le
@@ -156,33 +128,93 @@ async function applyConfirmedSuggestion(input: {
   }
 }
 
-export async function answerAssistantQuestion(input: {
+type AssistantQuestionInput = {
   message: string
   weekStart: Date
   userId?: string
   /** Vrai uniquement si l'appelant a été contrôlé sur la permission d'affectation. */
   canApply?: boolean
   conversationContext?: { missionReference?: string; suggestionId?: string }
+  /** Derniers échanges du chat, déjà bornés côté API ; sert uniquement à l'agent. */
+  history?: AgentHistoryMessage[]
   confirmation?: GerardAssistantConfirmation
-}): Promise<GerardAssistantReply> {
+  /** Point d'injection des tests : remplace l'appel réel à l'agent. */
+  agentRunner?: typeof runIntelligenceAgent
+}
+
+function agentEnabled() {
+  return process.env.GERARD_INTELLIGENCE_AGENT?.trim().toLowerCase() !== 'off'
+}
+
+export async function answerAssistantQuestion(input: AssistantQuestionInput): Promise<GerardAssistantReply> {
   const deterministicRouting: Routing = { source: 'ROUTER', providerCalls: 0, providerDurationMs: null, providerStatus: null }
   // Une confirmation structurée ne passe pas par l'interprétation du message :
-  // elle est vérifiée, puis exécutée ou refusée.
+  // elle est vérifiée, puis exécutée ou refusée. Elle seule peut reconstruire
+  // un instantané avec ses propres routes.
   if (input.confirmation) {
     return applyConfirmedSuggestion({ confirmation: input.confirmation, userId: input.userId, canApply: input.canApply, routing: deterministicRouting })
   }
+  // Toute lecture du chat s'exécute avec un budget Google de zéro appel : les
+  // routes viennent du cache ou sont estimées, jamais calculées pour répondre à
+  // une question. L'analyse hebdomadaire n'est calculée qu'une fois par requête.
+  const state = { agentFailed: false }
+  const result = await withRouteOperation('Gerard chat (cache uniquement)', () => withPlanningAnalysisMemo(() => answerReadOnlyQuestion(input, deterministicRouting, state)), { maxCalls: 0 })
+  // Repli après une panne de l'agent : la réponse déterministe reste utile mais plus pauvre ;
+  // l'utilisateur doit le savoir plutôt que la prendre pour un diagnostic complet.
+  if (!state.agentFailed || result.routing.source === 'AGENT' || /momentanément indisponible/.test(result.answer)) return result
+  return { ...result, answer: `${result.answer}
+
+(Mode simplifié : l’assistant conversationnel est momentanément indisponible.)` }
+}
+
+async function answerReadOnlyQuestion(input: AssistantQuestionInput, deterministicRouting: Routing, state: { agentFailed: boolean }): Promise<GerardAssistantReply> {
   let intent = routeAssistantIntent(input.message)
   let routing: Routing = deterministicRouting
-  if (intent.intent === 'UNKNOWN' && !intent.requestsMutation) {
-    const classified = await classifyIntentWithConfiguredModel(input.message, input.conversationContext)
-    routing = { source: classified.intent ? 'OPENAI' : 'FALLBACK', providerCalls: 1, providerDurationMs: classified.durationMs, providerStatus: classified.status }
-    if (classified.intent) intent = classified.intent
-    if (classified.status !== 'SUCCESS') {
-      logIntelligenceEvent('provider.degraded', {
+  let agentFailure: { status: AgentStatus; providerCalls: number; durationMs: number } | null = null
+  // Le routeur déterministe ne garde la main que sur les demandes d'écriture,
+  // qui passent par la confirmation signée. Toute autre question va d'abord à
+  // l'agent conversationnel, qui n'a que des outils en lecture seule.
+  if (!intent.requestsMutation && agentEnabled()) {
+    const agent = await (input.agentRunner ?? runIntelligenceAgent)({
+      message: input.message,
+      history: input.history,
+      weekStart: input.weekStart,
+      conversationContext: input.conversationContext,
+    })
+    const agentRouting: Routing = { source: 'AGENT', providerCalls: agent.providerCalls, providerDurationMs: agent.durationMs, providerStatus: agent.status, toolCalls: agent.toolCalls }
+    if (agent.status === 'SUCCESS' && agent.answer) {
+      logIntelligenceEvent('assistant.routed', {
+        week: formatDateParam(input.weekStart),
         userId: input.userId,
-        providerStatus: classified.status,
-        providerDurationMs: classified.durationMs,
+        result: 'CONVERSATION',
+        providerSource: 'AGENT',
+        providerStatus: agent.status,
+        providerCalls: agent.providerCalls,
+        providerDurationMs: agent.durationMs,
       })
+      return reply({ intent: 'CONVERSATION' }, null, agent.answer, agentRouting, { actions: [] })
+    }
+    if (agent.status !== 'UNCONFIGURED') {
+      state.agentFailed = true
+      agentFailure = { status: agent.status, providerCalls: agent.providerCalls, durationMs: agent.durationMs }
+      logIntelligenceEvent('provider.degraded', { userId: input.userId, providerStatus: agent.status, providerDurationMs: agent.durationMs })
+    }
+  }
+  if (intent.intent === 'UNKNOWN' && !intent.requestsMutation) {
+    if (agentFailure) {
+      // Le fournisseur vient d'échouer : inutile de le rappeler pour classer l'intention.
+      routing = { source: 'FALLBACK', providerCalls: agentFailure.providerCalls, providerDurationMs: agentFailure.durationMs, providerStatus: agentFailure.status }
+    } else {
+      const classified = await classifyIntentWithConfiguredModel(input.message, input.conversationContext)
+      routing = { source: classified.intent ? 'OPENAI' : 'FALLBACK', providerCalls: 1, providerDurationMs: classified.durationMs, providerStatus: classified.status }
+      if (classified.intent) intent = classified.intent
+      if (classified.status !== 'SUCCESS') {
+        logIntelligenceEvent('provider.degraded', {
+          userId: input.userId,
+          providerStatus: classified.status,
+          providerDurationMs: classified.durationMs,
+        })
+      }
     }
   }
   const explicitMissionReference = intent.missionReference
@@ -285,5 +317,6 @@ export async function answerAssistantQuestion(input: {
     const context = await getPlanningSummary(input.weekStart)
     return reply(intent, { ...context, suggestions: [suggestion] }, describeSuggestion(suggestion), routing)
   }
+  if (agentFailure) return reply(intent, null, 'Je n’arrive pas à analyser ta question pour le moment : l’assistant est momentanément indisponible. Réessaie dans un instant, ou demande-moi directement une mission, une ressource ou le planning de la semaine.', routing)
   return reply(intent, null, 'Je n’ai pas identifié la demande avec suffisamment de précision. Indique une semaine, une mission ou une ressource à vérifier.', routing)
 }

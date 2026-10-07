@@ -1,13 +1,13 @@
 import type { GerardAssistantIntentResult } from './types'
 
 const missionPattern = /\b(?:GRD|QA)[-_][A-Z0-9-]+\b/i
-const mutationRequestPattern = /^(?:(?:ok|d'accord|oui)[,\s]+)?(?:(?:peux[- ]tu|merci de|je veux que tu)\s+)?(?:applique|appliquer|affecte|affecter|déplace|deplace|change|modifie|modifier|crée|cree)\b/
+const mutationRequestPattern = /^(?:(?:ok|d'accord|oui)[,\s]+)?(?:(?:peux[- ]tu|merci de|je veux que tu|can you|please)\s+)?(?:applique|appliquer|affecte|affecter|déplace|deplace|change|modifie|modifier|crée|cree|apply|assign|reassign|swap)\b/
 /**
  * Accords brefs : ils demandent une écriture sans nommer l'action. Les
  * reconnaître ici les fait passer par le chemin gardé de l'assistant, qui exige
  * une confirmation structurée, au lieu de finir en intention indéterminée.
  */
-const goAheadPattern = /^(?:ok[,\s]+)?(?:vas[- ]y|fais[- ]le|c['’]est bon|valide|confirme)\b/
+const goAheadPattern = /^(?:(?:ok|oui|yes|yep|d['’]accord|allez|alors)[,\s]+)*(?:vas[- ]y|fais[- ]le|c['’]est bon|valide|confirme|go ahead|do it|confirm)\b/
 
 function normalize(value: string) {
   return value.trim().replace(/\s+/g, ' ')

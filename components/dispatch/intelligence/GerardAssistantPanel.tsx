@@ -9,11 +9,12 @@ import { GerardInsightsSection, type InsightActionHandlers } from './GerardInsig
 
 type Message = { id: string; role: 'user' | 'assistant'; text: string; reply?: GerardAssistantReply }
 
+// Simples exemples de départ : toute question libre suit le même chemin.
 const shortcuts = [
-  'Analyser le planning',
-  'Voir les optimisations possibles',
-  'Vérifier les conflits',
-  'Réduire les kilomètres à vide',
+  'Qu’est-ce qui mérite mon attention ?',
+  'Pourquoi certaines missions ne sont pas planifiées ?',
+  'Où peut-on améliorer le planning ?',
+  'Que ferais-tu en priorité ?',
 ]
 
 /**
@@ -96,7 +97,8 @@ export function GerardAssistantPanel({
   }
 
   function ask(message: string, suggestionId?: string) {
-    return dispatchTransition(questionAsked({ message, weekStart, conversationContext, pending: pendingApply, suggestionId }))
+    const history = messages.slice(-12).map((item) => ({ role: item.role, text: item.text.slice(0, 1200) }))
+    return dispatchTransition(questionAsked({ message, weekStart, conversationContext, pending: pendingApply, suggestionId, history }))
   }
 
   function submit(event: FormEvent) { event.preventDefault(); void ask(input) }

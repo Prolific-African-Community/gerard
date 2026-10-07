@@ -9,6 +9,7 @@ export type GerardAssistantIntent =
   | 'SUGGESTION_EXPLANATION'
   | 'SIMULATE_SUGGESTION'
   | 'APPLY_SUGGESTION'
+  | 'CONVERSATION'
   | 'UNKNOWN'
 
 export type GerardAssistantFact = {
@@ -84,8 +85,10 @@ export type GerardAssistantReply = {
   warnings: string[]
   application: GerardAssistantApplicationOutcome | null
   routing: {
-    source: 'ROUTER' | 'OPENAI' | 'FALLBACK'
-    providerCalls: 0 | 1
+    source: 'ROUTER' | 'OPENAI' | 'FALLBACK' | 'AGENT'
+    providerCalls: number
+    /** Outils Gerard appelés par l'agent conversationnel, dans l'ordre. */
+    toolCalls?: string[]
     providerDurationMs: number | null
     /**
      * Statut brut du fournisseur, pour distinguer une panne de provider d'un

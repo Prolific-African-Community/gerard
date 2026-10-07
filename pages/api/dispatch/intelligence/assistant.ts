@@ -4,6 +4,7 @@ import { answerAssistantQuestion } from '@prolific/gerard-core/intelligence'
 import { requireOrganizationModule, requirePermission } from '../../../../lib/auth/authorization'
 import { hasPermission, permissions } from '../../../../lib/auth/permissions'
 import { parseWeekStartParam } from '../../../../lib/dispatch/date-utils'
+import { sanitizeHistory } from '../../../../lib/dispatch/intelligence/agent'
 
 async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée' })
@@ -18,6 +19,8 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
     missionReference: typeof rawContext.missionReference === 'string' ? rawContext.missionReference : undefined,
     suggestionId: typeof rawContext.suggestionId === 'string' ? rawContext.suggestionId : undefined,
   } : undefined
+  // Historique borné (nombre, taille par message, taille totale) : jamais transmis tel quel au modèle.
+  const history = sanitizeHistory(req.body?.history)
   const rawConfirmation = req.body?.confirmation
   const confirmation = rawConfirmation && typeof rawConfirmation === 'object' && !Array.isArray(rawConfirmation) && typeof rawConfirmation.token === 'string' && rawConfirmation.token
     ? { token: rawConfirmation.token }
@@ -35,6 +38,7 @@ async function handler(req: NextApiRequest, res: NextApiResponse) {
       userId: user.id,
       canApply: hasPermission(user, permissions.dispatchAssign) && user.enabledModules.includes('INTELLIGENCE'),
       conversationContext,
+      history,
       confirmation,
     }))
   } catch (error) {
