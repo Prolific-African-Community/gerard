@@ -14,6 +14,9 @@ import type { DispatchOptimizationResult } from '../optimization'
 import { prisma } from '../../prisma'
 import { requireActiveOrganizationId } from '../../auth/organization-context'
 import { buildAutoPlanningSnapshot } from './snapshot'
+import { withRouteOperation } from '../maps/route-control'
+import { changedSnapshotReasons, describeSnapshotChange } from './snapshot-parts'
+import { detectPositionDrift, positionDriftToleranceMeters } from './position-drift'
 import { verifySnapshotToken } from './token'
 import type { ApplyRequest, ApplyResult, AutoPlanningSnapshot } from './types'
 import {
@@ -74,7 +77,12 @@ function parseStoredResult(value: Prisma.JsonValue): ApplyResult | null {
 }
 
 export class AutoPlanningConflictError extends Error {
-  constructor(public code: string, message: string) {
+  constructor(
+    public code: string,
+    message: string,
+    /** Catégories précises de changement (SNAPSHOT_STALE), jamais d'empreinte. */
+    public reasons: string[] = []
+  ) {
     super(message)
   }
 }
@@ -114,14 +122,33 @@ export async function applyAutoPlanning(input: {
     )
   }
   const weekStartDate = new Date(token.weekStart)
-  const snapshot = await buildAutoPlanningSnapshot({
-    weekStartDate,
-    includeExistingForced: token.includeExistingForced,
-  })
+  // L'instantané est rejoué à l'instant de référence de la simulation, pas à
+  // l'horloge courante : le simple passage de quelques secondes (fraîcheur d'un
+  // ping, validité d'une déclaration, bornes de journée) ne doit jamais le
+  // périmer. Seule une donnée réellement écrite depuis peut le faire.
+  const referenceAt = new Date(token.createdAt)
+  // Revalidation en lecture seule des itinéraires : la simulation a déjà mis en
+  // cache ceux qu'elle a obtenus ; en demander de nouveaux ici donnerait des
+  // transitions différentes (donc une empreinte différente) sans qu'aucune
+  // donnée métier n'ait changé, et dépenserait du budget Google à l'application.
+  const snapshot = await withRouteOperation(
+    'Auto-planning revalidation (cache uniquement)',
+    () =>
+      buildAutoPlanningSnapshot({
+        weekStartDate,
+        includeExistingForced: token.includeExistingForced,
+        now: referenceAt,
+      }),
+    { maxCalls: 0 }
+  )
   if (snapshot.fingerprint !== token.fingerprint) {
+    const reasons = token.parts
+      ? changedSnapshotReasons(token.parts, snapshot.fingerprintParts)
+      : []
     throw new AutoPlanningConflictError(
       'SNAPSHOT_STALE',
-      'Les données Dispatch ont changé. Une nouvelle simulation est requise.'
+      describeSnapshotChange(reasons),
+      reasons
     )
   }
 
@@ -129,6 +156,39 @@ export async function applyAutoPlanning(input: {
     ...snapshot.input,
     strategy: input.request.strategy,
   })
+  // Un ping postérieur à la simulation est ignoré par l'instantané rejoué ;
+  // on vérifie ici, pour les seuls chauffeurs retenus, qu'aucun n'a bougé
+  // matériellement.
+  const selectedMissions = new Set(input.request.selectedMissionIds)
+  const retainedRowIds = new Set([
+    ...[...result.confirmedProposals, ...result.conditionalProposals]
+      .filter((proposal) => proposal.missions.some((mission) => selectedMissions.has(mission.missionId)))
+      .map((proposal) => proposal.pair.rowId),
+    ...input.request.adjustments.map((adjustment) => adjustment.pairRowId),
+  ])
+  const drifts = await detectPositionDrift({
+    used: snapshot.input.pairs
+      .filter((pair) => retainedRowIds.has(pair.pair.rowId))
+      .map((pair) => ({
+        driverId: pair.pair.driverId,
+        driverName: pair.driverName,
+        position:
+          typeof pair.initialPosition?.latitude === 'number' &&
+          typeof pair.initialPosition?.longitude === 'number'
+            ? { latitude: pair.initialPosition.latitude, longitude: pair.initialPosition.longitude }
+            : null,
+      })),
+    referenceAt,
+  })
+  if (drifts.length) {
+    throw new AutoPlanningConflictError(
+      'SNAPSHOT_STALE',
+      `Le planning a changé depuis la simulation : la position de ${drifts
+        .map((drift) => drift.driverName)
+        .join(', ')} a changé de plus de ${positionDriftToleranceMeters / 1000} km. Une nouvelle simulation est requise.`,
+      ['POSITION_CHANGED']
+    )
+  }
   return persistValidatedAutoPlanning({
     userId: input.userId,
     request: input.request,

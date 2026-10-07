@@ -72,6 +72,7 @@ async function handler(
       return res.status(409).json({
         error: error.message,
         code: error.code,
+        reasons: error.reasons,
         stale: [
           'SNAPSHOT_STALE',
           'SIMULATION_EXPIRED',

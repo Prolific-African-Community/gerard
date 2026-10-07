@@ -337,11 +337,14 @@ async function main() {
       // sortie est inexploitable.
       return new Response(JSON.stringify({ output_text: '{illisible' }), { status: 200 })
     }) as typeof fetch
+    // Chemin historique du classifieur d'intention : l'agent conversationnel a ses propres tests.
+    process.env.GERARD_INTELLIGENCE_AGENT = 'off'
     captureConsole()
     await runWithOrganization(context, () => answerAssistantQuestion({
       message: 'je me demande ce que tu en penses globalement', weekStart, userId: user.id, canApply: true,
     }))
     restoreConsole()
+    delete process.env.GERARD_INTELLIGENCE_AGENT
     globalThis.fetch = routeProvider
     if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY
     else process.env.OPENAI_API_KEY = originalApiKey

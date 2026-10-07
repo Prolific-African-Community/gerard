@@ -151,6 +151,7 @@ export async function simulateAutoPlanning(input: {
     includeExistingForced: input.includeExistingForced ?? false,
     createdAt: snapshot.createdAt,
     expiresAt: snapshot.expiresAt,
+    parts: snapshot.fingerprintParts,
   })
   const includedOutcomes = reconcileOptimizationOutcomes({
     result,

@@ -1,4 +1,3 @@
-import { createHash } from 'crypto'
 import { MissionStatus, TrailerCargoType, TrailerType, TruckStatus } from '@prisma/client'
 
 import { buildPreparedDriverTruckPairs } from '../driver-truck-pairs'
@@ -32,24 +31,12 @@ import { COUPLING_TYPE_VALUES } from '../technical-attributes'
 import { resolveDriverPosition } from '../driver-position'
 import { resolveOperatingBase } from '../operating-base'
 import { resolveTrailerPosition } from '../trailer-position'
+import { computeSnapshotParts, fingerprintSnapshot } from './snapshot-parts'
 
 const snapshotLifetimeMs = 15 * 60 * 1000
 export const maximumSimulationMissions = 100
 
-function stable(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stable).join(',')}]`
-  if (value && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => `${JSON.stringify(key)}:${stable(item)}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(value)
-}
-
-export function fingerprintSnapshot(value: unknown) {
-  return createHash('sha256').update(stable(value)).digest('hex')
-}
+export { fingerprintSnapshot }
 
 function locationFromMission(
   prefix: string,
@@ -259,6 +246,11 @@ async function buildAutoPlanningSnapshotInternal(input: {
         // reste enregistree telle quelle : DEMO_SIMULATED garde une confiance
         // inferieure a un point GPS telephone lors de l'evaluation.
         provider: { in: [...positionProvidersForAnalysis()] },
+        // Seules les positions connues à l'instant de référence comptent. Un ping
+        // arrivé après la simulation ne doit pas, à lui seul, périmer son
+        // instantané : l'application rejoue la simulation à ce même instant, puis
+        // vérifie séparément qu'aucune position n'a matériellement bougé.
+        recordedAt: { lte: snapshotNow },
       },
       orderBy: { recordedAt: 'desc' },
     }),
@@ -742,44 +734,56 @@ async function buildAutoPlanningSnapshotInternal(input: {
     profile: euRoadFreightProfileV1,
     configuration: dispatchOptimizationConfigurationV1,
   }
+  const assignmentRevision = assignments.map((item) => ({
+    id: item.id,
+    missionId: item.missionId,
+    planningRowId: item.planningRowId,
+    driverId: item.driverId,
+    truckId: item.truckId,
+    trailerId: item.trailerId,
+    plannedEndAt: item.plannedEndAt?.toISOString() ?? null,
+    scheduledDate: item.scheduledDate.toISOString(),
+    sortOrder: item.sortOrder,
+    updatedAt: item.updatedAt.toISOString(),
+  }))
+  // Révisions : ce qui a été ÉCRIT en base (identifiant, horodatage d'écriture),
+  // jamais une valeur recalculée à partir de l'horloge.
+  const driverActivityRevision = driverActivityEvents.map((event) => ({
+    id: event.id,
+    driverId: event.driverId,
+    type: event.type,
+    effectiveAt: event.effectiveAt.toISOString(),
+    recordedAt: event.recordedAt.toISOString(),
+    correctedEventId: event.correctedEventId,
+    isVoided: event.isVoided,
+  }))
+  const regulatoryDeclarationRevision = regulatoryDeclarations.map(
+    (declaration) => ({
+      id: declaration.id,
+      driverId: declaration.driverId,
+      referenceAt: declaration.referenceAt.toISOString(),
+      validUntil: declaration.validUntil?.toISOString() ?? null,
+      updatedAt: declaration.updatedAt.toISOString(),
+    })
+  )
   const fingerprint = fingerprintSnapshot({
     material,
-    assignments: assignments.map((item) => ({
-      id: item.id,
-      missionId: item.missionId,
-      planningRowId: item.planningRowId,
-      driverId: item.driverId,
-      truckId: item.truckId,
-      trailerId: item.trailerId,
-      plannedEndAt: item.plannedEndAt?.toISOString() ?? null,
-      scheduledDate: item.scheduledDate.toISOString(),
-      sortOrder: item.sortOrder,
-      updatedAt: item.updatedAt.toISOString(),
-    })),
-    driverActivityRevision: driverActivityEvents.map((event) => ({
-      id: event.id,
-      driverId: event.driverId,
-      type: event.type,
-      effectiveAt: event.effectiveAt.toISOString(),
-      recordedAt: event.recordedAt.toISOString(),
-      correctedEventId: event.correctedEventId,
-      isVoided: event.isVoided,
-    })),
-    regulatoryDeclarationRevision: regulatoryDeclarations.map(
-      (declaration) => ({
-        id: declaration.id,
-        driverId: declaration.driverId,
-        referenceAt: declaration.referenceAt.toISOString(),
-        validUntil: declaration.validUntil?.toISOString() ?? null,
-        updatedAt: declaration.updatedAt.toISOString(),
-      })
-    ),
+    assignments: assignmentRevision,
+    driverActivityRevision,
+    regulatoryDeclarationRevision,
+  })
+  const fingerprintParts = computeSnapshotParts({
+    material,
+    assignments: assignmentRevision,
+    driverActivityRevision,
+    regulatoryDeclarationRevision,
   })
   const createdAt = snapshotNow
   const expiresAt = new Date(createdAt.getTime() + snapshotLifetimeMs)
   return {
     id: `simulation:${fingerprint.slice(0, 24)}`,
     fingerprint,
+    fingerprintParts,
     createdAt: createdAt.toISOString(),
     expiresAt: expiresAt.toISOString(),
     freshness: 'FRESH',

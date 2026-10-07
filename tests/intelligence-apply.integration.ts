@@ -579,12 +579,22 @@ async function main() {
       }) as typeof fetch
       try {
         // Formulation indéterminée pour le routeur déterministe : le provider est consulté.
+        // Chemin conversationnel : la sortie du modèle n'est que du texte, l'agent n'a aucun outil d'écriture.
+        const agentDriven = await answerAssistantQuestion({ message: 'je me demande ce que tu en penses globalement', weekStart, ...dispatcher })
+        assert.equal(agentDriven.routing.source, 'AGENT')
+        assert.equal(agentDriven.routing.providerStatus, 'SUCCESS')
+        assert.equal(agentDriven.application, null, 'une sortie de modèle ne peut pas appliquer')
+        assert.deepEqual(agentDriven.actions, [])
+        assert.deepEqual(await writeCounters(), before)
+        // Chemin historique (agent désactivé) : le classifieur demande une mutation, sans effet.
+        process.env.GERARD_INTELLIGENCE_AGENT = 'off'
         const modelDriven = await answerAssistantQuestion({ message: 'je me demande ce que tu en penses globalement', weekStart, ...dispatcher })
         assert.equal(modelDriven.routing.source, 'OPENAI')
         assert.equal(modelDriven.routing.providerStatus, 'SUCCESS')
         assert.equal(modelDriven.application, null, 'une sortie de modèle ne peut pas appliquer')
         assert.deepEqual(await writeCounters(), before)
       } finally {
+        delete process.env.GERARD_INTELLIGENCE_AGENT
         globalThis.fetch = routeProvider
         if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY
         else process.env.OPENAI_API_KEY = originalApiKey

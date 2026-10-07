@@ -9,6 +9,8 @@ import type { PlanningMissionScopeSummary } from './mission-scope'
 export type AutoPlanningSnapshot = {
   id: string
   fingerprint: string
+  /** Empreintes courtes par catégorie de données : sert à dire ce qui a changé, jamais à décider. */
+  fingerprintParts: Record<string, string>
   createdAt: string
   expiresAt: string
   freshness: 'FRESH' | 'EXPIRED'
@@ -146,6 +148,9 @@ export type SnapshotTokenPayload = {
   userId: string
   weekStart: string
   includeExistingForced: boolean
+  /** Instant de référence figé : l'application rejoue l'instantané à cet instant, pas à l'horloge courante. */
   createdAt: string
   expiresAt: string
+  /** Empreintes par catégorie, absentes des jetons émis avant ce correctif. */
+  parts?: Record<string, string>
 }
