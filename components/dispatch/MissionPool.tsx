@@ -616,7 +616,11 @@ export function MissionPool({
       className={[
         'fixed inset-x-0 bottom-0 border-t border-black/[0.06] bg-[#f7f8f4] px-6 pb-3 pt-3 shadow-[0_-18px_50px_rgba(17,18,15,0.08)]',
         fullScreen ? 'z-[70]' : 'z-40',
-        'h-[196px] overflow-hidden',
+        // 224 = contenu du panneau (178) + ses marges verticales (32) + le
+        // liseré horizontal de 12 px des deux rails, mesuré dans le
+        // navigateur. À 196 px les deux barres existaient mais étaient
+        // intégralement rognées, comme l'étaient déjà 22 px des pastilles.
+        'h-[224px] overflow-hidden',
       ].join(' ')}
     >
       <div className="mx-auto flex h-full w-full items-stretch gap-5 overflow-hidden">
