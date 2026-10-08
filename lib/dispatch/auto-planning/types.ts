@@ -140,6 +140,12 @@ export type ApplyResult = {
   pairRowIds: string[]
   ignoredMissionIds: string[]
   warnings: string[]
+  /** Approches camion → enlèvement finalisées après l'application (absent pour un rejeu). */
+  approaches?: {
+    persisted: number
+    unresolved: number
+    routeMetrics: { lookups: number; cacheHits: number; cacheMisses: number; googleCalls: number; blockedByLimit: number }
+  }
 }
 
 export type SnapshotTokenPayload = {

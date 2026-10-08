@@ -4,7 +4,7 @@ import { requirePermission } from '../../../lib/auth/authorization'
 import { permissions } from '../../../lib/auth/permissions'
 
 import { prisma } from '../../../lib/prisma'
-import { computeGoogleRoute } from '../../../lib/dispatch/maps/google'
+import { finalizeAssignmentApproach } from '../../../lib/dispatch/approach-finalization'
 
 type ApproachRouteResponse = {
   assignmentId: string
@@ -190,82 +190,53 @@ async function handler(
       })
     }
 
-    if (
-      !forceRefresh &&
-      typeof assignment.approachDistanceMeters === 'number' &&
-      typeof assignment.approachDurationSeconds === 'number' &&
-      typeof assignment.approachPolyline === 'string' &&
-      assignment.approachPolyline.length > 0
-    ) {
-      return res.status(200).json(
-        buildRouteResponse({
-          assignmentId: assignment.id,
-          missionId: assignment.missionId,
-          truckId: assignment.truckId,
-          distanceMeters: assignment.approachDistanceMeters,
-          durationSeconds: assignment.approachDurationSeconds,
-          polyline: assignment.approachPolyline,
-          cached: true,
-        })
-      )
-    }
-
+    // Dernier ping connu du camion : position de repli quand aucune mission ne
+    // précède celle-ci sur le même camion (la chaîne passe avant, voir
+    // lib/dispatch/approach-finalization.ts).
     const truckPosition = await prisma.driverPosition.findFirst({
-      where: {
-        truckId: assignment.truckId,
-      },
-      orderBy: {
-        recordedAt: 'desc',
-      },
+      where: { truckId: assignment.truckId },
+      orderBy: { recordedAt: 'desc' },
+    })
+    const outcome = await finalizeAssignmentApproach({
+      assignmentId: assignment.id,
+      fallbackOrigin: truckPosition
+        ? { latitude: truckPosition.latitude, longitude: truckPosition.longitude, source: 'TRUCK_LAST_POSITION' }
+        : null,
+      forceRefresh,
     })
 
-    if (!truckPosition) {
-      console.error('Approach route failed: missing truck position', {
+    if (outcome.status === 'UNRESOLVED') {
+      if (outcome.reason === 'MISSING_ORIGIN') {
+        console.error('Approach route failed: missing truck position', {
+          assignmentId,
+          truckId: assignment.truckId,
+          missionId: assignment.missionId,
+        })
+        return res.status(400).json({
+          error: 'No truck position',
+          reason: 'missing_truck_position',
+          assignmentId,
+          truckId: assignment.truckId,
+          missionId: assignment.missionId,
+        })
+      }
+      return res.status(500).json({
+        error: 'Failed to compute approach route',
+        reason: 'server_error',
         assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
-      })
-
-      return res.status(400).json({
-        error: 'No truck position',
-        reason: 'missing_truck_position',
-        assignmentId,
-        truckId: assignment.truckId,
-        missionId: assignment.missionId,
+        details: outcome.detail ?? outcome.reason,
       })
     }
-
-    const route = await computeGoogleRoute({
-      origin: { latitude: truckPosition.latitude, longitude: truckPosition.longitude },
-      destination: {
-        latitude: assignment.mission.pickupLat,
-        longitude: assignment.mission.pickupLng,
-      },
-    })
-    const { distanceMeters, durationSeconds, polyline } = route
-
-    await prisma.missionAssignment.update({
-      where: {
-        id: assignment.id,
-      },
-      data: {
-        approachDistanceMeters: distanceMeters,
-        approachDurationSeconds: durationSeconds,
-        approachPolyline: polyline,
-        approachCalculatedAt: new Date(),
-        approachProvider: 'GOOGLE_ROUTES',
-      },
-    })
 
     return res.status(200).json(
       buildRouteResponse({
         assignmentId: assignment.id,
         missionId: assignment.missionId,
         truckId: assignment.truckId,
-        distanceMeters,
-        durationSeconds,
-        polyline,
-        cached: false,
+        distanceMeters: outcome.distanceMeters,
+        durationSeconds: outcome.durationSeconds,
+        polyline: outcome.polyline,
+        cached: outcome.status === 'ALREADY_PRESENT',
       })
     )
   } catch (error) {

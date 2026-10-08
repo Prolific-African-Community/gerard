@@ -15,6 +15,7 @@ import { prisma } from '../../prisma'
 import { requireActiveOrganizationId } from '../../auth/organization-context'
 import { buildAutoPlanningSnapshot } from './snapshot'
 import { withRouteOperation } from '../maps/route-control'
+import { finalizeApproachesForAssignments, type ApproachPoint } from '../approach-finalization'
 import { changedSnapshotReasons, describeSnapshotChange } from './snapshot-parts'
 import { detectPositionDrift, positionDriftToleranceMeters } from './position-drift'
 import { verifySnapshotToken } from './token'
@@ -189,12 +190,62 @@ export async function applyAutoPlanning(input: {
       ['POSITION_CHANGED']
     )
   }
-  return persistValidatedAutoPlanning({
+  const applied = await persistValidatedAutoPlanning({
     userId: input.userId,
     request: input.request,
     snapshot,
     result,
   })
+  return finalizeAppliedApproaches(applied, snapshot)
+}
+
+/**
+ * Après le commit : l'approche de chaque affectation retenue est calculée et
+ * enregistrée (mission précédente du camion, sinon position retenue par le
+ * moteur). Un échec ne défait jamais l'application : l'approche reste « à
+ * calculer », signalée par un avertissement, et l'action manuelle permet de
+ * la relancer.
+ */
+async function finalizeAppliedApproaches(
+  applied: ApplyResult,
+  snapshot: Awaited<ReturnType<typeof buildAutoPlanningSnapshot>>
+): Promise<ApplyResult> {
+  if (applied.idempotentReplay || !applied.appliedMissionIds.length) return applied
+  const fallbackByPlanningRowId = new Map<string, ApproachPoint>()
+  for (const pair of snapshot.input.pairs) {
+    const position = pair.initialPosition
+    if (typeof position?.latitude === 'number' && typeof position?.longitude === 'number') {
+      fallbackByPlanningRowId.set(pair.pair.rowId, {
+        latitude: position.latitude,
+        longitude: position.longitude,
+        source: position.positionSource ?? null,
+      })
+    }
+  }
+  try {
+    const summary = await finalizeApproachesForAssignments({
+      missionIds: applied.appliedMissionIds,
+      fallbackByPlanningRowId,
+    })
+    console.info(
+      `[Approaches] auto-planning: persisted=${summary.persisted} unresolved=${summary.unresolved} lookups=${summary.routeMetrics.lookups} hits=${summary.routeMetrics.cacheHits} googleCalls=${summary.routeMetrics.googleCalls}`
+    )
+    return {
+      ...applied,
+      warnings: [...applied.warnings, ...summary.warnings],
+      approaches: {
+        persisted: summary.persisted,
+        unresolved: summary.unresolved,
+        routeMetrics: summary.routeMetrics,
+      },
+    }
+  } catch (error) {
+    console.error('Auto-planning approach finalization failed', error instanceof Error ? error.message : error)
+    return {
+      ...applied,
+      warnings: [...applied.warnings, 'Les approches n’ont pas pu être calculées : utilisez « Calculer approches » sur la carte.'],
+    }
+  }
 }
 
 export async function persistValidatedAutoPlanning(input: {
